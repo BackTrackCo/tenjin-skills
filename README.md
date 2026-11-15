@@ -27,16 +27,29 @@ Use `/reddit-scout` to invoke it directly. Give it a topic to discover subreddit
 
 For Codex, replace `-a claude-code` with `-a codex`. Tenjin’s Codex integration is experimental. Calls paid through Tenjin follow your spending limits. Connected providers bill their own accounts.
 
-## Example from a live run
+## Example output
 
-### Finding highlights in gameplay footage
+The current skill replayed a post and nine replies saved during a live run. [Reddit thread](https://www.reddit.com/r/ClaudeCode/comments/1xvektq/looking_for_help_setting_up_claude_code_for_ai/) · [How we tested Reddit Scout](docs/reddit-search-comparison.md)
 
-[r/ClaudeCode thread](https://www.reddit.com/r/ClaudeCode/comments/1xvektq/looking_for_help_setting_up_claude_code_for_ai/) · Nov 13, 2026
+```text
+1 thread worth joining from the November 14 capture. The open
+angle is testing highlight selection against moments the creator
+actually wants; existing replies cover tools, signals, and
+candidate shortlists.
 
-Whisper and FFmpeg cut the footage and missed the highlights. Replies covered audio peaks and the kill feed. The creator’s mic setup was still unclear.
+Looking for Help Setting Up Claude Code for AI Video Editing
+· r/ClaudeCode · November 13
 
-> **Reply draft** · shortened from the run
->
-> Is your mic on its own track? If it is, could you use peaks on that track to shortlist reactions, then check those moments against the kill feed?
+Editable comment:
 
-[How we tested Reddit Scout](docs/reddit-search-comparison.md)
+Before paying for a full setup, try marking 3–5 moments you’d
+actually use from one recording, with timestamps and why each
+works. Give those examples to Claude, then test its shortlist on
+a different recording against your own picks. That should help
+separate whether it needs a clearer definition of “best” or
+whether the transcript/audio signals are missing the on-screen
+action.
+
+Reviewed only the supplied post and all nine captured comments.
+Posting status is unknown; check before replying.
+```

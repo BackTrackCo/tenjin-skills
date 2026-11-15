@@ -38,6 +38,8 @@ One thread made the list. A [gaming creator looking for an AI video-editing work
 
 The fresh desktop run made two searches and two thread reads at 3¢ in reported provider costs. Settlement was unknown at the time we checked. The skill now asks the agent to report that distinction.
 
+For the README example, we replayed the gameplay thread through the current skill in Codex using the saved post and all nine replies returned by the reader. The replay ran offline. The README shows the result in plain text with line breaks added for readability.
+
 ## What happens when you leave the subreddit open
 
 We asked for recent threads about flaky Playwright tests in CI and gave the agent no subreddit. Its first Reddit-wide search brought back several off-topic posts. It refined the keywords to `playwright flaky` and switched to relevance within the same month-long search window. That pass surfaced relevant posts in r/Playwright and r/QualityAssurance. The agent then searched inside both subreddits for additional threads.
