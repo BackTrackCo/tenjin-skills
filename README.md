@@ -1,32 +1,47 @@
 # Tenjin Skills
 
+[![View the Reddit Scout skill](https://img.shields.io/badge/Agent%20Skill-View%20SKILL.md-24292f?logo=github)](skills/reddit-scout/SKILL.md)
+
 ## Reddit Scout
 
-Find recent Reddit threads where you can help. Get the thread link, what people have already said, and an editable reply that adds something.
+Tell your agent what you know about. Reddit Scout finds recent threads on that topic, reads the replies, and drafts a short comment when you have something to add. You decide what to post.
+
+[Quickstart](#quickstart) · [Example result](#example-from-a-live-run) · [Apify vs. glim results](docs/reddit-search-comparison.md)
 
 ### Quickstart
 
-1. [Set up and activate Tenjin in Claude Code](https://tenjin.sh/agents) to give your agent access to dedicated Reddit search and thread reads.
-2. Install Reddit Scout from your project directory.
+1. If you need Tenjin, paste this into Claude Code and follow the setup prompts. [Tenjin installation guide](https://github.com/BackTrackCo/tenjin-agent#install)
+
+   ```text
+   Install Tenjin from tenjin.sh
+   ```
+
+2. From your project directory, install Reddit Scout with the [Skills CLI](https://github.com/vercel-labs/skills#install-a-skill).
 
    ```sh
    npx skills add BackTrackCo/tenjin-skills --skill reddit-scout -a claude-code
    ```
 
-3. Start a fresh Claude Code session and paste this prompt.
+3. Open a fresh Claude Code session and try this.
 
-   > Find recent r/ClaudeCode threads where people are trying to edit video with an agent. Read the replies and suggest how I could help. Give me one short reply draft per useful thread.
+   > Find r/ClaudeCode threads from the past week where people are trying to edit video with an agent. Read the replies and give me a short draft for each thread where I could help.
 
-Add a topic, subreddit, time window, result count, or budget as needed. For example, a maintainer could ask for five threads from the past week where people need help debugging flaky tests in GitHub Actions. You can invoke the skill directly with `/reddit-scout` in Claude Code. For Codex, use `-a codex` in the install command and mention `$reddit-scout` in your prompt.
+You can invoke it directly with `/reddit-scout` or give it a topic, subreddit, time window, desired number of threads, and budget in plain English. For Codex, use `-a codex` in the install command. Tenjin’s Codex integration is experimental.
 
-The skill uses the tools your agent can access. With Tenjin active, the agent can discover a provider during the run. Paid calls use your existing limits. When dedicated search is unavailable, the agent can try subreddit-scoped web search and verify what it finds. You review and post any reply yourself.
+### What happens after you ask
 
-### Example from a real run
+The agent discovers a Reddit search tool, filters results by date and community, and reads promising threads and their replies. It gives you a link, what the person needs, a way to help that the replies haven’t already covered, and an editable draft. If nothing qualifies, it says so.
+
+Tenjin lets the agent discover and use providers during the run. Calls paid through Tenjin use your Tenjin spending limits. Connected providers bill their own accounts. If dedicated Reddit search is unavailable, the agent can try web search scoped to the subreddit and verify the results on Reddit.
+
+### Example from a live run
 
 **[Looking for Help Setting Up Claude Code for AI Video Editing](https://www.reddit.com/r/ClaudeCode/comments/1xvektq/looking_for_help_setting_up_claude_code_for_ai/) · Nov 13, 2026**
 
-- **What they need** — A gaming creator got Whisper and FFmpeg to cut their footage. The edit missed the best moments, and the replies already covered loudness spikes and sampling frames to read the kill feed.
-- **Where you can help** — Ask whether their microphone is on its own track, so they can try using voice reactions without game audio.
-- **Optional reply draft** — “Is your mic on its own track? If it is, could you try using spikes on that track to shortlist reactions, then check those moments against the kill feed?”
+**What they need** — Whisper and FFmpeg cut a gaming creator’s footage, but missed the best moments. Replies already suggest using audio peaks and checking the kill feed.
 
-We shortened the draft from the live run for this example. For the search settings, provider results, and limits of the comparison, see [How we tested Reddit Scout](docs/reddit-search-comparison.md).
+**Where you can help** — Ask whether the mic is on its own track, so the creator can separate reactions from the game audio.
+
+**Editable draft** — “Is your mic on its own track? If it is, could you use peaks on that track to shortlist reactions, then check those moments against the kill feed?”
+
+The draft is shortened from the live run. The [comparison and walkthrough](docs/reddit-search-comparison.md) show what Apify and glim returned for the same query, how sorting changed the results, and what the agent pulled from the replies.
