@@ -1,14 +1,12 @@
-# Tenjin Skills
+# Reddit Scout
 
 [![View the Reddit Scout skill](https://img.shields.io/badge/Agent%20Skill-View%20SKILL.md-24292f?logo=github)](skills/reddit-scout/SKILL.md)
 
-## Reddit Scout
+Find recent Reddit threads where you can help. Reddit Scout reads the replies and drafts a short comment when there's something left to add. You decide what to post.
 
-Tell your agent what you know about. Reddit Scout finds recent threads on that topic, reads the replies, and drafts a short comment when you have something to add. You decide what to post.
+[Quickstart](#quickstart) · [Live example](#example-from-a-live-run) · [Apify vs. glim search test](docs/reddit-search-comparison.md#the-same-search-across-apify-and-glim)
 
-[Quickstart](#quickstart) · [Example result](#example-from-a-live-run) · [Apify vs. glim results](docs/reddit-search-comparison.md)
-
-### Quickstart
+## Quickstart
 
 1. If you need Tenjin, paste this into Claude Code and follow the setup prompts. [Tenjin installation guide](https://github.com/BackTrackCo/tenjin-agent#install)
 
@@ -28,13 +26,13 @@ Tell your agent what you know about. Reddit Scout finds recent threads on that t
 
 You can invoke it directly with `/reddit-scout` or give it a topic, subreddit, time window, desired number of threads, and budget in plain English. For Codex, use `-a codex` in the install command. Tenjin’s Codex integration is experimental.
 
-### What happens after you ask
+## What happens after you ask
 
-The agent starts with a Reddit-wide keyword search, looks for communities with relevant recent threads, then searches inside those communities. If you specify subreddits as the scope, it searches there. It reads promising threads and their replies, then gives you a link, a way to help, and an editable draft. If nothing qualifies, it says so.
+The agent starts with a Reddit-wide keyword search, then searches communities with relevant recent results. You can also give it specific subreddits or paste a thread link to check the replies directly. Each result includes the thread link, subreddit and date, why it's worth replying to, and an editable draft. If nothing qualifies, it says so.
 
 Tenjin lets the agent discover and use providers during the run. Calls paid through Tenjin use your Tenjin spending limits. Connected providers bill their own accounts. If dedicated search is unavailable, the agent can try web search limited to Reddit and verify the results on Reddit.
 
-### Example from a live run
+## Example from a live run
 
 **[Looking for Help Setting Up Claude Code for AI Video Editing](https://www.reddit.com/r/ClaudeCode/comments/1xvektq/looking_for_help_setting_up_claude_code_for_ai/) · r/ClaudeCode · Nov 13, 2026**
 
