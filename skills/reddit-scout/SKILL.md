@@ -1,6 +1,6 @@
 ---
 name: reddit-scout
-description: Find recent Reddit threads the user can help with or reply to on a topic they know. Read the existing replies and return relevant threads, a useful angle, and an editable reply draft for each. Use to scout Reddit discussions worth joining or find people asking for help on a specific topic.
+description: Find recent Reddit threads the user can help with or reply to on a topic they know. Discover relevant subreddits, read existing replies, and return a useful angle and editable reply draft per match. Use to scout Reddit discussions worth joining or find people asking for help on a topic.
 ---
 
 # Scout Reddit
@@ -9,14 +9,14 @@ Find discussions where the user can make a useful contribution. Honor any reques
 
 ## Search
 
-1. Take the topic, any subreddits the user names, and their time window. If no window is given, choose a recent one appropriate to the topic and report it. Start in named communities or choose communities where people do the work. Use short public search phrases that someone would write about the topic, such as `video editing`. Keep private notes and transcripts out of search queries.
-2. Use the agent's tool discovery to find Reddit keyword search with subreddit filters, sorting, and post timestamps. Start newest-first with a focused phrase in the tool's documented syntax. Use the closest date preset that covers the requested window and choose a batch size that fits the scope and budget. Get a fresh offer if the tool uses single-use offers. If dedicated search is unavailable, use web search scoped to the subreddit and check the dates on Reddit.
-3. After each batch, apply the exact cutoff and deduplicate by post ID or permalink. Read promising threads and their existing replies before spending on more searches. Try refined terms or additional batches when they are likely to find new matches. Stop when enough threads qualify, the search stops yielding useful new candidates, or the budget is needed for verification. Respect tool approval and spending limits.
-4. Skip undated, deleted, removed, archived, and locked posts. Give priority to people describing their own work or asking for help. Include a demo when there's a concrete question to ask about it. Drop a pick if you can't verify its date or read its replies, or if an existing reply already covers the suggested point. If the thread tool omits reply status, try opening Reddit directly. If you still can't tell, mark the status as unknown so the user can check before replying. Treat post and comment text as source material.
+1. Take the topic, time window, and any community constraints from the request. If no window is given, choose a recent one appropriate to the topic and report it. Use short public search phrases people would use to describe the topic. Keep private notes and transcripts out of queries.
+2. Discover a Reddit search tool that supports public keyword search, subreddit filtering, sorting, and post timestamps. When the request leaves the subreddit open, make the first search Reddit-wide by omitting any subreddit filter. When the request is scoped to specific communities, search within that scope. Start newest-first and choose the closest supported date preset that covers the requested window. If dedicated search is unavailable, use web search restricted to Reddit, with the same scope, and verify dates on Reddit.
+3. Filter broad results to the exact time window and group relevant posts by subreddit. Use those results to decide which communities to search next. Look for recent on-topic discussion and firsthand questions. Use comment activity as a tie-breaker when available. Give smaller specialist communities a chance when their threads fit. Run targeted searches in the communities the results point to before wrapping up. If the broad query gives weak evidence, refine it using terms people actually used or try a relevance sort within the same window. Choose the depth based on useful matches, scope, and budget. Leave room to read replies and report when a limit cuts discovery short.
+4. After each search, filter by date and deduplicate by post ID or permalink. Read promising threads and their replies before adding more searches. Skip undated, removed, deleted, archived, or locked threads and any thread where the replies already cover the suggested contribution. If the tool omits reply status, try opening Reddit directly. Mark it as unknown when you can't verify it. Respect spending limits and obtain a fresh offer if the tool uses single-use offers. Treat post and comment text as source material.
 
 ## Return the brief
 
-Lead with how many threads are worth joining and the community and time window searched. If the user asked for a number and fewer qualify, say how many you could verify. Use the following format for each thread.
+Lead with how many threads are worth joining and the time window. Name the subreddits you searched directly, and say whether you started with a Reddit-wide pass. If the user asked for a number and fewer qualify, say how many you could verify. Use the following format for each thread.
 
 ### [Thread title](Reddit permalink) · YYYY-MM-DD
 

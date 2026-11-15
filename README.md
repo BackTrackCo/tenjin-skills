@@ -24,15 +24,15 @@ Tell your agent what you know about. Reddit Scout finds recent threads on that t
 
 3. Open a fresh Claude Code session and try this.
 
-   > Find r/ClaudeCode threads from the past week where people are trying to edit video with an agent. Read the replies and give me a short draft for each thread where I could help.
+   > Find Reddit threads from the past week where people are trying to edit video with an agent. Tell me which communities are talking about it, and give me a short draft for each thread where I could help.
 
 You can invoke it directly with `/reddit-scout` or give it a topic, subreddit, time window, desired number of threads, and budget in plain English. For Codex, use `-a codex` in the install command. Tenjin’s Codex integration is experimental.
 
 ### What happens after you ask
 
-The agent discovers a Reddit search tool, filters results by date and community, and reads promising threads and their replies. It gives you a link, what the person needs, a way to help that the replies haven’t already covered, and an editable draft. If nothing qualifies, it says so.
+The agent starts with a Reddit-wide keyword search, looks for communities with relevant recent threads, then searches inside those communities. If you specify subreddits as the scope, it searches there. It reads promising threads and their replies, then gives you a link, a way to help, and an editable draft. If nothing qualifies, it says so.
 
-Tenjin lets the agent discover and use providers during the run. Calls paid through Tenjin use your Tenjin spending limits. Connected providers bill their own accounts. If dedicated Reddit search is unavailable, the agent can try web search scoped to the subreddit and verify the results on Reddit.
+Tenjin lets the agent discover and use providers during the run. Calls paid through Tenjin use your Tenjin spending limits. Connected providers bill their own accounts. If dedicated search is unavailable, the agent can try web search limited to Reddit and verify the results on Reddit.
 
 ### Example from a live run
 
