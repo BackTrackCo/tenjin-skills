@@ -46,8 +46,9 @@ It read [a CI test isolation question](https://www.reddit.com/r/QualityAssurance
 
 ## Related workflows
 
-- [`reddit-automation`](https://www.skills.sh/flowkit-labs/skills/reddit-automation) also scouts conversations and drafts replies. Its examples start from a product someone makes. Reddit Scout can start from a topic the user knows, such as helping someone debug a tool they use.
-- [`last30days`](https://github.com/mvanhorn/last30days-skill) turns recent discussion across several sites into a research brief. Its [ScrapeCreators Reddit path](https://github.com/mvanhorn/last30days-skill/blob/main/skills/last30days/scripts/lib/reddit.py#L587-L610) uses global results to select and search subreddits. Reddit Scout uses that broad-to-local search pattern to find threads where someone can contribute, then reads the replies and drafts a comment.
+- [`reddit-automation`](https://github.com/flowkit-labs/skills/blob/main/reddit-automation/SKILL.md) also scouts conversations and drafts replies. Its examples start from a product someone makes. Reddit Scout can start from a topic the user knows, such as helping someone debug a tool they use.
+- [`last30days`](https://github.com/mvanhorn/last30days-skill) turns recent discussion across several sites into a research brief. Its [ScrapeCreators Reddit path](https://github.com/mvanhorn/last30days-skill/blob/f0876504bdfcada40fcf5a4a3ada014c9408b9ed/skills/last30days/scripts/lib/reddit.py#L587-L610) uses global results to select and search subreddits. Reddit Scout uses that broad-to-local search pattern to find threads where someone can contribute, then reads the replies and drafts a comment.
+- [`delta-engage`](https://github.com/newan2001/delta-engage/blob/main/SKILL.md) builds a recurring digest across platforms with an engagement angle and draft for each opportunity. Its [default Apify adapter](https://github.com/newan2001/delta-engage/blob/main/scripts/adapters/reddit_adapter.py) skips comments when collecting posts. Reddit Scout reads existing replies and the poster's follow-ups to decide what remains worth saying.
 - [Monid’s Reddit comparison](https://monid.ai/blog/guides/reddit-scraper-returns-different-posts) shows how its two endpoints differed on a RAG search. Our table records the separate Claude Code query we ran through Apify and glim.
 
 ## Try the comparison on your own topic

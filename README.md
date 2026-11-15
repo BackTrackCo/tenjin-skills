@@ -36,12 +36,12 @@ Tenjin lets the agent discover and use providers during the run. Calls paid thro
 
 ### Example from a live run
 
-**[Looking for Help Setting Up Claude Code for AI Video Editing](https://www.reddit.com/r/ClaudeCode/comments/1xvektq/looking_for_help_setting_up_claude_code_for_ai/) · Nov 13, 2026**
+**[Looking for Help Setting Up Claude Code for AI Video Editing](https://www.reddit.com/r/ClaudeCode/comments/1xvektq/looking_for_help_setting_up_claude_code_for_ai/) · r/ClaudeCode · Nov 13, 2026**
 
-**What they need** — Whisper and FFmpeg cut a gaming creator’s footage, but missed the best moments. Replies already suggest using audio peaks and checking the kill feed.
+**Why reply** — The edit missed the best moments. People already suggested audio peaks and the kill feed, while the mic setup is still unclear.
 
-**Where you can help** — Ask whether the mic is on its own track, so the creator can separate reactions from the game audio.
+**Draft**
 
-**Editable draft** — “Is your mic on its own track? If it is, could you use peaks on that track to shortlist reactions, then check those moments against the kill feed?”
+> Is your mic on its own track? If it is, could you use peaks on that track to shortlist reactions, then check those moments against the kill feed?
 
 The draft is shortened from the live run. The [comparison and walkthrough](docs/reddit-search-comparison.md) show what Apify and glim returned for the same query, how sorting changed the results, and what the agent pulled from the replies.
