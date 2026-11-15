@@ -42,6 +42,8 @@ The fresh desktop run made two searches and two thread reads at 3¢ in reported 
 
 We asked for recent threads about flaky Playwright tests in CI and gave the agent no subreddit. Its first Reddit-wide search brought back several off-topic posts. It refined the keywords to `playwright flaky` and switched to relevance within the same month-long search window. That pass surfaced relevant posts in r/Playwright and r/QualityAssurance. The agent then searched inside both subreddits for additional threads.
 
+It read [a CI test isolation question](https://www.reddit.com/r/QualityAssurance/comments/1xidhi6/stuck_in_sequential_testing_hell_how_do_you_scale/) whose replies already covered the likely fixes and [a flaky test](https://www.reddit.com/r/Playwright/comments/1xjdb5c/flaky_transient_toaster_expectation_issue/) whose author confirmed a fix. It returned zero drafts. Five searches and two thread reads came to 6¢ in reported provider costs, with settlement unverified.
+
 ## Related workflows
 
 - [`reddit-automation`](https://www.skills.sh/flowkit-labs/skills/reddit-automation) also scouts conversations and drafts replies. Its examples start from a product someone makes. Reddit Scout can start from a topic the user knows, such as helping someone debug a tool they use.
