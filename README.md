@@ -15,7 +15,8 @@ Find recent Reddit threads you can help with. Scout reads the replies and drafts
 2. **Install Reddit Scout** from your project directory.
 
    ```sh
-   npx skills add BackTrackCo/tenjin-skills --skill reddit-scout -a claude-code
+   npx skills add BackTrackCo/tenjin-skills \
+     --skill reddit-scout -a claude-code
    ```
 
 3. **Try it** in a fresh Claude Code session.
