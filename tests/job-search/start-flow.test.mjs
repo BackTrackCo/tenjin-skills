@@ -273,7 +273,7 @@ test('every consent change and writing approval gets a notification and a report
 // ---- no DeepSeek, no guard, no model switch, one Fable line ------------------------------------
 test('the skill asks nothing about DeepSeek, reads no Tenjin setting, and has no hook', () => {
   const root = path.join(import.meta.dirname, '..', '..');
-  const files = ['README.md', 'skills/job-search/SKILL.md', ...fs.readdirSync(path.join(root, 'skills/job-search/references')).map((f) => `skills/job-search/references/${f}`), ...fs.readdirSync(path.join(root, 'skills/job-search/scripts/lib')).map((f) => `skills/job-search/scripts/lib/${f}`), 'skills/job-search/scripts/jobs.mjs'];
+  const files = ['README.md', 'skills/job-search/SKILL.md', ...fs.readdirSync(path.join(root, 'skills/job-search/references')).map((f) => `skills/job-search/references/${f}`), ...fs.readdirSync(path.join(root, 'skills/job-search/scripts/lib'), { recursive: true }).filter((f) => f.endsWith('.mjs')).map((f) => `skills/job-search/scripts/lib/${f}`), 'skills/job-search/scripts/jobs.mjs'];
   for (const f of files) {
     const t = fs.readFileSync(path.join(root, f), 'utf8');
     assert.doesNotMatch(t, /deepseek_on|subagents off|config subagents|DeepSeek subagents/i, f);

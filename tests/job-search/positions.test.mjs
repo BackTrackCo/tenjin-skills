@@ -25,7 +25,7 @@ test('the start: the resume is a plain question, then one call with four questio
   for (const x of p.questions) assert.match(x.options[0].label, /\(Recommended\)$/);
   assert.deepEqual(p.questions[1].options.map((o) => o.label), ['Every day (Recommended)', 'Twice a day', 'Once a week']);
   assert.deepEqual(p.questions[2].options.map((o) => o.label), ['Up to 10 (Recommended)', 'Up to 5', 'Up to 20']);
-  assert.match(p.questions[1].options[0].description, /Haiku run/);
+  assert.match(p.questions[1].options[0].description, /runs in code at the router's price, with no Claude usage for the searches/);
   assert.match(p.questions[3].options[0].description, /\/remote-control/);
   assert.ok(p.questions[0].options.length === 3 && p.questions[0].options[1].label.startsWith('Auto apply only when there are no new questions'));
 });

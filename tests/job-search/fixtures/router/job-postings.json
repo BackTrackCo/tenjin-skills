@@ -1,0 +1,20 @@
+{
+ "_note": "Hand-built from the documented envelope shape and the job fields named in the plan; not a recorded response.",
+ "spec": {
+  "status": "spec",
+  "id": "offer-1",
+  "spec": "Supplier: jsearch.example. Inputs: query, remote_jobs_only, date_posted. Returns data.jobs[]."
+ },
+ "fulfilled": {
+  "status": "fulfilled",
+  "supplier": "jsearch.example",
+  "label": "job search",
+  "parameters": {
+   "query": "software engineer in Berlin"
+  },
+  "cost": "$0.003",
+  "settlementTxHash": "0x0",
+  "providerContentUntrusted": true,
+  "result": "{\"data\": {\"jobs\": [{\"job_title\": \"Software Engineer\", \"employer_name\": \"Acme, Inc.\", \"employer_website\": \"https://www.acme.com\", \"job_publisher\": \"LinkedIn\", \"job_apply_link\": \"https://www.linkedin.com/jobs/view/1\", \"apply_options\": [{\"apply_link\": \"https://www.linkedin.com/jobs/view/1\", \"is_direct\": false, \"publisher\": \"LinkedIn\"}, {\"apply_link\": \"https://boards.greenhouse.io/acme/jobs/77\", \"is_direct\": true, \"publisher\": \"Acme careers\"}], \"job_is_remote\": false, \"job_posted_at_datetime_utc\": \"2026-11-20T09:00:00Z\", \"job_city\": \"Berlin\", \"job_state\": \"\", \"job_country\": \"DE\", \"job_employment_type\": \"FULLTIME\", \"job_min_salary\": 90000, \"job_max_salary\": 120000, \"job_salary_currency\": \"EUR\", \"job_salary_period\": \"YEAR\", \"job_description\": \"Build things in Berlin.\"}, {\"job_title\": \"Backend Engineer\", \"employer_name\": \"Globex\", \"job_publisher\": \"Indeed\", \"job_apply_link\": \"https://de.indeed.com/viewjob?jk=9\", \"apply_options\": [], \"job_is_remote\": true, \"job_posted_at_datetime_utc\": \"2026-11-21T09:00:00Z\", \"job_city\": \"\", \"job_state\": \"\", \"job_country\": \"DE\", \"job_description\": \"Services work.\"}]}}"
+ }
+}

@@ -123,7 +123,7 @@ test('only the allowed HN hosts are ever called', async () => {
 
 test('the network check: no script fetches news.ycombinator.com or workatastartup.com, and no careers-page fetch exists', () => {
   const dir = path.join(ROOT, 'skills', 'job-search', 'scripts');
-  const files = [path.join(dir, 'jobs.mjs'), ...fs.readdirSync(path.join(dir, 'lib')).map((f) => path.join(dir, 'lib', f))];
+  const files = [path.join(dir, 'jobs.mjs'), ...fs.readdirSync(path.join(dir, 'lib'), { recursive: true }).filter((f) => f.endsWith('.mjs')).map((f) => path.join(dir, 'lib', f))];
   for (const f of files) assert.doesNotMatch(fs.readFileSync(f, 'utf8'), /https?:\/\/[^'"`\s]*(news\.ycombinator\.com|workatastartup\.com)/i, path.basename(f));
   assert.equal(net.fetchPublicPage, undefined);
 });

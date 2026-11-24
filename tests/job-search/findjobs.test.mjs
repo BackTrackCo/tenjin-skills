@@ -195,10 +195,40 @@ test('contacts: a source link, how to reach them and one thing they care about; 
   assert.equal(store.loadState().contacts[j.key].at(-1).notConfirmed, true);
 });
 
-test('contacts request picks the best 5 jobs by fit, or the contact_count rule', () => {
-  store.updateState((s) => { Object.assign(s, store.emptyState()); for (let i = 0; i < 8; i++) { const j = mkJob({ key: `https://boards.greenhouse.io/acme/jobs/${100 + i}`, status: 'reviewed', fit: i * 10 }); s.jobs[j.key] = j; } });
+test('contacts request: the first request asks once with 5 first; no answer means 5; a later request uses the stored rule', () => {
+  store.updateState((st) => { Object.assign(st, store.emptyState()); for (let i = 0; i < 12; i++) { const j = mkJob({ key: `https://boards.greenhouse.io/acme/jobs/${100 + i}`, status: 'reviewed', fit: i * 5 }); st.jobs[j.key] = j; } });
+  fs.rmSync(path.join(home, '.tenjin-skills', 'job-search', 'rules.json'), { force: true });
+  const ask = runJobs(home, ['contacts', 'request']);
+  assert.equal(ask.code, 4);
+  assert.equal(ask.json.ask, 'contacts');
+  assert.equal(ask.json.default, 5);
+  const payload = runJobs(home, ['ask', 'contacts']).json;
+  assert.deepEqual(payload.questions[0].options.map((o) => o.label), ['5 jobs (Recommended)', '10 jobs', 'Every job that passed review']);
+  assert.match(payload.questions[0].options[0].description, /Haiku step.*people search runs in code at the router's price/);
+  assert.equal(store.loadState().contactsRequested.length, 0, 'nothing was requested before the answer');
+  // no answer means 5, and it is stored with the person's words and the date
+  const none = runJobs(home, ['contacts', 'request', '--count', 'default']);
+  assert.equal(none.json.requested, 5);
+  assert.deepEqual(store.loadState().contactsRequested.map((k) => k.slice(-3)), ['111', '110', '109', '108', '107']);
+  const rule = runJobs(home, ['rules']).json.find((r) => r.effect === 'contact_count');
+  assert.equal(rule.value, 5);
+  assert.match(rule.date, /^\d{4}-\d{2}-\d{2}$/);
+  // a later request uses the stored rule and does not ask again
+  store.updateState((st) => { st.contactsRequested = []; });
   assert.equal(runJobs(home, ['contacts', 'request']).json.requested, 5);
-  assert.deepEqual(store.loadState().contactsRequested.map((k) => k.slice(-3)), ['107', '106', '105', '104', '103']);
+  // the person changes it, outside a batch
+  assert.equal(runJobs(home, ['contacts', 'count', '10', '--words', 'ten please']).code, 0);
+  store.updateState((st) => { st.contactsRequested = []; });
+  assert.equal(runJobs(home, ['contacts', 'request']).json.requested, 10);
+  assert.equal(runJobs(home, ['contacts', 'count', 'all']).code, 0);
+  store.updateState((st) => { st.contactsRequested = []; });
+  assert.equal(runJobs(home, ['contacts', 'request']).json.requested, 12);
+  assert.equal(runJobs(home, ['contacts', 'count', 'lots']).code, 2);
+  // never in an unattended turn, and not while a batch is open
+  runJobs(home, ['batch', 'open', '--unattended']);
+  assert.equal(runJobs(home, ['ask', 'contacts']).code, 4);
+  assert.equal(runJobs(home, ['contacts', 'count', '3']).code, 4);
+  runJobs(home, ['batch', 'close']);
 });
 
 // ---- 8. report -------------------------------------------------------------
