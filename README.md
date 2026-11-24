@@ -76,7 +76,7 @@ npx skills add BackTrackCo/tenjin-skills@job-search-v0.1.0 \
   --skill job-search --skill writing -a claude-code -g
 ```
 
-Then run `/job-search` in Claude Code. The skill checks for Tenjin and offers to set it up if it is missing. It needs Node 20 or later, which `npx` already needs.
+Then run `/job-search` in Claude Code. The skill checks for Tenjin and offers to set it up if it is missing. The install (the `skills` installer) needs Node 22.20 or later, and the skill itself runs on Node 20 or later.
 
 ### What it does
 
