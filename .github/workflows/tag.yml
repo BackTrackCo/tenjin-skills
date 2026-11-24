@@ -1,0 +1,28 @@
+name: Release check
+
+on:
+  push:
+    tags:
+      - 'job-search-v*'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm test
+      - name: Gates hash matches the manifest
+        run: |
+          want=$(node -p "require('./skills/job-search/manifest.json').gatesHash")
+          got=$(node skills/job-search/scripts/jobs.mjs gates | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).gatesHash")
+          test "$want" = "$got"
+      - name: Tag matches the manifest version
+        run: |
+          v=$(node -p "require('./skills/job-search/manifest.json').version")
+          test "$GITHUB_REF_NAME" = "job-search-v$v"
