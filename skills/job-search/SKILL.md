@@ -25,12 +25,14 @@ J means `node ${CLAUDE_SKILL_DIR}/scripts/jobs.mjs`. Always write it out in full
 
 ## Start and recover
 
-Start, and after any compaction, `/resume` or new session: run `J tenjin`. If `missing` or `outdated`, offer setup (references/setup.md) and do nothing else. Then run `J arm`. If it arms, run the `monitor` command it prints with Monitor (persistent if offered; else re-run `J arm` at each deadline notice). If another session holds the lease, say so and work attended. Then `J work`. The skill recovers from state alone: `J view` shows where things stand.
+Start, and after any compaction, `/resume` or new session: run `J tenjin`. If `missing` or `outdated`, offer setup (references/setup.md) and do nothing else. Then run `J arm`. If it arms, run the `monitor` command it prints with Monitor (persistent if offered; else re-run `J arm` at each deadline message). If another session holds the lease, say so and work attended. Then `J work`. The skill recovers from state alone: `J view` shows where things stand.
 
 ## The round
 
 When Monitor prints a line, or the person asks, run `J work --commit`. Handle each item by `reason`, one subagent per item, summaries only:
 
+- `search_due`: references/search.md. One Agent `model: "haiku"` states each need to Tenjin's `request` tool, writes the ingest file, runs `J ingest <file>`. No Tenjin or no `request` tool yet: `J routed skip <why>`.
+- `post_review`: an X hiring post; find employer, role and a Greenhouse, Lever or Ashby apply link and ingest it as a posting, else `J posts drop <url>`.
 - `new_job`, `review_due`: Agent `model: "haiku"`, follow references/review.md. Result: `J ops` rank and warn, then `J ops` transition to `reviewed`.
 - `reverify_due`: check the posting is still open, update through `J sweep`.
 - `prepare_due`: references/prepare.md. Writing is one Agent call `model: "opus"` with the prompt from `J write-prompt`; the result goes through `J write-result`.
@@ -50,4 +52,4 @@ Only after setup in references/setup.md recorded the rules and `J consent unatte
 - Report: `J report`, shown as printed, then its contacts offer.
 - "List my rules", "remove that rule": `J rules`, `J rules remove <id>`. Writing rules go to the writing skill. Lessons only tighten and expire; the person can remove any (`J lessons remove <id>`).
 - Where data goes: resume, profile, rules and records stay on this computer. Searches send only search terms through Tenjin. Writing gives resume, job text, answers and writing rules to a Claude Opus subagent. Each application sends what the form asks for to the employer. With Remote Control on, the transcript syncs to Anthropic.
-- Router needs on request (job-board search, X hiring posts, contacts): state the need to Tenjin's `request` tool in a Haiku subagent; name no seller. They work from the session after Tenjin setup.
+- Router needs (the daily search, contacts): state the need to Tenjin's `request` tool in a Haiku subagent; name no seller; leave `needs_approval`, funding, limits and seller failures to the router. They work from the session after Tenjin setup.

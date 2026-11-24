@@ -80,7 +80,8 @@ Then run `/job-search` in Claude Code. The skill checks for Tenjin and offers to
 
 ### What it does
 
-- **Daily sweep.** Free, in code, no model tokens: the boards of the companies on your watch list, deduped, checked still open, and filtered by your date window, place and rules. Job-board search, X hiring posts and contacts run only when you ask, through Tenjin.
+- **Watched companies, free.** You paste a company's careers link (Greenhouse, Lever or Ashby). Code reads the board from it and checks that company's jobs every sweep, in code, with no model tokens and no limit on how many companies you watch.
+- **Daily search, through Tenjin.** A Haiku subagent asks Tenjin's router for job postings that match your role, place and the days since the last search, and for hiring posts on X. The skill names no seller; the router picks, prices and applies your spend limits. Code checks the result's shape, removes duplicates, and sends a posting to the apply queue only when its apply link is on Greenhouse, Lever or Ashby and the board still lists it. Every other posting comes back as an "apply yourself" item with its link. Without Tenjin, the watched boards still run and the report says the search did not run. Contacts also run only when you ask.
 - **Review.** A Haiku subagent checks that the work matches the title, adds warnings, and scores fit.
 - **Prepare and write.** Answers come from your profile and saved answers. Free-text answers and messages are written by an Opus subagent from your resume, the job text and your own writing rules. The `writing` skill keeps those rules in one Markdown file you can edit; it starts empty.
 - **Apply.** A Haiku subagent drives your real Chrome through Claude in Chrome, one application at a time, only on Greenhouse, Lever and Ashby, only from the sheet you saw. Attended is the default: nothing is submitted without your yes for that job and that sheet. Unattended is opt-in, with your own rules, a recorded consent and a dry run first.
@@ -91,7 +92,7 @@ Then run `/job-search` in Claude Code. The skill checks for Tenjin and offers to
 
 ### Where your data goes
 
-Your resume, profile, rules, saved answers and application records stay in `~/.tenjin-skills/` on your computer. Searches send only search terms, through Tenjin. To write, the skill gives your resume, the job text, your answers and your writing rules to a Claude Opus subagent, so they go to your Claude model provider, as all Claude Code work does. Each application sends what the form asks for to that employer. With Remote Control on, the session transcript is stored on Anthropic's servers to sync your devices.
+Your resume, profile, rules, saved answers and application records stay in `~/.tenjin-skills/` on your computer. Searches send only search terms (your role and place), through Tenjin. To write, the skill gives your resume, the job text, your answers and your writing rules to a Claude Opus subagent, so they go to your Claude model provider, as all Claude Code work does. Each application sends what the form asks for to that employer. With Remote Control on, the session transcript is stored on Anthropic's servers to sync your devices.
 
 ### DeepSeek subagents
 
@@ -105,7 +106,3 @@ npm run check:dashes
 ```
 
 Tests use recorded board responses in `tests/job-search/fixtures/` and a temporary `HOME`; they never touch real settings, state or Tenjin config. The Greenhouse application-questions fixture is hand-built from the documented response shape.
-
-### Attribution
-
-`skills/job-search/data/employers.tsv` is derived from the employer registry of [career-ops](https://github.com/career-ops-hq/career-ops), licensed CC BY 4.0. See [`skills/job-search/data/NOTICE.md`](skills/job-search/data/NOTICE.md) for the source commit and the changes we made.
