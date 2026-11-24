@@ -326,7 +326,7 @@ test('career-ops: the pipeline write is refused while a batch is open, and the g
 // ---- 12 and 13. the description, the credit, no decline rule ------------------
 test('the description covers the find-jobs uses; credit and the MIT notice are in place', () => {
   const skill = fs.readFileSync(path.join(ROOT, 'skills', 'job-search', 'SKILL.md'), 'utf8');
-  const desc = /^description: (.+)$/m.exec(skill)[1];
+  const desc = /^description: >-\n((?:  .+\n)+)/m.exec(skill)[1].replace(/\n\s*/g, ' ').trim();
   for (const w of ['any job hunt', 'only the new postings', 'hiring manager', 'career-ops pipeline', 'attended', 'unattended', 'Do not use it for a cover letter, resume tailoring, interview prep or a job offer']) assert.ok(desc.includes(w) || skill.includes(w), w);
   assert.ok(desc.length < 1536, 'under the listing limit');
   const notice = fs.readFileSync(path.join(ROOT, 'skills', 'job-search', 'references', 'careerops.md'), 'utf8');

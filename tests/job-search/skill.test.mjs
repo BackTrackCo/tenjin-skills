@@ -13,7 +13,7 @@ test('SKILL.md stays under 2,500 tokens (characters divided by 4)', () => {
 test('SKILL.md has the Claude Code frontmatter and the gates come first', () => {
   const fm = /^---\n([\s\S]*?)\n---\n/.exec(md)[1];
   assert.match(fm, /^name: job-search$/m);
-  assert.match(fm, /^description: .+/m);
+  assert.match(fm, /^description: >-\n  \S/m, 'a folded block, so a colon in the text cannot break the YAML');
   assert.ok(md.indexOf('<!-- gates:start -->') < md.indexOf('## Start and recover'));
   assert.ok(md.indexOf('<!-- gates:end -->') > md.indexOf('<!-- gates:start -->'));
 });

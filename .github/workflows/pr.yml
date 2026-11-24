@@ -21,3 +21,10 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm test
       - run: npm run check:dashes
+      - name: Every SKILL.md parses (npx skills add must not skip it)
+        run: npm run check:skills
+      - name: Gates hash matches the manifest
+        run: |
+          want=$(node -p "require('./skills/job-search/manifest.json').gatesHash")
+          got=$(node skills/job-search/scripts/jobs.mjs gates | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).gatesHash")
+          test "$want" = "$got"
