@@ -109,25 +109,18 @@ export function classifyLinks(links) {
   return { platform, usable, target: t, other, yc: platform.some((l) => isYc(l.url)) };
 }
 
-const pathOf = (u) => {
-  try {
-    return new URL(u).pathname;
-  } catch {
-    return '/';
-  }
-};
-
-// ---- step 3: the employer's own careers page, fetched for free ---------------
-export function parseCareersPage({ status, finalUrl = '', text = '' }) {
-  if (status === 401 || status === 403 || /\/(log-?in|sign-?in|sso|auth)(\/|$|\?)/i.test(pathOf(finalUrl)) || /<input[^>]+type=["']?password/i.test(text)) return { kind: 'sign_in' };
-  const urls = [...new Set(text.match(/https?:\/\/[^\s"'<>\\)]+/g) || [])];
+// ---- step 3: the employer's own careers page ---------------------------------
+// A Haiku step reads the page (code fetches nothing from it) and returns the links it found and whether it is
+// a sign-in page. Code sorts the links.
+export function careersFromLinks({ boardLinks = [], otherLinks = [], signIn = false }) {
+  if (signIn) return { kind: 'sign_in' };
   const boards = [];
-  for (const u of urls) {
+  for (const u of boardLinks) {
     const p = parseBoardUrl(u);
-    if (p && SYSTEMS.includes(p.ats) && p.token && /^[A-Za-z0-9._-]+$/.test(p.token) && !p.token.startsWith('embed') && !boards.some((b) => b.ats === p.ats && b.token === p.token)) boards.push({ ats: p.ats, token: p.token, region: p.region });
+    if (p && SYSTEMS.includes(p.ats) && p.token && /^[A-Za-z0-9._-]+$/.test(p.token) && p.token !== 'embed' && !boards.some((b) => b.ats === p.ats && b.token === p.token)) boards.push({ ats: p.ats, token: p.token, region: p.region });
   }
   if (boards.length) return { kind: 'board', boards };
-  const other = urls.map(otherSystem).find(Boolean);
+  const other = [...boardLinks, ...otherLinks].map(otherSystem).find(Boolean);
   return other ? { kind: 'other_system', ...other } : { kind: 'none' };
 }
 
