@@ -29,7 +29,7 @@ function fake(script) {
   const log = () => (fs.existsSync(lf) ? fs.readFileSync(lf, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : []);
   return { bin, log };
 }
-const client = (f, timeouts) => new router.RouterClient({ bin: f.bin, timeouts: { ...router.TIMEOUTS, ...timeouts } });
+const client = (f, timeouts) => new router.RouterClient({ bin: f.bin, timeouts: { ...router.TIMEOUTS, shutdown: 500, ...timeouts } });
 
 test('the need goes as {query} from text, then {id, input}; a fulfilled envelope becomes an ingest file with the result saved', async () => {
   const f = fake({ answers: [J.spec, J.fulfilled] });
