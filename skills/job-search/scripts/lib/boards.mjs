@@ -43,6 +43,15 @@ export function boardApiUrl({ ats, region = 'us', token }) {
   throw new Error(`unsupported ats: ${ats}`);
 }
 
+// Where does an apply link lead? Only a Greenhouse, Lever or Ashby link with a token and a job id counts.
+export function boardTarget(links, hosts = ['greenhouse', 'lever', 'ashby']) {
+  for (const l of links) {
+    const p = parseBoardUrl(l.url);
+    if (p && hosts.includes(p.ats) && p.token && p.jobId && /^[A-Za-z0-9._-]+$/.test(p.token)) return { ...p, url: hostedUrl(p) };
+  }
+  return null;
+}
+
 // A watched company is a careers URL the person pastes. Code reads the system and the token.
 // Returns {ats, region, token, jobId} or {needsBoard: true} (a page with only ?gh_jid=) or null.
 export function parseCareersUrl(raw) {

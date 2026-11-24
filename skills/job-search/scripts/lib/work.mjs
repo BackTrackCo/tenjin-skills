@@ -8,6 +8,8 @@ import path from 'node:path';
 const HOUR = 3600000;
 const DAY = 24 * HOUR;
 const GATES = {
+  fill_ready: 'Filled and waiting. Do not submit. The person checks the open tab, presses submit and says so; then `J submitted <key>`.',
+  employer_page: 'Passed review, no employer posting yet. Haiku: state the need "the employer\'s own careers page"; write {need:"careers_page", jobKey, careersUrl, status, fullResultPath}; `J ingest <file>`.',
   search_due: 'Run the routed search (references/search.md): Haiku subagent, state the needs to Tenjin, write the ingest file, run ingest.',
   post_review: 'An X hiring post: find the employer, the role and an apply link on Greenhouse, Lever or Ashby, then ingest it as a posting; otherwise `J posts drop <url>`.',
   new_job: 'Review: does the work match the title. Warn, never drop except on a mismatch. Score 0 to 100.',
@@ -63,6 +65,14 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
       inventory.push({ key: j.key, title: j.title, company: j.company, parked: j.parked.reasons });
       continue;
     }
+    if (j.fillReady) {
+      add(j, 'fill_ready');
+      continue;
+    }
+    if (j.status === 'reviewed' && !j.employerPosting && !j.careersChecked && ['no_board', 'unconfirmed_board', 'no_match', 'no_apply_link', 'yc_platform_only'].includes(j.unresolved)) {
+      items.push({ key: j.key, reason: 'employer_page', title: j.title, company: j.company, website: j.employerWebsite || null, gate: GATES.employer_page });
+      continue;
+    }
     if (j.status === 'new') {
       if (!(j.reviewedHash && j.reviewedHash === j.hash)) add(j, j.reviewedHash ? 'review_due' : 'new_job');
     }
@@ -86,8 +96,9 @@ export function waitingSet(state) {
   const w = {};
   for (const j of Object.values(state.jobs)) {
     if (graph().terminal.includes(j.status)) continue;
-    if (j.parked) w[`park:${j.key}`] = `${j.parked.key}|${j.parked.reasons.join(',')}|${j.company}`;
-    else if (j.status === 'apply_ready' && !state.approvals[j.key]) w[`yes:${j.key}`] = `${j.hash}|${j.company}`;
+    if (j.fillReady) w[`fill:${j.key}`] = `${j.fillReady.at}|${j.company}`;
+    else if (j.parked) w[`park:${j.key}`] = `${j.parked.key}|${j.parked.reasons.join(',')}|${j.company}`;
+    else if (j.status === 'apply_ready' && !state.approvals[j.key] && j.employerPosting) w[`yes:${j.key}`] = `${j.hash}|${j.company}`;
   }
   for (const h of state.held) if (PERSON_HELD.includes(h.reason)) w[`held:${h.reason}:${h.detail || ''}`] = h.reason;
   return w;
@@ -106,9 +117,11 @@ export function notifyLine(state, overlay, now = Date.now()) {
     if (inQuiet) return { line: null, next: state.notified }; // keep unnotified, so it pushes after quiet hours
   }
   const yes = fresh.filter((k) => k.startsWith('yes:')).length;
+  const filled = fresh.filter((k) => k.startsWith('fill:')).length;
   const stops = fresh.filter((k) => k.startsWith('park:'));
   const held = fresh.filter((k) => k.startsWith('held:')).map((k) => k.split(':')[1]);
   const parts = [];
+  if (filled) parts.push(`${filled} filled, waiting for your submit (fill ready)`);
   if (yes) parts.push(`${yes} application${yes > 1 ? 's' : ''} wait for your yes`);
   if (stops.length) {
     const j = state.jobs[stops[0].slice(5)];

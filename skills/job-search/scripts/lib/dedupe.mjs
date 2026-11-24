@@ -42,10 +42,16 @@ export function mergeJobs(state, swept, nowIso) {
       continue;
     }
     if (state.dedupe[ctKey]) continue;
-    state.jobs[key] = { ...j, key, hash: contentHash(j), status: 'new', firstSeen: nowIso, lastSeen: nowIso, verifiedAt: nowIso, warnings: j.warnings || [], parked: null };
+    state.jobs[key] = { ...j, key, hash: contentHash(j), employerPosting: j.employerPosting !== undefined ? j.employerPosting : derivePosting(j, nowIso), status: 'new', firstSeen: nowIso, lastSeen: nowIso, verifiedAt: nowIso, warnings: j.warnings || [], parked: null };
     added.push(key);
   }
   return added;
+}
+
+// A job read from a Greenhouse, Lever or Ashby board is the employer's own posting.
+function derivePosting(j, nowIso) {
+  if (!j.sourceId || !j.board || !['greenhouse', 'lever', 'ashby'].includes(j.ats)) return null;
+  return { url: j.url, system: j.ats, token: j.board.split(':')[1], jobId: j.sourceId, source: 'apply_link', confidence: 'exact', checkedAt: nowIso };
 }
 
 export function duplicateWithin(state, job, now, days) {

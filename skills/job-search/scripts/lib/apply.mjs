@@ -1,5 +1,7 @@
 import { graph } from './graph.mjs';
 import { duplicateWithin, sha } from './dedupe.mjs';
+import { isFillOnly } from './fillonly.mjs';
+import { isNeverAutomated } from './platforms.mjs';
 import { activeLessons, canonical, maxPay, rulesHash, ruleValue } from './overlay.mjs';
 
 export const WRITING_SCOPE = 'application_free_text';
@@ -113,7 +115,7 @@ export function applyNext(ctx) {
   }
   const hostLast = new Set(activeLessons(overlay, now).filter((l) => l.effect === 'host_last').map((l) => l.subject));
   const cands = Object.values(state.jobs)
-    .filter((j) => ['prepared', 'apply_ready'].includes(j.status))
+    .filter((j) => ['prepared', 'apply_ready'].includes(j.status) && !j.fillReady)
     .sort((a, b) => Number(hostLast.has(a.ats)) - Number(hostLast.has(b.ats)));
   for (const job of cands) {
     const why = jobFailure({ job, state, profile, overlay, mode, now, writingOk });
@@ -122,13 +124,18 @@ export function applyNext(ctx) {
       continue;
     }
     const skipFields = mode === 'unattended' && !writingOk && state.consent.unattended.optionalWriting === 'skip' ? (job.sheet.fields || []).filter((f) => f.tag === 'new_writing' && !f.required).map((f) => f.label) : [];
-    return out({ handout: { key: job.key, url: job.applyLinks ? job.applyLinks[0] : job.url, sheetHash: job.sheet.hash, mode, dryRun: dry, submit: !dry, skipFields } });
+    const fillOnly = isFillOnly(job, overlay);
+    return out({ handout: { key: job.key, url: job.employerPosting.url, sheetHash: job.sheet.hash, mode, dryRun: dry, fillOnly, submit: !dry && !fillOnly, skipFields } });
   }
   return out({});
 }
 
 export function jobFailure({ job, state, profile, overlay, mode, now, writingOk = false }) {
-  if (!graph().hosts.includes(job.ats)) return 'host_not_allowed';
+  // Only the employer's own posting on Greenhouse, Lever or Ashby, found exactly or confirmed, is ever handed out.
+  const ep = job.employerPosting;
+  if (!ep || !['exact', 'confirmed'].includes(ep.confidence)) return 'no_employer_posting';
+  if (isNeverAutomated(ep.url)) return 'platform_url';
+  if (!graph().hosts.includes(ep.system) || !(graph().applyHostNames[ep.system] || []).includes(new URL(ep.url).hostname)) return 'host_not_allowed';
   if (job.parked) return 'parked';
   if (!job.verifiedAt || now - Date.parse(job.verifiedAt) > graph().unattendedWindow.verifiedHours * HOUR) return 'not_verified_recently';
   if (!job.sheet || !job.sheet.passed) return 'sheet_not_checked';
@@ -136,6 +143,7 @@ export function jobFailure({ job, state, profile, overlay, mode, now, writingOk 
   if (duplicateWithin(state, job, now, graph().unattendedWindow.duplicateDays)) return 'applied_to_company_title_within_90_days';
   if (state.applications.some((a) => a.key === job.key)) return 'already_applied';
   if (mode === 'attended') {
+    if (isFillOnly(job, overlay)) return null; // nothing is submitted, so no yes is needed
     const a = state.approvals[job.key];
     if (!a) return 'no_recorded_yes';
     if (a.sheetHash !== job.sheet.hash) return 'sheet_changed_needs_new_yes';

@@ -4,10 +4,11 @@ import path from 'node:path';
 import { heartbeat } from './lease.mjs';
 import { checkRelease, recordRelease } from './release.mjs';
 import { SKILL_DIR, readJson, stateDir } from './paths.mjs';
-import { loadState } from './store.mjs';
+import { loadState, updateState } from './store.mjs';
 import { loadOverlay } from './overlay.mjs';
 import { persist, runSweep, sweepDue } from './sweep.mjs';
 import { workList } from './work.mjs';
+import { hnDue, persistHn, readHn } from './hn.mjs';
 
 const DAY = 86400000;
 
@@ -31,6 +32,13 @@ export async function tick(ctx) {
   if ((profile.watch || []).length && sweepDue(state, now, { hour: profile.sweepHour, firstTick })) {
     const payload = await runSweep({ state, profile, overlay: loadOverlay(), fetch: fetchImpl, now });
     persist(payload);
+  }
+  if (fetchImpl && hnDue(loadState(), profile, now)) {
+    try {
+      persistHn(await readHn({ fetch: fetchImpl, seen: (loadState().hn || {}).seen || [], profile, sleep: ctx.sleep }), now);
+    } catch (e) {
+      updateState((st) => { st.held = [...st.held.filter((h) => !String(h.detail).startsWith('hn:')), { reason: 'source_empty', detail: `hn: ${e.message}` }]; st.hn = { ...(st.hn || {}), lastAt: new Date(now).toISOString() }; });
+    }
   }
   const s2 = loadState();
   if (profile.updates !== false && fetchImpl && (!s2.update.lastCheckAt || now - Date.parse(s2.update.lastCheckAt) >= DAY)) {

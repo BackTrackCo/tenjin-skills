@@ -163,6 +163,7 @@ export function decide(payload, policy) {
     return allow;
   }
 
+  if ((tool === 'WebFetch' || tool === 'WebSearch') && g.neverHosts.some((b) => flat.toLowerCase().includes(b))) return deny('a platform that bans automated access is never opened or fetched');
   if (unattended) {
     if (tool === 'WebFetch' || tool === 'WebSearch') return deny('web access is denied in an unattended batch');
     if (tool.startsWith('mcp__')) return deny('other MCP tools are denied in an unattended batch');

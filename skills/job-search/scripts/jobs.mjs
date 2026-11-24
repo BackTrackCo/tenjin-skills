@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { graph } from './lib/graph.mjs';
 import { SKILL_DIR, ensureDir, readJson, stateDir, writeJsonAtomic } from './lib/paths.mjs';
-import { applyOps, compact, loadState, updateState, view } from './lib/store.mjs';
+import { applyOp, applyOps, compact, loadState, updateState, view } from './lib/store.mjs';
 import { addLesson, addRule, deriveLessons, loadOverlay, removeRule } from './lib/overlay.mjs';
 import { persist, runSweep } from './lib/sweep.mjs';
 import { park, unpark, workList } from './lib/work.mjs';
@@ -21,6 +21,8 @@ import { buildContactMessageRequest, buildWritingRequest, parseWritingResult, re
 import { renderReport } from './lib/report.mjs';
 import { observations } from './lib/signals.mjs';
 import { ingest } from './lib/ingest.mjs';
+import { hnDue, persistHn, readHn } from './lib/hn.mjs';
+import { isFillOnly, markFillReady, markSubmitted } from './lib/fillonly.mjs';
 
 // A command that changes what a submit may do is refused while a batch is open, whoever calls it.
 const batchOpen = () => guard.isActive();
@@ -427,6 +429,32 @@ const commands = {
       s.posts = (s.posts || []).filter((p) => !urls.includes(p.url));
       return { left: s.posts.length };
     }));
+  },
+
+  // Hacker News through the official API, in code, one request a second. Kept posts become post_review items.
+  async hn() {
+    const profile = readProfile();
+    const r = await readHn({ fetch: globalThis.fetch, seen: (loadState().hn || {}).seen || [], profile });
+    return out(persistHn(r));
+  },
+  // Fill-only: per job, or with a fill_only rule. Fill, read back, never submit, leave the tab open.
+  async fillonly([key, onoff]) {
+    return out(updateState((s) => {
+      if (!s.jobs[key]) throw new Error(`unknown job: ${key}`);
+      s.jobs[key].fillOnly = onoff !== 'off';
+      return { fillOnly: s.jobs[key].fillOnly };
+    }));
+  },
+  async fill([sub, key]) {
+    if (sub !== 'done') return out({ error: 'fill done <key>' }, 2);
+    return out(updateState((s) => markFillReady(s, key)));
+  },
+  // The person says they submitted it.
+  async submitted([key]) {
+    return out(updateState((s) => {
+      markSubmitted(s, key, applyOp);
+      return { submitted: key };
+    }) || { submitted: key });
   },
 
   async gates(_, flags) {
