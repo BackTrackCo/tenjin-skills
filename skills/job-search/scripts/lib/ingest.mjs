@@ -1,7 +1,7 @@
 import { graph } from './graph.mjs';
 import { boardTarget, fetchBoard } from './boards.mjs';
 import { employerName } from './employer.mjs';
-import { normLabel } from './store.mjs';
+import { bump, normLabel } from './store.mjs';
 import { careersFromLinks, classifyLinks, probeBoards, resolveFromCareersPage } from './employer.mjs';
 import { isNeverAutomated, isYc } from './platforms.mjs';
 import { loadSkipUrls } from './careerops.mjs';
@@ -314,6 +314,7 @@ export function persistIngest(plan, now = Date.now()) {
       const j = state.jobs[plan.careers.key];
       const r = plan.careers.result;
       j.careersChecked = true;
+      bump(j); // the careers-page result is news about this job
       if (r.employerPosting) {
         j.employerPosting = r.employerPosting;
         j.unresolved = null;

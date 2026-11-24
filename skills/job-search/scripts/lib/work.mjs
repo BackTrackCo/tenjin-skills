@@ -4,6 +4,9 @@ import { loadOverlay, activeLessons, ruleValue } from './overlay.mjs';
 import { readJson, stateDir } from './paths.mjs';
 import { frequencyOf, periodStart, searchIsDue } from './schedule.mjs';
 import { periodLimit } from './apply.mjs';
+import { employerName } from './employer.mjs';
+import { sha } from './dedupe.mjs';
+import { canonical } from './overlay.mjs';
 import { cleanupStale, isActive, batchMode } from './batch.mjs';
 import path from 'node:path';
 
@@ -74,6 +77,38 @@ export function advanceSearch(state, profile) {
   return { done: false, round: sess.round, variant: variantFor(profile, sess.round) };
 }
 
+// "Leave it": the model decided to leave a job as it is, with a reason from a closed list. The record is
+// `left: {reason, at, inputs}`, where `inputs` is a hash of what the choice rested on. A left item is inventory, not due
+// work, until that hash changes: new data (another source merged, a new apply link), a board that could match it
+// joins the watch list, its content or open state changes, the person answers, or a rule that affects it changes. Never on a timer.
+export const LEAVE_REASONS = ['low_score', 'no_match', 'no_careers_page', 'sign_in', 'other_system', 'not_a_job', 'duplicate'];
+const RULE_EFFECTS = ['exclude_company', 'exclude_term', 'require_term', 'min_pay', 'place', 'remote', 'employment_type'];
+export const rulesVersion = (overlay) => (overlay.rules || []).filter((r) => RULE_EFFECTS.includes(r.effect)).map((r) => `${r.effect}=${r.value}`).sort().join('|');
+export function inputsHash(state, job, overlay, profile = {}) {
+  const co = employerName(job.company);
+  const boards = (state.found || []).filter((b) => employerName(b.name) === co).map((b) => b.board).sort();
+  const ep = job.employerPosting;
+  return sha(canonical({ hash: job.hash, closed: job.status === 'closed', alsoAt: job.alsoAt || [], links: job.applyLinks || [], ep: ep ? [ep.url, ep.confidence] : null, boards, answers: state.answerV || 0, rules: rulesVersion(overlay), floor: (profile.unattended || {}).minScore ?? null, search: [(profile.search || {}).place || '', (profile.search || {}).remote === true] })).slice(0, 16);
+}
+export function leaveRecord(state, job, overlay, reason, profile = {}) {
+  if (!LEAVE_REASONS.includes(reason)) throw new Error(`the reason is one of ${LEAVE_REASONS.join(', ')}`);
+  return { reason, at: new Date().toISOString(), inputs: inputsHash(state, job, overlay, profile) };
+}
+export const stillLeft = (state, job, overlay, profile = {}) => Boolean(job.left && job.left.inputs === inputsHash(state, job, overlay, profile));
+// Every write to an item raises its state version: the version is a hash of the job's own record, apart from the clocks
+// that a re-verify touches without any news.
+export function itemVersion(job) {
+  const { lastSeen, verifiedAt, firstSeen, statusAt, ...rest } = job;
+  return sha(canonical(rest)).slice(0, 10);
+}
+// What waits for the person never wakes the model: a sheet that needs their yes (unless they gave it, or the mode is auto),
+// a filled form waiting for their submit, a follow-up that asks them. Each keeps its one notification.
+export function waitsForPerson(state, profile, item) {
+  if (item.reason === 'fill_ready' || item.reason === 'follow_up_due') return true;
+  if (item.reason === 'apply_ready') return !(String(profile.applyMode || '').startsWith('auto') || state.approvals[item.key]);
+  return false;
+}
+
 // Where Tenjin would do better, and what it adds there. Code decides when; the model never does.
 export const HINT_LINES = {
   daily_search: 'With Tenjin I can also run the router\'s job-posting search and a live X search, on top of the free searches.',
@@ -97,6 +132,7 @@ export function tenjinAsk(state, { unattended = false } = {}) {
 
 export function buildWorkList(state, overlay, now = Date.now(), profile = {}, opts = {}) {
   const items = [];
+  const inventory = [];
   if (searchDue(state, profile, now, opts)) {
     const round = searchRound(state, profile, now);
     const last = state.routed.lastSearchAt;
@@ -110,10 +146,13 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
     const batch = fresh.slice(i, i + POST_BATCH);
     items.push({ key: `posts:${batch[0].url}`, reason: 'post_review', title: `${batch.length} hiring posts`, company: '', posts: batch.map((p) => ({ url: p.url, author: p.author, text: p.text })), gate: GATES.post_review });
   }
-  const inventory = [];
   const add = (j, reason) => items.push({ key: j.key, reason, title: j.title, company: j.company, gate: GATES[reason] });
   for (const j of Object.values(state.jobs)) {
     if (graph().terminal.includes(j.status)) continue;
+    if (stillLeft(state, j, overlay, profile)) {
+      inventory.push({ key: j.key, title: j.title, company: j.company, left: j.left.reason });
+      continue;
+    }
     if (j.parked) {
       inventory.push({ key: j.key, title: j.title, company: j.company, parked: j.parked.reasons });
       continue;
@@ -135,6 +174,11 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
     if (['reviewed', 'shortlisted', 'prepared', 'apply_ready'].includes(j.status) && now - Date.parse(j.verifiedAt) > graph().unattendedWindow.verifiedHours * HOUR) add(j, 'reverify_due');
   }
   for (const key of state.contactsRequested || []) if (state.jobs[key] && !(state.contacts[key] || []).length) add(state.jobs[key], 'contacts_requested');
+  for (const i of items) {
+    const job = state.jobs[i.key];
+    i.v = job ? itemVersion(job) : i.reason === 'search_due' ? `${(state.search.session || {}).round ?? 'new'}:${state.routed.lastSearchAt}` : String(i.posts ? i.posts.length : 0);
+    i.waitsForPerson = waitsForPerson(state, profile, i);
+  }
   for (const i of items) {
     if (i.reason === 'employer_page') i.hint = tenjinHint(state, 'employer_posting');
     if (i.reason === 'contacts_requested') i.hint = tenjinHint(state, 'contacts');
@@ -225,6 +269,7 @@ export function workList({ now = Date.now(), commit = false, unattended = false 
     wl.notify = n.line;
     if (commit) {
       state.notified = n.next;
+      for (const j of Object.values(state.jobs)) if (j.left && !stillLeft(state, j, overlay, readJson(path.join(stateDir(), 'profile.json'), {}))) j.left = null; // news came: due again
       for (const k of wl.bring) state.jobs[k].broughtAt = new Date(now).toISOString(); // brought for the person's yes
     }
     return wl;

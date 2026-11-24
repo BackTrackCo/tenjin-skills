@@ -1,4 +1,4 @@
-import { notifyLine, tenjinHint } from './work.mjs';
+import { notifyLine, stillLeft, tenjinHint } from './work.mjs';
 
 export const REASONS = {
   no_apply_link: 'no apply link in the posting',
@@ -40,6 +40,11 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
   if (dropped.length) {
     L.push('', `## Dropped in review (${dropped.length})`);
     for (const j of dropped) L.push(`- ${j.title}, ${j.company}: ${j.skipReason}`);
+  }
+  const leftAlone = jobs.filter((j) => j.left && stillLeft(state, j, overlay, profile || {}) && !['skipped', 'closed'].includes(j.status));
+  if (leftAlone.length) {
+    L.push('', `## Left alone (${leftAlone.length}): not due work until there is news about the job, an answer from you, or a rule that affects it`);
+    for (const j of leftAlone.slice(-40)) L.push(`- ${j.title}, ${j.company}: ${j.left.reason}`);
   }
   const found = jobs.filter((j) => j.employerPosting && j.employerPosting.source !== 'apply_link');
   L.push('', `## Found on the employer's site (${found.length})`);

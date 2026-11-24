@@ -59,12 +59,21 @@ export async function tick(ctx) {
     if (result.line) lines.push(result.line);
   }
   const wl = workList({ now, commit: false });
-  const sig = JSON.stringify([wl.items.map((i) => `${i.key}:${i.reason}`), wl.notify]);
-  if ((wl.items.length || wl.notify) && sig !== seen.sig) {
-    seen.sig = sig;
+  // Wake the model only for due work it can act on now. What waits for the person never wakes it (its one notification
+  // is the notify line). The fingerprint of what was last sent is kept in state, so a restart or a re-arm repeats nothing,
+  // and nothing repeats on a timer: it wakes when the due set gains an item or an item's version changes.
+  const actionable = wl.items.filter((i) => !i.waitsForPerson);
+  const tokens = actionable.map((i) => `${i.key}:${i.reason}:${i.v}`).sort();
+  const st = loadState().watcher || { sent: [], fingerprint: null, notify: null };
+  const fresh = tokens.filter((t) => !st.sent.includes(t));
+  const newNotify = wl.notify && wl.notify !== st.notify;
+  if (fresh.length || newNotify) {
     const counts = {};
-    for (const i of wl.items) counts[i.reason] = (counts[i.reason] || 0) + 1;
-    lines.push(`job-search: ${Object.entries(counts).map(([k, n]) => `${n} ${k}`).join(', ') || 'waiting on you'}${wl.notify ? `; notify: ${wl.notify}` : ''}. Run: jobs.mjs work`);
-  } else if (!wl.items.length && !wl.notify) seen.sig = null;
+    for (const i of actionable.filter((x) => fresh.includes(`${x.key}:${x.reason}:${x.v}`))) counts[i.reason] = (counts[i.reason] || 0) + 1;
+    lines.push(`job-search: ${Object.entries(counts).map(([k, n]) => `${n} ${k}`).join(', ') || 'waiting on you'}${newNotify ? `; notify: ${wl.notify}` : ''}. Run: jobs.mjs work`);
+  }
+  updateState((state) => {
+    state.watcher = { sent: tokens, fingerprint: tokens.join('|'), notify: wl.notify || null };
+  });
   return { lines, stop: false };
 }

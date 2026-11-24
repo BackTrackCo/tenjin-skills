@@ -5,7 +5,7 @@ import { effectiveProfile } from './overlay.mjs';
 import { screenJob, titleMatchesRole } from './verify.mjs';
 import { frequencyOf, searchIsDue } from './schedule.mjs';
 import { loadSkipUrls } from './careerops.mjs';
-import { updateState } from './store.mjs';
+import { bump, updateState } from './store.mjs';
 
 const HOUR = 3600000;
 
@@ -102,6 +102,7 @@ export function persist(payload) {
       if (!j) continue;
       if (graph().transitions[j.status] && graph().transitions[j.status].includes('closed')) {
         j.status = 'closed';
+        bump(j);
         j.statusAt = payload.at;
         closed.push(k);
       } else j.warnings = [...new Set([...(j.warnings || []), 'closed on its board'])];

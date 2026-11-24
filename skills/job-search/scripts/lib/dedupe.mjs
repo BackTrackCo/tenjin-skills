@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { companyTitleKey, normLabel } from './store.mjs';
+import { bump, companyTitleKey, normLabel } from './store.mjs';
 
 const TRACKING = /^(utm_.*|gh_src|gh_jid|lever-source|lever-origin|ref|source|src|gclid|fbclid|mc_.*)$/i;
 
@@ -30,7 +30,9 @@ export function mergeJobs(state, swept, nowIso) {
     const existing = state.jobs[key];
     if (existing) {
       const h = contentHash(j);
+      const changed = h !== existing.hash;
       Object.assign(existing, { ...j, key, hash: h, lastSeen: nowIso, status: existing.status, firstSeen: existing.firstSeen, parked: existing.parked, fit: existing.fit, fitLine: existing.fitLine, warnings: existing.warnings, reviewedHash: existing.reviewedHash, drafts: existing.drafts, verifiedAt: nowIso, statusAt: existing.statusAt });
+      if (changed) bump(existing); // new data for this job: a changed posting
       continue;
     }
     if (state.dedupe[key]) continue;
@@ -42,7 +44,7 @@ export function mergeJobs(state, swept, nowIso) {
       continue;
     }
     if (state.dedupe[ctKey]) continue;
-    state.jobs[key] = { ...j, key, hash: contentHash(j), employerPosting: j.employerPosting !== undefined ? j.employerPosting : derivePosting(j, nowIso), openConfirmed: j.openConfirmed !== undefined ? j.openConfirmed : Boolean(j.sourceId && j.board && ['greenhouse', 'lever', 'ashby'].includes(j.ats)), status: 'new', firstSeen: nowIso, lastSeen: nowIso, verifiedAt: nowIso, warnings: j.warnings || [], parked: null };
+    state.jobs[key] = { ...j, v: 1, key, hash: contentHash(j), employerPosting: j.employerPosting !== undefined ? j.employerPosting : derivePosting(j, nowIso), openConfirmed: j.openConfirmed !== undefined ? j.openConfirmed : Boolean(j.sourceId && j.board && ['greenhouse', 'lever', 'ashby'].includes(j.ats)), status: 'new', firstSeen: nowIso, lastSeen: nowIso, verifiedAt: nowIso, warnings: j.warnings || [], parked: null };
     added.push(key);
   }
   return added;

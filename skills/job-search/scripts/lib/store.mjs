@@ -5,6 +5,9 @@ import { isYc } from './platforms.mjs';
 import { ensureDir, readJson, stateDir, writeJsonAtomic } from './paths.mjs';
 
 export const SCHEMA_VERSION = 1;
+// A job's version changes only on real news about it: new data, a re-verify result, a status change. The watcher and the
+// "leave it" record compare versions, never clocks.
+export const bump = (job) => { job.v = (job.v || 0) + 1; };
 const CHANNELS = ['x', 'linkedin', 'email', 'other'];
 
 export function emptyState() {
@@ -27,6 +30,8 @@ export function emptyState() {
     rounds: [],
     queryYield: {},
     stops: [],
+    answerV: 0,
+    watcher: { sent: [], fingerprint: null, notify: null },
     found: [],
     leads: [],
     postOutcomes: {},
@@ -146,6 +151,7 @@ export function applyOp(state, op) {
       const allowed = g.transitions[job.status] || [];
       if (!g.statuses.includes(op.to) || !allowed.includes(op.to)) throw new Error(`illegal transition ${job.status} -> ${op.to}`);
       job.status = op.to;
+      bump(job);
       job.statusAt = op.at || new Date().toISOString();
       if (op.to === 'reviewed') addFoundBoard(state, job, job.statusAt);
       if (op.to === 'skipped') job.skipReason = String(op.reason || 'no reason given').slice(0, 160);

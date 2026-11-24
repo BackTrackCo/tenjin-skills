@@ -8,7 +8,7 @@ import { SKILL_DIR, ensureDir, readJson, stateDir, writeJsonAtomic } from './lib
 import { applyOp, applyOps, compact, loadState, updateState, view } from './lib/store.mjs';
 import { addLesson, addRule, deriveLessons, loadOverlay, removeRule } from './lib/overlay.mjs';
 import { persist, runSweep } from './lib/sweep.mjs';
-import { advanceSearch, park, unpark, workList } from './lib/work.mjs';
+import { LEAVE_REASONS, advanceSearch, leaveRecord, park, unpark, workList } from './lib/work.mjs';
 import { claimLease } from './lib/lease.mjs';
 import { readProfile, tick, watcherCodeHash } from './lib/watcher.mjs';
 import { applyUpdate, checkRelease, gatesHash, recordRelease } from './lib/release.mjs';
@@ -612,6 +612,26 @@ const commands = {
     return out({ rounds: log });
   },
 
+  // "Leave it": the item stays in the report but is not due work until there is news about the job, an answer from the
+  // person, or a rule that affects it. Every handled item ends with its J outcome command, or the watcher shows it again.
+  async leave(keys, flags) {
+    if (!keys.length || !LEAVE_REASONS.includes(flags.reason)) return out({ error: `leave <key...> --reason <${LEAVE_REASONS.join('|')}>` }, 2);
+    const overlay = loadOverlay();
+    const profile = readProfile();
+    return out(updateState((s) => {
+      for (const k of keys) if (!s.jobs[k]) throw new Error(`unknown job: ${k}`);
+      for (const k of keys) s.jobs[k].left = leaveRecord(s, s.jobs[k], overlay, flags.reason, profile);
+      return { left: keys.length, reason: flags.reason };
+    }));
+  },
+  // The person said "try again" about a job: it is due work again.
+  async retry(keys) {
+    return out(updateState((s) => {
+      for (const k of keys) if (s.jobs[k]) s.jobs[k].left = null;
+      return { retried: keys.length };
+    }));
+  },
+
   async gates(_, flags) {
     const h = gatesHash();
     if (flags.write) {
@@ -641,6 +661,8 @@ async function main() {
   if (batch.isBatchDenied(cmd, pos[0]) && batch.isActive()) return out({ error: `${cmd} ${pos[0] || ''} is refused while a batch is open; close it in an attended session first`.replace('  ', ' ') }, 4);
   try {
     await commands[cmd](pos, flags);
+    // The person's answer is news: items left alone come back for it.
+    if (!process.exitCode && ['fact set', 'profile set', 'answer add', 'writing approve'].includes(`${cmd} ${pos[0]}`)) updateState((st) => { st.answerV = (st.answerV || 0) + 1; });
   } catch (e) {
     out({ error: e.message }, 2);
   }
