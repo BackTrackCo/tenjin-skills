@@ -1,0 +1,45 @@
+{
+  "name": "job-search",
+  "schemaVersion": 1,
+  "hosts": ["greenhouse", "lever", "ashby"],
+  "applyHostNames": {
+    "greenhouse": ["boards.greenhouse.io", "job-boards.greenhouse.io", "job-boards.eu.greenhouse.io"],
+    "lever": ["jobs.lever.co", "jobs.eu.lever.co"],
+    "ashby": ["jobs.ashbyhq.com"]
+  },
+  "neverHosts": ["linkedin.com", "indeed.com"],
+  "statuses": ["new", "reviewed", "shortlisted", "prepared", "apply_ready", "submitted", "confirmed", "interview", "offer", "rejected", "withdrawn", "skipped", "closed", "stopped"],
+  "transitions": {
+    "new": ["reviewed", "skipped", "closed", "stopped"],
+    "reviewed": ["shortlisted", "skipped", "closed", "stopped"],
+    "shortlisted": ["prepared", "skipped", "closed", "stopped"],
+    "prepared": ["apply_ready", "stopped", "closed", "skipped"],
+    "apply_ready": ["submitted", "prepared", "stopped", "closed"],
+    "submitted": ["confirmed", "interview", "rejected", "withdrawn", "closed"],
+    "confirmed": ["interview", "rejected", "withdrawn", "offer"],
+    "interview": ["rejected", "offer", "withdrawn"],
+    "stopped": ["prepared", "closed", "skipped"],
+    "skipped": [],
+    "closed": [],
+    "rejected": [],
+    "withdrawn": [],
+    "offer": []
+  },
+  "terminal": ["skipped", "closed", "rejected", "withdrawn", "offer"],
+  "ops": ["rank", "warn", "transition", "contact", "draft", "approve", "answer", "signal"],
+  "workReasons": ["new_job", "review_due", "reverify_due", "contacts_requested", "prepare_due", "apply_ready", "follow_up_due"],
+  "heldReasons": ["source_empty", "tenjin_missing", "chrome_disconnected", "stopped", "update_waiting", "update_failed", "guard_missing", "deepseek_on"],
+  "ruleEffects": ["exclude_company", "exclude_term", "require_term", "min_pay", "place", "remote", "employment_type", "daily_max", "contact_count", "notify_quiet_hours", "notify_off", "note"],
+  "lessonEffects": ["host_last", "host_attended", "drop_query", "company_attended", "fewer_queries"],
+  "lessonTriggers": {
+    "captcha_stops_on_host": { "count": 2, "windowDays": 7, "effect": "host_attended" },
+    "query_no_new_jobs": { "sweeps": 5, "effect": "drop_query" },
+    "form_broke_fill": { "effect": "company_attended" },
+    "step_over_time": { "effect": "fewer_queries" }
+  },
+  "lessonDays": [14, 30, 60],
+  "sweep": { "catchUpAfterHours": 20, "maxCatchUpDays": 14, "maxBoards": 50, "defaultHour": 7 },
+  "unattendedWindow": { "verifiedHours": 24, "duplicateDays": 90 },
+  "followUpDays": 14,
+  "staleListingDays": 60
+}
