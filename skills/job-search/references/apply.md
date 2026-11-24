@@ -1,6 +1,6 @@
 # Apply
 
-Only Greenhouse, Lever, Ashby. One application at a time.
+Only the employer's own posting on Greenhouse, Lever or Ashby (`exact` or `confirmed`), never a job platform or a Y Combinator site: LinkedIn, Indeed, Glassdoor, ZipRecruiter and similar ban automated use, and the YC Terms of Use ban automated access to news.ycombinator.com and workatastartup.com. One application at a time.
 
 ## Open the batch
 1. `J batch open` (add `--unattended` for an unattended batch). Run the probe command it prints, then `J guard selftest`. If it fails, stop: apply waits, notify with the reason `guard_missing`.
@@ -24,3 +24,7 @@ A bot check or unknown field: `J stop <key> --kind ...`. Chrome gone: `J stop <k
 New writing needs the writing consent, which is separate from the unattended one. Without it, `apply next` queues the job as `writing_needs_yes` (one notification, no submit): show the draft, and on the person's yes `J writing approve <key>` (add `--edits file.json` for edited text); the fields become earlier answers and the job returns to the queue. Optional writing fields follow the recorded choice: `skip` leaves them empty (`handout.skipFields`), `wait` holds the job. A changed writing rule makes the writing consent stale.
 
 First batch is a dry run (`handout.dryRun`): fill and read back, submit nothing, `J dryrun record <key> '<json>'`. The person reviews, then `J dryrun confirm`. After that, `J apply next --unattended` submits only jobs that pass the rules. After each run give one report.
+
+## Fill-only
+
+For a job with `J fillonly <key> on`, or under a `fill_only` rule (every job, or a named company), `apply next` hands out `submit: false` and `fillOnly: true`. Fill, read back, never submit, leave the tab open, then `J fill done <key>`: one notification, `fill_ready`. The person checks the tab, presses submit and says so; then `J submitted <key>`. No yes is needed for a fill, because nothing is submitted.
