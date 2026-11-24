@@ -22,6 +22,14 @@ import { renderReport } from './lib/report.mjs';
 import { observations } from './lib/signals.mjs';
 import { ingest } from './lib/ingest.mjs';
 
+// A command that changes what a submit may do is refused while a batch is open, whoever calls it.
+const batchOpen = () => guard.isActive();
+const refuseInBatch = (what) => {
+  if (!batchOpen()) return false;
+  out({ error: `${what} is refused while a batch is open; close it in an attended session first` }, 4);
+  return true;
+};
+
 const out = (o, code = 0) => {
   process.stdout.write(JSON.stringify(o, null, 2) + '\n');
   process.exitCode = code;
@@ -64,6 +72,7 @@ const commands = {
   },
 
   async setup([sub, ...rest], flags) {
+    if ((sub === 'resume' || sub === 'deepseek') && refuseInBatch(`setup ${sub}`)) return;
     if (sub === 'check') {
       const t = checkTenjin();
       const bin = t.bin || findTenjin();
@@ -97,6 +106,7 @@ const commands = {
   },
 
   async profile([sub, arg]) {
+    if (sub === 'set' && refuseInBatch('profile set')) return;
     if (sub === 'get') return out(readProfile());
     if (sub === 'set') {
       ensureDir(stateDir());
@@ -109,7 +119,7 @@ const commands = {
 
   async guard([sub, ...rest]) {
     if (sub === 'install') return out(guard.installGuard());
-    if (sub === 'uninstall') return out(guard.uninstallGuard());
+    if (sub === 'uninstall') return refuseInBatch('guard uninstall') || out(guard.uninstallGuard());
     if (sub === 'selftest') return out(guard.selftest());
     if (sub === 'probe') return out({ probe: rest[0] });
     if (sub === 'hook') {
@@ -121,6 +131,7 @@ const commands = {
   },
 
   async batch([sub], flags) {
+    if (sub === 'open' && refuseInBatch('batch open')) return;
     if (sub === 'open') {
       const profile = readProfile();
       const p = guard.openBatch({ mode: flags.unattended ? 'unattended' : 'attended', uploadPath: flags.upload || profile.resumePath });
@@ -154,11 +165,13 @@ const commands = {
   },
 
   async rules([sub, ...rest], flags) {
+    if ((sub === 'add' || sub === 'remove') && refuseInBatch('rules change')) return;
     if (sub === 'add') return out(addRule({ effect: flags.effect, value: flags.value === undefined ? null : coerce(flags.value), words: flags.words }));
     if (sub === 'remove') return out({ removed: removeRule(rest[0]) });
     return out(loadOverlay().rules);
   },
   async lessons([sub, ...rest], flags) {
+    if ((sub === 'add' || sub === 'remove') && refuseInBatch('lessons change')) return;
     if (sub === 'derive') return out(deriveLessons(loadState()));
     if (sub === 'remove') return out({ removed: removeRule(rest[0]) });
     if (sub === 'add') return out(addLesson({ effect: flags.effect, subject: flags.subject, evidence: String(flags.evidence || '').split(',').filter(Boolean) }));
@@ -264,6 +277,7 @@ const commands = {
   },
   // The person read the draft: approve it as it is or edited. Each new-writing field becomes an earlier answer.
   async writing([sub, key], flags) {
+    if (sub === 'approve' && refuseInBatch('writing approve')) return;
     if (sub !== 'approve') return out({ error: 'writing approve <key> [--edits file.json]' }, 2);
     const profile = readProfile();
     const job = loadState().jobs[key];
@@ -278,12 +292,14 @@ const commands = {
     }));
   },
   async answer([sub], flags) {
+    if (sub === 'add' && refuseInBatch('answer add')) return;
     if (sub !== 'add') return out({ error: 'answer add --label L --value V [--key jobkey]' }, 2);
     const job = flags.key ? loadState().jobs[flags.key] : null;
     const q = ((job && job.questions) || []).find((x) => x.label === flags.label) || {};
     return out(addAnswer({ question: flags.label, answer: flags.value, how: 'typed', source: flags.key || null, type: q.type || 'input_text', options: q.options && q.options.length ? q.options : null }));
   },
   async dryrun([sub, key, json]) {
+    if (sub === 'confirm' && refuseInBatch('dryrun confirm')) return;
     return out(updateState((s) => {
       if (sub === 'record') return recordDryRun(s, { key, ...readJsonArg(json) });
       if (sub === 'confirm') return confirmDryRun(s, readProfile(), loadOverlay());
@@ -353,6 +369,7 @@ const commands = {
   },
 
   async release([sub], flags) {
+    if (sub === 'apply' && refuseInBatch('release apply')) return;
     const state = loadState();
     if (sub === 'check') {
       const r = await checkRelease({ fetchImpl: globalThis.fetch, runner: asyncRun });

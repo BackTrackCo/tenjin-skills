@@ -65,6 +65,20 @@ function touchesProtected(str, policy) {
   if (/(^|[\s/=])~?\/?\.tenjin-skills|\.tenjin-skills\//.test(s)) return true;
   return (policy.protected || []).some((p) => s.includes(p)) || /\.claude\/settings(\.local)?\.json/.test(s);
 }
+// What changes the limits of a submit is never changed from inside a batch, by any caller.
+export const BATCH_DENIED = [
+  [/\brules\s+(add|remove)\b/, 'rules come only from the person, not from a batch'],
+  [/\blessons\s+(add|remove)\b/, 'lessons are not changed from a batch'],
+  [/\bconsent\s+record\b/, 'consent is recorded in an attended session only'],
+  [/\bwriting\s+approve\b/, 'only the person approves new writing, outside a batch'],
+  [/\banswer\s+add\b/, 'earlier answers are added by the person, outside a batch'],
+  [/\bprofile\s+set\b/, 'the profile and the unattended settings are not changed from a batch'],
+  [/\bsetup\s+(resume|deepseek)\b/, 'setup is not run from a batch'],
+  [/\bdryrun\s+confirm\b/, 'the person confirms the dry run outside a batch'],
+  [/\bbatch\s+open\b/, 'a batch cannot open another batch'],
+  [/\bguard\s+uninstall\b/, 'the guard is not removed from inside a batch'],
+  [/\brelease\s+apply\b/, 'updates are not installed from a batch'],
+];
 const deny = (reason) => ({ decision: 'deny', reason: `job-search guard: ${reason}` });
 const allow = { decision: 'allow' };
 
@@ -98,8 +112,9 @@ export function decide(payload, policy) {
     const cmd = strip(input.command || '');
     const prefix = strip(policy.commandPrefix);
     if (/jobs\.mjs\s+guard\s+probe\s+[0-9a-f]+/.test(cmd) && cmd.startsWith(prefix)) return { decision: 'allow', probe: /guard\s+probe\s+([0-9a-f]+)/.exec(cmd)[1] };
-    if (/\brules\s+add\b/.test(cmd)) return deny('rules come only from the person, not from a batch');
-    if (/\bconsent\s+record\b/.test(cmd)) return deny('consent is recorded in an attended session only');
+    const blocked = BATCH_DENIED.find(([re]) => re.test(cmd));
+    if (blocked) return deny(blocked[1]);
+    if (unattended && /\bbatch\s+close\b/.test(cmd)) return deny('only the person closes an unattended batch');
     if (cmd.startsWith(prefix)) {
       if (touchesProtected(cmd.slice(prefix.length), policy)) return deny('writes to the skill, state, guard and settings folders are denied');
       if (unattended && /[;&|`\n]|\$\(/.test(cmd.slice(prefix.length))) return deny('no chained shell in an unattended batch');
