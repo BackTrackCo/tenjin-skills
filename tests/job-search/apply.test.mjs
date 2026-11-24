@@ -12,7 +12,7 @@ const DS_OFF = { enabled: false };
 const empty = () => ({ rules: [], lessons: [] });
 const U = { roles: ['engineer'], places: ['Berlin'], remote: false, minPay: 100000, excludeCompanies: ['Evilcorp'], excludeLevels: ['intern', 'junior'], minScore: 70, hosts: ['greenhouse', 'lever'] };
 const profile = () => ({ eeo: 'decline_all', unattended: { ...U } });
-const ready = (over = {}) => mkJob({ status: 'apply_ready', fit: 80, sheet: { hash: 'sh1', passed: true, eeoMissing: false }, verifiedAt: new Date(NOW - 3600000).toISOString(), ...over });
+const ready = (over = {}) => mkJob({ status: 'apply_ready', fit: 80, sheet: { hash: 'sh1', passed: true, eeoMissing: false, fields: [] }, verifiedAt: new Date(NOW - 3600000).toISOString(), ...over });
 const stateWith = (...jobs) => { const s = store.emptyState(); for (const j of jobs) s.jobs[j.key] = j; return s; };
 const run = (state, o = {}) => ap.applyNext({ state, profile: profile(), overlay: empty(), mode: 'attended', now: NOW, guard: GUARD, deepseek: DS_OFF, ...o });
 
@@ -92,7 +92,7 @@ test('the person\'s own daily_max, and no daily_max meaning no limit', () => {
 const consented = (extra = {}) => {
   const p = profile();
   const s = stateWith();
-  ap.recordConsent(s, p, empty(), NOW);
+  ap.recordConsent(s, p, empty(), NOW, 'skip');
   s.consent.dryRun = { records: [{ key: 'd' }], confirmedAt: new Date(NOW).toISOString(), rulesHash: ov.rulesHash(p, empty()) };
   Object.assign(s, extra);
   return s;

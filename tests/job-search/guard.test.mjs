@@ -86,7 +86,7 @@ test('rules add and writes under the state, skill, guard and settings folders ar
   assert.equal(dec({ tool_name: 'Write', tool_input: { file_path: path.join(paths.rootDir(), 'writing', 'rules.md') } }, p), 'deny');
   assert.equal(dec({ tool_name: 'Edit', tool_input: { file_path: settingsFile() } }, p), 'deny');
   assert.equal(dec({ tool_name: 'Write', tool_input: { file_path: path.join(home, 'notes.txt') } }, p), 'allow');
-  assert.equal(dec({ tool_name: 'Bash', tool_input: { command: `${jobs} consent unattended` } }, p), 'deny');
+  assert.equal(dec({ tool_name: 'Bash', tool_input: { command: `${jobs} consent record writing` } }, p), 'deny');
 });
 
 test('unattended: web, other MCP tools and shell outside the prefix are denied', () => {

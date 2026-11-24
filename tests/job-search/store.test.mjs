@@ -21,8 +21,9 @@ test('writes are atomic: no temp files linger, file is valid JSON, mode 0600', (
 });
 
 test('unknown ops are refused and land nothing', () => {
-  assert.throws(() => store.applyOps([{ op: 'answer', label: 'a', value: '1' }, { op: 'delete_everything' }]), /unknown op/);
-  assert.equal(store.loadState().answers.a, undefined);
+  assert.throws(() => store.applyOps([{ op: 'signal', kind: 'x' }, { op: 'delete_everything' }]), /unknown op/);
+  assert.equal(store.loadState().signals.counts.x, undefined);
+  assert.throws(() => store.applyOps([{ op: 'answer', label: 'a', value: '1' }]), /unknown op/, 'answers live in answers.json, not in ops');
 });
 
 test('every illegal transition is refused, every legal one lands', () => {
@@ -74,14 +75,14 @@ test('a newer schema is refused by older code', () => {
 });
 
 test('two processes writing 100 ops each land all 200', async () => {
-  store.updateState((s) => { s.answers = {}; });
+  store.updateState((s) => { s.signals.counts = {}; });
   const writer = path.join(path.dirname(fileURLToPath(import.meta.url)), 'helpers', 'writer.mjs');
   const run = (tag) => new Promise((res, rej) => {
     const p = spawn(process.execPath, [writer, tag, '100'], { env: { ...process.env, HOME: home, TENJIN_SKILLS_DIR: process.env.TENJIN_SKILLS_DIR }, stdio: 'inherit' });
     p.on('exit', (c) => (c === 0 ? res() : rej(new Error(`writer exit ${c}`))));
   });
   await Promise.all([run('a'), run('b')]);
-  assert.equal(Object.keys(store.loadState().answers).length, 200);
+  assert.equal(Object.keys(store.loadState().signals.counts).length, 200);
 });
 
 test('a stale lock whose pid is gone is reclaimed', () => {

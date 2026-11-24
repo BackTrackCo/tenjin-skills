@@ -69,9 +69,9 @@ test('apply next refuses without a passing guard self-test', () => {
 });
 
 test('consent is refused until the unattended rules and the EEO choice are set', () => {
-  assert.equal(runJobs(home, ['consent', 'unattended']).code, 2);
+  assert.equal(runJobs(home, ['consent', 'record', 'unattended', '--optional-writing', 'skip']).code, 2);
   runJobs(home, ['profile', 'set', JSON.stringify({ eeo: 'decline_all', unattended: { roles: ['engineer'], places: ['Berlin'], minScore: 70, hosts: ['greenhouse'] } })]);
-  const r = runJobs(home, ['consent', 'unattended']);
+  const r = runJobs(home, ['consent', 'record', 'unattended', '--optional-writing', 'skip']);
   assert.equal(r.code, 0);
   assert.match(r.json.rulesHash, /^[0-9a-f]{64}$/);
 });
