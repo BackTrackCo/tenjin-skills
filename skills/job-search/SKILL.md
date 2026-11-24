@@ -39,10 +39,10 @@ When Monitor prints a line, or the person asks, run `J work --commit` (add `--un
 - `post_review`: a batch of up to 25 hiring posts, one Haiku subagent, one ingest file: `batch[]` (every post link), `outcomes[]` (one per post: `job`, `lead`, `not_hiring` or `no_fit`; a file with a post that has none is refused), `postings[]` for posts with a posting, and `leads[]` for posts with no posting but a person to write to (the handle is the post author from its record; an HN email only if it is in the comment word for word). A lead's intro comes from one writer call per round (`J write-prompt --leads`, `J leads save`); never send it. `J leads mark <url> done|not_interested`.
 - `employer_page`: a reviewed job with no employer posting. One Haiku subagent reads the employer's careers page itself and writes `{need:"careers_page",jobKey,careersUrl,status,fullResultPath,boardLinks,otherLinks,signIn}`, then `J ingest`. Never open the platform link.
 - `new_job`, `review_due`: Agent `model: "haiku"`, references/review.md; `J ops` rank, warn, transition to `reviewed`.
-- `reverify_due`: `J sweep`. `prepare_due`: references/prepare.md; the writer is one Agent `model: "opus"` with the `J write-prompt` prompt.
+- `prepare_due`: references/prepare.md; the writer is one Agent `model: "opus"` with the `J write-prompt` prompt.
 - `apply_ready`: references/apply.md; one Haiku browser subagent per application. Fill-only (`J fillonly <key> on`, or a `fill_only` rule): fill, read back, never submit, `J fill done <key>`; `fill_ready` waits for the person's `J submitted <key>`.
 - `contacts_requested`: references/contacts.md. The first request asks how many jobs (`J ask contacts`; no answer means 5; `J contacts count <n|all>` keeps it as the person's rule). Haiku, then one Opus writer call per job for contacts with a channel (`J write-prompt --intros <key>`, `J intros save`). Intros are drafts the person sends; never send one.
-- `follow_up_due`: references/track.md.
+- `follow_up_due` never wakes the model: in an attended turn ask `J ask follow_up --json '{"company","title"}'`, then `J outcome <key> --status reply|interview|rejected|offer|no_reply`.
 
 Every handled item ends with its J outcome command (`J ops`, `J ingest`, `J leave <key...> --reason <low_score|no_match|no_careers_page|sign_in|other_system|not_a_job|duplicate>`, ...), or the watcher shows it again; a left item returns only on news about it, an answer or a rule change.
 
