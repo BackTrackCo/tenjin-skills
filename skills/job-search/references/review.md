@@ -4,7 +4,9 @@ Input: the items from `J work`, up to 20 jobs, with title, company, place, descr
 
 - Does the work match the title? Drop (transition `skipped`) only on a mismatch. Everything else becomes a warning: layoff news, a stealth company, a recruiter post, a contract, a vague role.
 - Give a fit score 0 to 100 and a one-line fit.
-- Layoff checks cost a search; run them only for jobs the person shortlists.
+- Warn on a layoff or hiring freeze in the last 3 months: one free web search per job, only for jobs that pass review. Warn on a stealth or unnamed company, and on a recruiter post.
+- A job whose open state is not confirmed (no board of the employer lists it) keeps the warning "not confirmed open"; never remove it.
+- When you skip a job, give the reason: `{"op":"transition","key":"..","to":"skipped","reason":"<why>"}`. The report lists every job review dropped, with its reason.
 - An X hiring post becomes a job only with an employer, a role and an apply link on an allowed host; otherwise drop it.
 
 Return JSON ops, nothing else:

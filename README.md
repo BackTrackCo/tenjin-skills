@@ -81,6 +81,7 @@ Then run `/job-search` in Claude Code. The skill checks for Tenjin and offers to
 ### What it does
 
 - **Watched companies, free.** You paste a company's careers link (Greenhouse, Lever or Ashby). Code reads the board from it and checks that company's jobs every sweep, in code, with no model tokens and no limit on how many companies you watch.
+- **Daily search.** Each round runs free web searches of the three board hosts and X (also without Tenjin), then, with Tenjin, the router's job-posting and X searches; the next round uses a new role word (a synonym or a level) and stops when it finds nothing new. Hacker News "Who is hiring?" is read through its Algolia search API. Older postings stay only when their board confirms they are open.
 - **Daily search, through Tenjin.** A Haiku subagent asks Tenjin's router for job postings that match your role, place and the days since the last search, and for hiring posts on X. The skill names no seller; the router picks, prices and applies your spend limits. Code checks the result's shape, removes duplicates, and sends a posting to the apply queue only when its apply link is on Greenhouse, Lever or Ashby and the board still lists it. Every other posting comes back as an "apply yourself" item with its link. Without Tenjin, the watched boards still run and the report says the search did not run. Contacts also run only when you ask.
 - **Review.** A Haiku subagent checks that the work matches the title, adds warnings, and scores fit.
 - **Prepare and write.** Answers come from your profile and saved answers. Free-text answers and messages are written by an Opus subagent from your resume, the job text and your own writing rules. The `writing` skill keeps those rules in one Markdown file you can edit; it starts empty.
@@ -99,6 +100,10 @@ Your resume, profile, rules, saved answers and application records stay in `~/.t
 ### DeepSeek subagents
 
 Until Tenjin's DeepSeek workers can use Claude in Chrome, Job Search needs Tenjin's DeepSeek subagents off, because such a worker has no Chrome tools. Setup reads the setting and asks before it runs `tenjin config subagents off`; it changes no other Tenjin setting.
+
+### Credit
+
+The search sources, the search rounds, the contact rules and the career-ops pipeline format are adapted from [vraspar/find-jobs](https://github.com/vraspar/find-jobs), MIT licensed. Its notice is in [`skills/job-search/references/careerops.md`](skills/job-search/references/careerops.md).
 
 ### Develop and test
 

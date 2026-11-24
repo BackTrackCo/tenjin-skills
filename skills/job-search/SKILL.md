@@ -1,6 +1,6 @@
 ---
 name: job-search
-description: Find new jobs that fit you every day, check and rank them, and apply to the good ones through Claude in Chrome with your yes on each. Use to search for jobs, set up a daily job sweep, review a job report, prepare answers, or apply to Greenhouse, Lever and Ashby postings.
+description: Use this skill for any job hunt: finding jobs or openings that fit a person, rerunning an earlier search for only the new postings, finding the hiring manager, team lead or founder behind a role, adding fresh jobs to a career-ops pipeline, and applying to the good ones through Claude in Chrome, attended with a yes on each or unattended under the person's rules. It reads watched company boards, Hacker News and the web daily, checks that each job is still open, ranks them, and prepares the application. Do not use it for a cover letter, resume tailoring, interview prep or a job offer on its own.
 allowed-tools: Bash(node ${CLAUDE_SKILL_DIR}/scripts/jobs.mjs *) Monitor PushNotification mcp__claude-in-chrome__*
 ---
 
@@ -31,9 +31,9 @@ Start, and after any compaction, `/resume` or new session: run `J tenjin`. If `m
 
 When Monitor prints a line, or the person asks, run `J work --commit`. Handle each item by `reason`, one subagent per item, summaries only:
 
-- `search_due`: references/search.md. One Agent `model: "haiku"` states each need to Tenjin's `request` tool, writes the ingest file, runs `J ingest <file>`. No Tenjin or no `request` tool yet: `J routed skip <why>`.
+- `search_due`: references/search.md, one round: free web searches first (also without Tenjin), then, if `routed` is true, the router's needs, all in one Agent `model: "haiku"`, one ingest file per need with `query.round`, then `J search next` (it says whether another role-word round is worth it). In an attended run, say one line after each search step. No Tenjin or no `request` tool yet: `J routed skip <why>`.
 - `post_review`: a batch of up to 25 X or Hacker News hiring posts (`hn:<id>`; code reads HN through its official API, `J hn`, in time-boxed runs). One Haiku subagent takes the whole batch: for each post find employer, role, the employer's website and any apply link, write one ingest file (`need` `hn_hiring_posts`; X posts `job_postings`) with the usable postings, run `J ingest`, then `J posts drop <url...>` for every post in the batch.
-- `employer_page`: a reviewed job found on a platform with no employer posting yet. Haiku states the need "the employer's own careers page" to `request`, writes `{need:"careers_page",jobKey,careersUrl,status,fullResultPath}`, runs `J ingest`. Code fetches the page and matches the job; never open the platform link.
+- `employer_page`: a reviewed job found on a platform with no employer posting yet. One Haiku subagent finds the employer's careers page and reads it itself, then writes `{need:"careers_page",jobKey,careersUrl,status,fullResultPath,boardLinks,otherLinks,signIn}` (every Greenhouse, Lever or Ashby link on the page, other hiring-system links, whether it is a sign-in page) and runs `J ingest`. Code fetches nothing from that page; it checks the boards. Never open the platform link.
 - `fill_ready`: filled and waiting. Never submit. After the person submits and says so: `J submitted <key>`.
 - `new_job`, `review_due`: Agent `model: "haiku"`, follow references/review.md. Result: `J ops` rank and warn, then `J ops` transition to `reviewed`.
 - `reverify_due`: check the posting is still open, update through `J sweep`.
@@ -51,7 +51,7 @@ Only after setup in references/setup.md recorded the rules and the unattended co
 ## Setup, report, rules
 
 - First run: references/setup.md (resume path, profile, watch list, EEO choice, guard hook, DeepSeek).
-- Report: `J report`, shown as printed, then its contacts offer.
+- Report: `J report`, shown as printed; if it ends with a line about Tenjin, keep it as the last line of your reply.
 - "List my rules", "remove that rule": `J rules`, `J rules remove <id>`. Writing rules go to the writing skill. Lessons only tighten and expire; the person can remove any (`J lessons remove <id>`).
 - Where data goes: resume, profile, rules and records stay on this computer. Searches send only search terms through Tenjin. Writing gives resume, job text, answers and writing rules to a Claude Opus subagent. Each application sends what the form asks for to the employer. With Remote Control on, the transcript syncs to Anthropic.
 - Router needs (the daily search, contacts): state the need to Tenjin's `request` tool in a Haiku subagent; name no seller; leave `needs_approval`, funding, limits and seller failures to the router. They work from the session after Tenjin setup.
