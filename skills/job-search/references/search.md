@@ -4,6 +4,10 @@ Runs when `J work` lists `search_due`; its `query` carries `role`, `place`, `rem
 
 In an attended run, say one line after each search step ("web: 14 results, 9 new").
 
+## 0. With Tenjin, in code
+
+`scripts/lib/router.mjs` is the only file that talks to the router: it starts one `tenjin mcp` process per round, sends each need as text built from a template in `graph.json` (it names no seller), then runs the offer it is given, saves the result to a file (`fullResultPath`) and passes it to an adapter for that supplier. Only a `fulfilled` answer delivers; any other status (`needs_approval`, `needs_input`, `unverified`, `failed`, `unpaid`, `blocked`, ...) holds that one search with its reason, and nothing is sent twice. The router's own limits and `needs_approval` apply; the skill adds no money rule. A need whose supplier has no adapter yet stays a Haiku step. Without Tenjin, or with the wallet unavailable (`wallet_unavailable`), the searches below run as a Haiku step.
+
 ## 1. Free web searches (every run, also without Tenjin)
 
 Use the web search tool for the round's role (the variant if there is one) and place, and nothing else:
@@ -54,4 +58,4 @@ Only `exact` and `confirmed` postings reach the apply queue. Everything else is 
 
 ## Hacker News
 
-Code reads the "Ask HN: Who is hiring?" thread through the HN Search API by Algolia (`hn.algolia.com`): one search per role word for comments newer than the last read, top-level comments only, then the role and place prefilter. Job stories come from the Firebase API (`hacker-news.firebaseio.com`), new ids only, one request a second. `J hn` runs both: the job-story reads stop at 90 seconds (`--budget <seconds>`), save every 20 items and report how many are left; the watcher continues on its next tick, 60 seconds at a time. Posts go to Haiku review in batches of 25: one subagent, one ingest file per batch, about the input of one review round. Never fetch news.ycombinator.com.
+Code reads the "Ask HN: Who is hiring?" thread through the HN Search API by Algolia (`hn.algolia.com`): one search per role word for comments newer than the last read, top-level comments only, then the role and place prefilter. Job stories come from the Firebase API (`hacker-news.firebaseio.com`), new ids only, one request a second. `J hn` runs both: the job-story reads stop at 90 seconds (`--budget <seconds>`), save every 20 items and report how many are left; the watcher continues on its next tick, 60 seconds at a time. Posts go to Haiku review in batches of 25: one subagent, one ingest file per batch (`batch[]`, `outcomes[]`, `postings[]`, `leads[]`), about the input of one review round. A hiring post with no job posting becomes a reach-out lead, shown under "People hiring", never sent. Never fetch news.ycombinator.com.

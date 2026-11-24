@@ -1,6 +1,6 @@
 # Contacts (on request, Haiku subagent)
 
-Ask how many jobs; 5 if the person does not say (`J contacts request` picks the best 5, or the `contact_count` rule). Free ways first, for each job:
+The first time the person asks, ask how many jobs with the question tool (`J ask contacts`: "5 jobs (Recommended)", "10 jobs", "Every job that passed review", or Other for a number). No answer means 5. Keep the answer as their `contact_count` rule (`J contacts count <n|all> --words "<their words>"`); later requests use it without asking, and the person can change it outside a batch. Never ask in an unattended turn. Free ways first, for each job:
 
 1. The post's author (an X or Hacker News post names someone), the team page, talks, blog posts, GitHub, and LinkedIn profiles that appear in search results. Use a LinkedIn profile only as a link from a search result; never fetch a LinkedIn page, never sign in, never use the Y Combinator company page.
 2. Then, if Tenjin is there, the router's people search for the job, stated as a need; name no seller.
