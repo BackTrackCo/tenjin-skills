@@ -21,7 +21,8 @@ import { buildContactMessageRequest, buildWritingRequest, parseWritingResult, re
 import { renderReport } from './lib/report.mjs';
 import { observations } from './lib/signals.mjs';
 import { ingest } from './lib/ingest.mjs';
-import { hnDue, persistHn, readHn } from './lib/hn.mjs';
+import { validateProfile } from './lib/profile.mjs';
+import { DEFAULT_BUDGET_MS, runHn } from './lib/hn.mjs';
 import { isFillOnly, markFillReady, markSubmitted } from './lib/fillonly.mjs';
 
 // A command that changes what a submit may do is refused while a batch is open, whoever calls it.
@@ -113,6 +114,8 @@ const commands = {
     if (sub === 'set') {
       ensureDir(stateDir());
       const next = { ...readProfile(), ...readJsonArg(arg) };
+      const bad = validateProfile(next);
+      if (bad.length) return out({ error: `the profile was not saved: ${bad.join('; ')}` }, 2);
       writeJsonAtomic(profileFile(), next);
       return out({ saved: Object.keys(next) });
     }
@@ -432,10 +435,9 @@ const commands = {
   },
 
   // Hacker News through the official API, in code, one request a second. Kept posts become post_review items.
-  async hn() {
-    const profile = readProfile();
-    const r = await readHn({ fetch: globalThis.fetch, seen: (loadState().hn || {}).seen || [], profile });
-    return out(persistHn(r));
+  async hn(_, flags) {
+    const budgetMs = flags.budget ? Number(flags.budget) * 1000 : DEFAULT_BUDGET_MS;
+    return out(await runHn({ fetch: globalThis.fetch, profile: readProfile(), state: loadState(), budgetMs }));
   },
   // Fill-only: per job, or with a fill_only rule. Fill, read back, never submit, leave the tab open.
   async fillonly([key, onoff]) {

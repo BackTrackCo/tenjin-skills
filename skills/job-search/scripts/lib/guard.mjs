@@ -229,7 +229,7 @@ export function installGuard() {
   if (!found) pre.push({ matcher: '*', hooks: [{ type: 'command', command: hookCommand(), timeout: 5 }] });
   ensureDir(path.dirname(file));
   fs.writeFileSync(file, JSON.stringify(settings, null, 2) + '\n');
-  return { file, updated: found };
+  return { file, installed: !found, updated: found };
 }
 
 export function uninstallGuard() {

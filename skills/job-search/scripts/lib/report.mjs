@@ -22,8 +22,12 @@ export function renderReport(state, overlay, { since = null, now = Date.now() } 
   L.push(`## New jobs (${fresh.length})`);
   for (const j of fresh.slice(0, 20)) L.push(`- ${j.fit ?? '?'} | ${j.title}, ${j.company}, ${[j.city, j.region].filter(Boolean).join(', ') || (j.remote ? 'remote' : '')}${j.fitLine ? ` | ${j.fitLine}` : ''}${(j.warnings || []).length ? ` | warnings: ${j.warnings.join('; ')}` : ''} | ${j.url}`);
   if (fresh.length > 20) L.push(`- and ${fresh.length - 20} more`);
-  const readyJobs = jobs.filter((j) => (j.status === 'new' || j.status === 'reviewed') && j.employerPosting);
-  if (readyJobs.length) L.push('', `(${readyJobs.length} new jobs above are ready to apply, each on its own board: ${[...new Set(readyJobs.map((j) => j.board))].join(', ')})`);
+  const okEp = (j) => j.employerPosting && ['exact', 'confirmed'].includes(j.employerPosting.confidence);
+  const ready = jobs.filter((j) => ['reviewed', 'shortlisted', 'prepared', 'apply_ready'].includes(j.status) && okEp(j));
+  const waiting = jobs.filter((j) => j.status === 'new' && !j.unresolved);
+  L.push('', `${ready.length} reviewed jobs have an employer posting ready to apply on (${[...new Set(ready.map((j) => j.board).filter(Boolean))].join(', ') || 'no board yet'}); ${waiting.length} new jobs still wait for review.`);
+  const dc = (state.lastSweep && state.lastSweep.dropCounts) || {};
+  if (Object.keys(dc).length) L.push(`Dropped by code in the last sweep: ${Object.entries(dc).map(([k, n]) => `${n} ${k.replace(/_/g, ' ')}`).join(', ')}.`);
   const found = jobs.filter((j) => j.employerPosting && j.employerPosting.source !== 'apply_link');
   L.push('', `## Found on the employer's site (${found.length})`);
   for (const j of found) L.push(`- ${j.title}, ${j.company}: ${j.employerPosting.url} (${j.employerPosting.source}, ${j.employerPosting.confidence})`);
@@ -64,10 +68,10 @@ export function renderReport(state, overlay, { since = null, now = Date.now() } 
     L.push('', '## Updates');
     for (const u of state.updateLines.slice(-3)) L.push(`- ${u}`);
   }
-  const waiting = jobs.filter((j) => j.parked || (j.status === 'apply_ready' && !state.approvals[j.key]));
-  if (waiting.length) {
+  const stuck = jobs.filter((j) => j.parked || (j.status === 'apply_ready' && !state.approvals[j.key]));
+  if (stuck.length) {
     L.push('', '## Waiting on you');
-    for (const j of waiting) L.push(`- ${j.company}, ${j.title}: ${j.parked ? j.parked.reasons.join(', ') : 'needs your yes'}`);
+    for (const j of stuck) L.push(`- ${j.company}, ${j.title}: ${j.parked ? j.parked.reasons.join(', ') : 'needs your yes'}`);
   }
   L.push('', 'Want contacts (a hiring manager, team lead or founder) for some of these? Say for how many jobs; 5 if you do not say. Messages are drafts; you send them.');
   return L.join('\n');
