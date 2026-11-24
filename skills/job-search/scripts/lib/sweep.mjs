@@ -66,7 +66,7 @@ export async function runSweep({ state, profile, overlay, fetch, now = Date.now(
     const present = new Set(res.jobs.map((j) => normalizeUrl(j.url)));
     for (const j of Object.values(state.jobs)) if (j.board === id && !present.has(j.key)) closedKeys.push(j.key);
     for (const j of res.jobs) {
-      const screen = screenJob(j, eff, overlay, now);
+      const screen = screenJob(j, eff, overlay, now, { source: 'watched' });
       if (screen.drop.length) {
         dropped.push({ url: j.url, reasons: screen.drop });
         continue;
@@ -74,7 +74,9 @@ export async function runSweep({ state, profile, overlay, fetch, now = Date.now(
       jobs.push({ ...j, warnings: screen.warnings });
     }
   }
-  return { at: new Date(now).toISOString(), jobs, dropped, held, closedKeys, sources };
+  const dropCounts = {};
+  for (const d of dropped) for (const r of d.reasons) dropCounts[r.replace(/:.*/, '')] = (dropCounts[r.replace(/:.*/, '')] || 0) + 1;
+  return { at: new Date(now).toISOString(), jobs, dropped, held, closedKeys, sources, dropCounts };
 }
 
 // Writes a sweep's output. Closed means absent from the board's list.
@@ -92,6 +94,7 @@ export function persist(payload) {
       } else j.warnings = [...new Set([...(j.warnings || []), 'closed on its board'])];
     }
     state.sources = { ...state.sources, ...payload.sources };
+    state.lastSweep = { at: payload.at, kept: (payload.jobs || []).length, dropCounts: payload.dropCounts || {} };
     state.watched = { checked: Object.keys(payload.sources || {}).length, ok: Object.values(payload.sources || {}).filter((x) => x.ok).length, at: payload.at };
     state.held = [...state.held.filter((h) => !(h.reason === 'source_empty' && !String(h.detail).startsWith('routed:'))), ...(payload.held || [])];
     state.sweep.lastAt = payload.at;
