@@ -42,7 +42,7 @@ export function mergeJobs(state, swept, nowIso) {
       continue;
     }
     if (state.dedupe[ctKey]) continue;
-    state.jobs[key] = { ...j, key, hash: contentHash(j), employerPosting: j.employerPosting !== undefined ? j.employerPosting : derivePosting(j, nowIso), status: 'new', firstSeen: nowIso, lastSeen: nowIso, verifiedAt: nowIso, warnings: j.warnings || [], parked: null };
+    state.jobs[key] = { ...j, key, hash: contentHash(j), employerPosting: j.employerPosting !== undefined ? j.employerPosting : derivePosting(j, nowIso), openConfirmed: j.openConfirmed !== undefined ? j.openConfirmed : Boolean(j.sourceId && j.board && ['greenhouse', 'lever', 'ashby'].includes(j.ats)), status: 'new', firstSeen: nowIso, lastSeen: nowIso, verifiedAt: nowIso, warnings: j.warnings || [], parked: null };
     added.push(key);
   }
   return added;

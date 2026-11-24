@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { graph } from './graph.mjs';
+import { isYc } from './platforms.mjs';
 import { ensureDir, readJson, stateDir, writeJsonAtomic } from './paths.mjs';
 
 export const SCHEMA_VERSION = 1;
@@ -30,7 +31,8 @@ export function emptyState() {
     posts: [],
     routed: { skipReason: null, lastSearchAt: null, lastCost: null },
     watched: null,
-    hn: { seen: [], lastAt: null, remaining: 0 },
+    hn: { seen: [], thread: null, lastRead: 0, lastAt: null, remaining: 0 },
+    search: { session: null },
   };
 }
 
@@ -135,14 +137,21 @@ export function applyOp(state, op) {
       if (!g.statuses.includes(op.to) || !allowed.includes(op.to)) throw new Error(`illegal transition ${job.status} -> ${op.to}`);
       job.status = op.to;
       job.statusAt = op.at || new Date().toISOString();
+      if (op.to === 'skipped') job.skipReason = String(op.reason || 'no reason given').slice(0, 160);
       if (op.to === 'submitted') {
         state.applications.push({ key: job.key, companyKey: companyTitleKey(job), at: job.statusAt });
       }
       break;
     }
     case 'contact':
-      if (!op.sourceUrl) throw new Error('a contact needs a source link');
-      (state.contacts[op.key] ||= []).push({ name: op.name, title: op.title, sourceUrl: op.sourceUrl });
+      // A contact needs a source link, how to reach them and one thing they care about. A likely person is shown only
+      // when marked not confirmed. Never a guess, and never the YC company page or a fetched LinkedIn page.
+      if (!op.sourceUrl || !/^https?:\/\//.test(op.sourceUrl)) throw new Error('a contact needs a source link');
+      if (isYc(op.sourceUrl) && !/news\.ycombinator\.com\/user|hn:/.test(op.sourceUrl)) throw new Error('a Y Combinator page is not a contact source');
+      if (!String(op.how || '').trim()) throw new Error('a contact needs how to reach them');
+      if (!String(op.cares || '').trim()) throw new Error('a contact needs one thing they care about');
+      if (op.basis === 'likely' && op.notConfirmed !== true) throw new Error('a likely person is shown only when marked not confirmed');
+      (state.contacts[op.key] ||= []).push({ name: op.name, title: op.title, sourceUrl: op.sourceUrl, how: op.how, cares: op.cares, notConfirmed: op.notConfirmed === true });
       break;
     case 'draft':
       job.drafts = { ...(job.drafts || {}), [op.field]: String(op.text) };

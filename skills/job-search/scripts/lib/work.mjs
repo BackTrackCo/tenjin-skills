@@ -10,8 +10,8 @@ const HOUR = 3600000;
 const DAY = 24 * HOUR;
 const GATES = {
   fill_ready: 'Filled and waiting. Do not submit. The person checks the open tab, presses submit and says so; then `J submitted <key>`.',
-  employer_page: 'Passed review, no employer posting yet. Haiku: state the need "the employer\'s own careers page"; write {need:"careers_page", jobKey, careersUrl, status, fullResultPath}; `J ingest <file>`.',
-  search_due: 'Run the routed search (references/search.md): Haiku subagent, state the needs to Tenjin, write the ingest file, run ingest.',
+  employer_page: 'Passed review, no employer posting yet. Haiku: find and read the employer\'s careers page; write {need:"careers_page", jobKey, careersUrl, status, fullResultPath, boardLinks, otherLinks, signIn}; `J ingest <file>`. Code fetches nothing from the page.',
+  search_due: 'Run this search round (references/search.md): free web searches first, then the router needs if Tenjin is there; one ingest file per need with query.round; then `J search next`.',
   post_review: 'A batch of up to 25 X or Hacker News hiring posts, one subagent, one ingest file. For each post: find the employer, the role and an apply link on Greenhouse, Lever or Ashby, then ingest it as a posting; otherwise `J posts drop <url>`.',
   new_job: 'Review: does the work match the title. Warn, never drop except on a mismatch. Score 0 to 100.',
   review_due: 'The posting changed. Review again.',
@@ -40,22 +40,48 @@ export function unattendedBatchOpen() {
   return Boolean(p && p.mode === 'unattended' && isActive());
 }
 
-export function searchDue(state, profile, now, { unattendedOpen = false } = {}) {
-  if (unattendedOpen) return false;
-  if (!profile.search || !profile.search.role) return false;
-  if (state.held.some((h) => h.reason === 'tenjin_missing')) return false;
+// The daily search is rounds: one query per need for one role-word variant (round 0 is the role itself, round N is
+// search.variants[N-1]). Code stops when a round adds no new job that passes dedupe, date, place and role words,
+// or when the variants run out. No cap on results.
+export function variantFor(profile, round) {
+  return round === 0 ? null : ((profile.search || {}).variants || [])[round - 1] || null;
+}
+export function searchRound(state, profile, now) {
+  if (!profile.search || !profile.search.role) return null;
+  if (state.search && state.search.session && !state.search.session.finished) return state.search.session.round;
   const last = state.routed && state.routed.lastSearchAt ? Date.parse(state.routed.lastSearchAt) : null;
-  if (last === null) return true;
+  if (last === null) return 0;
   const elapsed = now - last;
-  return elapsed >= 26 * HOUR || (elapsed >= 20 * HOUR && new Date(now).getHours() >= (profile.sweepHour ?? graph().sweep.defaultHour));
+  return elapsed >= 26 * HOUR || (elapsed >= 20 * HOUR && new Date(now).getHours() >= (profile.sweepHour ?? graph().sweep.defaultHour)) ? 0 : null;
+}
+export function searchDue(state, profile, now, { unattendedOpen = false } = {}) {
+  return !unattendedOpen && searchRound(state, profile, now) !== null;
+}
+// `search next`: judge the round that just ended and move on, or finish.
+export function advanceSearch(state, profile) {
+  const sess = state.search.session;
+  if (!sess || sess.finished) return { done: true, reason: 'no search in progress' };
+  const last = (profile.search.variants || []).length;
+  if (sess.roundAdded === 0) {
+    sess.finished = true;
+    return { done: true, reason: 'the last round added no new job' };
+  }
+  if (sess.round >= last) {
+    sess.finished = true;
+    return { done: true, reason: 'the variants ran out' };
+  }
+  sess.round += 1;
+  sess.roundAdded = 0;
+  return { done: false, round: sess.round, variant: variantFor(profile, sess.round) };
 }
 
 export function buildWorkList(state, overlay, now = Date.now(), profile = {}, opts = {}) {
   const items = [];
   if (searchDue(state, profile, now, opts)) {
+    const round = searchRound(state, profile, now);
     const last = state.routed.lastSearchAt;
     const since = last ? new Date(Math.max(Date.parse(last) - 86400000, now - 14 * 86400000)) : new Date(now - 14 * 86400000);
-    items.push({ key: 'search', reason: 'search_due', title: 'Daily routed search', company: '', gate: GATES.search_due, query: { role: profile.search.role, place: profile.search.place || '', remote: profile.search.remote === true, since: since.toISOString().slice(0, 10) } });
+    items.push({ key: 'search', reason: 'search_due', title: 'Daily routed search', company: '', gate: GATES.search_due, query: { role: profile.search.role, place: profile.search.place || '', remote: profile.search.remote === true, since: since.toISOString().slice(0, 10), variant: variantFor(profile, round), round }, routed: !state.held.some((h) => h.reason === 'tenjin_missing') });
   }
   // One Haiku subagent takes a batch of hiring posts and writes one ingest file. 25 posts is about 6,000 tokens of
   // input, the size of one review round, and keeps one bad batch from costing the rest.

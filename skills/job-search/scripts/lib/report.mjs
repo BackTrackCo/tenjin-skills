@@ -20,7 +20,7 @@ export function renderReport(state, overlay, { since = null, now = Date.now() } 
   L.push(`# Job Search report, ${new Date(now).toISOString().slice(0, 10)}`);
   L.push('');
   L.push(`## New jobs (${fresh.length})`);
-  for (const j of fresh.slice(0, 20)) L.push(`- ${j.fit ?? '?'} | ${j.title}, ${j.company}, ${[j.city, j.region].filter(Boolean).join(', ') || (j.remote ? 'remote' : '')}${j.fitLine ? ` | ${j.fitLine}` : ''}${(j.warnings || []).length ? ` | warnings: ${j.warnings.join('; ')}` : ''} | ${j.url}`);
+  for (const j of fresh.slice(0, 20)) L.push(`- ${j.fit ?? '?'} | ${j.title}, ${j.company}, ${[j.city, j.region].filter(Boolean).join(', ') || (j.remote ? 'remote' : '')}${j.salary ? ` | pay: ${j.salary}` : ''}${j.fitLine ? ` | ${j.fitLine}` : ''}${(j.warnings || []).length ? ` | warnings: ${j.warnings.join('; ')}` : ''} | ${j.url}`);
   if (fresh.length > 20) L.push(`- and ${fresh.length - 20} more`);
   const okEp = (j) => j.employerPosting && ['exact', 'confirmed'].includes(j.employerPosting.confidence);
   const ready = jobs.filter((j) => ['reviewed', 'shortlisted', 'prepared', 'apply_ready'].includes(j.status) && okEp(j));
@@ -28,6 +28,11 @@ export function renderReport(state, overlay, { since = null, now = Date.now() } 
   L.push('', `${ready.length} reviewed jobs have an employer posting ready to apply on (${[...new Set(ready.map((j) => j.board).filter(Boolean))].join(', ') || 'no board yet'}); ${waiting.length} new jobs still wait for review.`);
   const dc = (state.lastSweep && state.lastSweep.dropCounts) || {};
   if (Object.keys(dc).length) L.push(`Dropped by code in the last sweep: ${Object.entries(dc).map(([k, n]) => `${n} ${k.replace(/_/g, ' ')}`).join(', ')}.`);
+  const dropped = jobs.filter((j) => j.status === 'skipped' && j.skipReason && (!since || Date.parse(j.statusAt || 0) >= Date.parse(since)));
+  if (dropped.length) {
+    L.push('', `## Dropped in review (${dropped.length})`);
+    for (const j of dropped) L.push(`- ${j.title}, ${j.company}: ${j.skipReason}`);
+  }
   const found = jobs.filter((j) => j.employerPosting && j.employerPosting.source !== 'apply_link');
   L.push('', `## Found on the employer's site (${found.length})`);
   for (const j of found) L.push(`- ${j.title}, ${j.company}: ${j.employerPosting.url} (${j.employerPosting.source}, ${j.employerPosting.confidence})`);

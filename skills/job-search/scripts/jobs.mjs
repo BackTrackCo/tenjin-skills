@@ -8,7 +8,7 @@ import { SKILL_DIR, ensureDir, readJson, stateDir, writeJsonAtomic } from './lib
 import { applyOp, applyOps, compact, loadState, updateState, view } from './lib/store.mjs';
 import { addLesson, addRule, deriveLessons, loadOverlay, removeRule } from './lib/overlay.mjs';
 import { persist, runSweep } from './lib/sweep.mjs';
-import { park, unpark, workList } from './lib/work.mjs';
+import { advanceSearch, park, unpark, workList } from './lib/work.mjs';
 import { claimLease } from './lib/lease.mjs';
 import { readProfile, tick, watcherCodeHash } from './lib/watcher.mjs';
 import { applyUpdate, checkRelease, gatesHash, recordRelease } from './lib/release.mjs';
@@ -19,6 +19,7 @@ import { checkTenjin, deepseekStep, defaultRun, findTenjin, readSubagents } from
 import { buildSheet, checkReadBack, checkSheet, parseGreenhouseQuestions } from './lib/sheet.mjs';
 import { buildContactMessageRequest, buildWritingRequest, parseWritingResult, readWritingRules } from './lib/writing.mjs';
 import { renderReport } from './lib/report.mjs';
+import { appendPending, isCareerOpsDir, pipelineLine, readCareerOps } from './lib/careerops.mjs';
 import { observations } from './lib/signals.mjs';
 import { ingest } from './lib/ingest.mjs';
 import { validateProfile } from './lib/profile.mjs';
@@ -75,7 +76,7 @@ const commands = {
   },
 
   async setup([sub, ...rest], flags) {
-    if ((sub === 'resume' || sub === 'deepseek') && refuseInBatch(`setup ${sub}`)) return;
+    if ((sub === 'resume' || sub === 'deepseek' || sub === 'careerops') && refuseInBatch(`setup ${sub}`)) return;
     if (sub === 'check') {
       const t = checkTenjin();
       const bin = t.bin || findTenjin();
@@ -98,6 +99,15 @@ const commands = {
       const prof = readProfile();
       writeJsonAtomic(profileFile(), { ...prof, resumePath: path.resolve(p), resumeText: text });
       return out({ read: true, chars: text.length });
+    }
+    if (sub === 'careerops') {
+      // Inside a career-ops folder: read cv.md and config/profile.yml, ask nothing they already answer.
+      const dir = process.cwd();
+      if (!isCareerOpsDir(dir)) return out({ detected: false });
+      const co = readCareerOps(dir);
+      const prof = readProfile();
+      writeJsonAtomic(profileFile(), { ...prof, resumePath: path.join(dir, 'cv.md'), resumeText: co.cv, careerOps: { dir, pipeline: flags.pipeline === 'yes' } });
+      return out({ detected: true, dir, pipeline: flags.pipeline === 'yes', profileYml: co.profileYml.slice(0, 20000), note: 'cv.md and config/profile.yml are read; answer the profile from them and ask only what they leave out' });
     }
     if (sub === 'stage') {
       updateState((s) => {
@@ -346,8 +356,27 @@ const commands = {
   async unpark([key]) {
     return out(updateState((s) => unpark(s.jobs[key])) || { ok: true });
   },
+  // On the person's yes at setup, each job that passed review is appended under "## Pending" in the career-ops pipeline.
+  async pipeline([sub, ...keys]) {
+    if (sub !== 'add') return out({ error: 'pipeline add [key...]' }, 2);
+    if (refuseInBatch('pipeline add')) return;
+    const profile = readProfile();
+    if (!profile.careerOps || profile.careerOps.pipeline !== true) return out({ error: 'the person has not said yes to the career-ops pipeline at setup' }, 4);
+    return out(updateState((s) => {
+      const pick = keys.length ? keys.map((k) => s.jobs[k]).filter(Boolean) : Object.values(s.jobs).filter((j) => ['reviewed', 'shortlisted', 'prepared', 'apply_ready'].includes(j.status));
+      const jobs = pick.filter((j) => !j.pipelineAt);
+      const lines = jobs.map((j) => pipelineLine(j, (s.contacts[j.key] || [])[0] || null));
+      const n = appendPending(profile.careerOps.dir, lines);
+      for (const j of jobs) j.pipelineAt = new Date().toISOString();
+      return { appended: n, next: 'Tell the person that /career-ops pipeline scores these jobs and tailors their CV.' };
+    }));
+  },
   async contacts([sub, ...keys]) {
-    if (sub !== 'request') return out({ error: 'contacts request <key...>' }, 2);
+    if (sub !== 'request') return out({ error: 'contacts request [key...] (5 jobs, or the contact_count rule, when none are named)' }, 2);
+    if (!keys.length) {
+      const n = Number(loadOverlay().rules.filter((r) => r.effect === 'contact_count').pop()?.value) || 5;
+      keys = Object.values(loadState().jobs).filter((j) => ['reviewed', 'shortlisted', 'prepared', 'apply_ready'].includes(j.status)).sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1)).slice(0, n).map((j) => j.key);
+    }
     return out(updateState((s) => {
       s.contactsRequested = [...new Set([...(s.contactsRequested || []), ...keys])];
       return { requested: s.contactsRequested.length };
@@ -380,11 +409,15 @@ const commands = {
   async report() {
     const s = loadState();
     const text = renderReport(s, loadOverlay(), { since: s.lastReportAt });
+    const dir = ensureDir(path.join(stateDir(), 'reports'));
+    fs.appendFileSync(path.join(dir, `${new Date().toISOString().slice(0, 10)}.md`), `${text}\n\n`, { mode: 0o600 });
     updateState((st) => {
       st.lastReportAt = new Date().toISOString();
       st.updateLines = [];
     });
     process.stdout.write(text + '\n');
+    // The reply ends with one line on what Tenjin adds. It is not part of the report file. No price.
+    if (!findTenjin()) process.stdout.write('\nTenjin is not installed. With it I can also search X live, add more job-board listings and find people to write to. Ask me to set it up.\n');
   },
 
   async release([sub], flags) {
@@ -457,6 +490,13 @@ const commands = {
       markSubmitted(s, key, applyOp);
       return { submitted: key };
     }) || { submitted: key });
+  },
+
+  // After a search round is ingested: code decides whether another round (the next role-word variant) is worth it.
+  async search([sub]) {
+    if (sub !== 'next') return out({ error: 'search next' }, 2);
+    const profile = readProfile();
+    return out(updateState((s) => advanceSearch(s, profile)));
   },
 
   async gates(_, flags) {

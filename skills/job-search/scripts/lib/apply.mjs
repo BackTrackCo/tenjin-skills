@@ -134,6 +134,7 @@ export function jobFailure({ job, state, profile, overlay, mode, now, writingOk 
   // Only the employer's own posting on Greenhouse, Lever or Ashby, found exactly or confirmed, is ever handed out.
   const ep = job.employerPosting;
   if (!ep || !['exact', 'confirmed'].includes(ep.confidence)) return 'no_employer_posting';
+  if (job.openConfirmed !== true) return 'not_confirmed_open';
   if (isNeverAutomated(ep.url)) return 'platform_url';
   if (!graph().hosts.includes(ep.system) || !(graph().applyHostNames[ep.system] || []).includes(new URL(ep.url).hostname)) return 'host_not_allowed';
   if (job.parked) return 'parked';

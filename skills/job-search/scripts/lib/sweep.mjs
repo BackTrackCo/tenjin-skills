@@ -3,6 +3,7 @@ import { fetchBoard, parseCareersUrl } from './boards.mjs';
 import { mergeJobs, normalizeUrl } from './dedupe.mjs';
 import { effectiveProfile } from './overlay.mjs';
 import { screenJob } from './verify.mjs';
+import { loadSkipUrls } from './careerops.mjs';
 import { updateState } from './store.mjs';
 
 const HOUR = 3600000;
@@ -74,6 +75,10 @@ export async function runSweep({ state, profile, overlay, fetch, now = Date.now(
       jobs.push({ ...j, warnings: screen.warnings });
     }
   }
+  const skip = loadSkipUrls(profile);
+  const kept = jobs.filter((j) => !skip.has(j.url));
+  jobs.length = 0;
+  jobs.push(...kept);
   const dropCounts = {};
   for (const d of dropped) for (const r of d.reasons) dropCounts[r.replace(/:.*/, '')] = (dropCounts[r.replace(/:.*/, '')] || 0) + 1;
   return { at: new Date(now).toISOString(), jobs, dropped, held, closedKeys, sources, dropCounts };
