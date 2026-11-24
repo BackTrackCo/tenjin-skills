@@ -81,15 +81,25 @@ export class RouterClient {
     });
   }
 
-  // `request` with the given arguments; the tool answers one envelope as JSON text.
+  // `request` with the given arguments. The tool answers the envelope as JSON in one text block, and for a spec the
+  // supplier's text (its host, inputs and return shape) in another; the text is kept as `__text`.
   async request(args, timeoutMs) {
     const r = await this.rpc('tools/call', { name: 'request', arguments: args }, timeoutMs);
-    const text = (r.content || []).map((c) => c.text || '').join('');
-    try {
-      return r.structuredContent || JSON.parse(text);
-    } catch {
-      throw new RouterError('parse_failure', 'the router answered something that is not JSON');
+    const blocks = (r.content || []).map((c) => c.text || '');
+    let env = r.structuredContent || null;
+    const rest = [];
+    for (const b of blocks) {
+      if (!env) {
+        try {
+          env = JSON.parse(b);
+          continue;
+        } catch {}
+      }
+      rest.push(b);
     }
+    if (!env || typeof env !== 'object') throw new RouterError('parse_failure', 'the router answered something that is not JSON');
+    if (rest.length) env.__text = rest.join('\n');
+    return env;
   }
 
   // stdin closes, and the process is killed if it has not exited after 5 seconds: no server stays running.
@@ -123,19 +133,28 @@ export async function runNeed(client, need, { save = saveResult } = {}) {
   } catch (e) {
     return held(need, e.code || 'failed', e.message);
   }
-  if (spec.status !== 'spec') return held(need, spec.status || 'no_spec', `the router answered ${spec.status || 'nothing'} to the need`, spec);
+  // `native` (the web search): the host assistant's own tools are enough, so that need stays a model step. Not a hold.
+  if (spec.status === 'native') return { ok: false, native: true, status: 'native', need: need.kind, cost: null };
+  if (spec.status !== 'spec') return held(need, spec.status || 'no_spec', spec.reason || `the router answered ${spec.status || 'nothing'} to the need`, spec);
   const offer = spec.id; // the spec answer carries the offer id at the top level
   const text = JSON.stringify(spec);
   const sup = pickSupplier(text, need.kind);
   if (!offer || !sup) return held(need, 'no_adapter', 'no known supplier in the spec; the next attended turn runs this search as the Haiku step');
+  let input;
+  try {
+    input = sup.mapper(need.fields);
+  } catch (e) {
+    return held(need, 'no_input', e.message);
+  }
   let env;
   try {
-    env = await client.request({ id: offer, input: sup.mapper(need.fields) }, client.timeouts.run);
+    env = await client.request({ id: offer, input }, client.timeouts.run);
   } catch (e) {
     // A timed-out run is never sent again in this round: the payment may have settled.
     return held(need, e.code || 'failed', e.message);
   }
-  if (env.status !== 'fulfilled') return held(need, env.status || 'failed', `the router answered ${env.status}`, env);
+  // A `failed` answer that says the provider rejected the input before any payment is the mapper's bug: hold it, never resend.
+  if (env.status !== 'fulfilled') return held(need, env.status || 'failed', env.reason ? `the router answered ${env.status}: ${env.reason}` : `the router answered ${env.status}`, env);
   if (String(env.supplier || '').toLowerCase() !== sup.host) return held(need, 'supplier_mismatch', 'the envelope names a different supplier than the spec');
   let result;
   try {

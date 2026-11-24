@@ -14,6 +14,7 @@ export const POST_BATCH = 25;
 const HOUR = 3600000;
 const DAY = 24 * HOUR;
 const GATES = {
+  web_search_due: 'Run the free web searches for this round (references/search.md, section 1) as one Haiku step, ingest the file, then `J search web-done`.',
   fill_ready: 'Filled and waiting. Do not submit. The person checks the open tab, presses submit and says so; then `J submitted <key>`.',
   employer_page: 'Passed review, no employer posting yet. Haiku: find and read the employer\'s careers page; write {need:"careers_page", jobKey, careersUrl, status, fullResultPath, boardLinks, otherLinks, signIn}; `J ingest <file>`. Code fetches nothing from the page.',
   search_due: 'Run this search round (references/search.md): free web searches first, then the router needs if Tenjin is there; one ingest file per need with query.round; then `J search next`.',
@@ -139,6 +140,8 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
     const since = last ? new Date(Math.max(Date.parse(last) - 86400000, now - 14 * 86400000)) : new Date(now - 14 * 86400000);
     items.push({ key: 'search', reason: 'search_due', title: 'Daily routed search', company: '', gate: GATES.search_due, hint: tenjinHint(state, 'daily_search'), askTenjin: tenjinAsk(state, { unattended: opts.unattended === true }), query: { role: profile.search.role, place: profile.search.place || '', remote: profile.search.remote === true, since: since.toISOString().slice(0, 10), variant: variantFor(profile, round), round }, routed: !state.held.some((h) => h.reason === 'tenjin_missing') && !['missing', 'outdated', 'unfunded'].includes((state.tenjin || {}).status) });
   }
+  // The web search stays a model step with Tenjin (the router answers native): one item per round, until recorded as done.
+  if (state.search.webPending) items.push({ key: 'web', reason: 'web_search_due', title: 'Free web searches', company: '', gate: GATES.web_search_due, query: { role: profile.search && profile.search.role, place: profile.search && profile.search.place, round: state.search.webPending.round } });
   // One Haiku subagent takes a batch of hiring posts and writes one ingest file. 25 posts is about 6,000 tokens of
   // input, the size of one review round, and keeps one bad batch from costing the rest.
   const fresh = (state.posts || []).filter((p) => p.status === 'new');

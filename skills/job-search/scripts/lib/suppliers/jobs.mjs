@@ -4,10 +4,12 @@
 // The host below is the one the spec text names ("Request: GET https://<host>/jsearch/search-v2"); the envelope's
 // `supplier` must be the same host after the run.
 export const HOST = 'x402.openwebninja.com';
+export const KIND = 'job_postings';
 
-export function mapper({ role, place, remote, since }) {
-  const days = since ? Math.max(1, Math.ceil((Date.now() - Date.parse(since)) / 86400000)) : 14;
-  return { query: `${role}${place ? ` in ${place}` : ''}`, remote_jobs_only: remote === true, date_posted: days <= 1 ? 'today' : days <= 3 ? '3days' : days <= 7 ? 'week' : 'month' };
+// The spec: query is "the role, the word jobs and the place"; date_posted is one of all, today, 3days, week, month.
+export function mapper({ role, place, remote, since, days }) {
+  const d = days || (since ? Math.max(1, Math.ceil((Date.now() - Date.parse(since)) / 86400000)) : 14);
+  return { query: `${role} jobs${place ? ` in ${place}` : ''}`.toLowerCase(), date_posted: d <= 1 ? 'today' : d <= 3 ? '3days' : d <= 7 ? 'week' : 'month', ...(remote === true ? { work_from_home: true } : {}) };
 }
 
 const str = (v) => (typeof v === 'string' ? v : '');

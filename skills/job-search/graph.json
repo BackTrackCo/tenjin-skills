@@ -137,7 +137,8 @@
     "contacts_requested",
     "prepare_due",
     "apply_ready",
-    "follow_up_due"
+    "follow_up_due",
+    "web_search_due"
   ],
   "heldReasons": [
     "source_empty",
@@ -205,6 +206,16 @@
   "staleListingDays": 60,
   "needTemplates": {
     "job_postings": "job postings for {role} roles in {place}, posted in the last {days} days",
-    "x_hiring_posts": "X posts from people hiring for {role} roles in {place}, from the last {days} days"
-  }
+    "x_hiring_posts": "hiring posts on X for {role} roles in {place} from the last {days} days",
+    "web_search": "web search: site:jobs.ashbyhq.com {role} {place}",
+    "careers_page": "find the careers page of {company} from its website {url} and the job board it uses",
+    "people_search": "people search: engineering leaders at {company} ({url}){where}"
+  },
+  "peopleTitles": [
+    "Engineering Manager",
+    "Head of Engineering",
+    "Director of Engineering",
+    "VP Engineering",
+    "CTO"
+  ]
 }

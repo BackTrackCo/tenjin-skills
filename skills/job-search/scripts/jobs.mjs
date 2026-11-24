@@ -526,7 +526,8 @@ const commands = {
 
   // After a search round is ingested: code decides whether another round (the next role-word variant) is worth it.
   async search([sub]) {
-    if (sub !== 'next') return out({ error: 'search next' }, 2);
+    if (sub === 'web-done') return out(updateState((s) => { s.search.webPending = null; return { done: true }; }));
+    if (sub !== 'next') return out({ error: 'search next | web-done' }, 2);
     const profile = readProfile();
     return out(updateState((s) => advanceSearch(s, profile)));
   },

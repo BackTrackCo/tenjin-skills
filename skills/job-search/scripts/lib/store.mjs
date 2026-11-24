@@ -47,7 +47,7 @@ export function emptyState() {
     routed: { skipReason: null, lastSearchAt: null, lastCost: null },
     watched: null,
     hn: { seen: [], thread: null, lastRead: 0, lastAt: null, remaining: 0 },
-    search: { session: null },
+    search: { session: null, webPending: null },
   };
 }
 

@@ -1,7 +1,7 @@
 import { graph } from './graph.mjs';
 import { boardTarget, fetchBoard } from './boards.mjs';
 import { employerName } from './employer.mjs';
-import { bump, normLabel } from './store.mjs';
+import { applyOp, bump, normLabel } from './store.mjs';
 import { careersFromLinks, classifyLinks, probeBoards, resolveFromCareersPage } from './employer.mjs';
 import { isNeverAutomated, isYc } from './platforms.mjs';
 import { loadSkipUrls } from './careerops.mjs';
@@ -15,7 +15,7 @@ import { updateState } from './store.mjs';
 // The request tool's envelope status, copied exactly. Only a fulfilled result is clean. Every other word
 // (unverified, running, needs_approval, needs_input, unpaid, failed, native) holds the source for this run.
 export const DELIVERED = ['fulfilled'];
-const NEEDS = ['job_postings', 'x_hiring_posts', 'hn_hiring_posts', 'careers_page', 'web_search'];
+const NEEDS = ['job_postings', 'x_hiring_posts', 'hn_hiring_posts', 'careers_page', 'web_search', 'people_search'];
 const POSTING_NEEDS = ['job_postings', 'hn_hiring_posts'];
 export const OUTCOMES = ['job', 'lead', 'not_hiring', 'no_fit'];
 const isStr = (v) => typeof v === 'string' && v.trim() !== '';
@@ -24,12 +24,20 @@ const isStr = (v) => typeof v === 'string' && v.trim() !== '';
 export function validateIngest(o) {
   if (!o || typeof o !== 'object' || Array.isArray(o)) return 'not an object';
   if (!NEEDS.includes(o.need)) return `need must be one of ${NEEDS.join(', ')}`;
+  if (o.need === 'people_search') {
+    if (!isStr(o.status)) return 'status is missing';
+    if (!DELIVERED.includes(o.status)) return `status "${o.status}" is not a delivered result (fulfilled)`;
+    if (!isStr(o.jobKey) || !Array.isArray(o.contacts)) return 'people_search needs jobKey and a contacts list (empty is a normal answer)';
+    for (const c of o.contacts) if (!c || !isStr(c.name) || !isStr(c.sourceUrl) || !isStr(c.how) || !isStr(c.cares)) return 'a contact needs name, sourceUrl, how and cares';
+    return null;
+  }
   if (o.need === 'careers_page') {
     if (!isStr(o.status)) return 'status is missing';
     if (!DELIVERED.includes(o.status)) return `status "${o.status}" is not a delivered result (fulfilled)`;
     if (!isStr(o.jobKey) || !/^https:\/\//.test(String(o.careersUrl || ''))) return 'careers_page needs jobKey and an https careersUrl';
     for (const k of ['boardLinks', 'otherLinks']) if (o[k] !== undefined && !(Array.isArray(o[k]) && o[k].every(isStr))) return `${k} must be a list of links`;
     if (o.signIn !== undefined && typeof o.signIn !== 'boolean') return 'signIn must be true or false';
+    if (o.found !== undefined && typeof o.found !== 'boolean') return 'found must be true or false';
     return null;
   }
   const q = o.query;
@@ -84,6 +92,7 @@ export function validateIngest(o) {
       if (!isStr(p.sourceUrl)) return `${at}: sourceUrl is required`;
     } else {
       if (!isStr(p.url) || typeof p.author !== 'string' || typeof p.text !== 'string' || !(p.postedAt === null || isStr(p.postedAt))) return `${at}: url, author, postedAt and text are required`;
+      if (p.links !== undefined && !(Array.isArray(p.links) && p.links.every(isStr))) return `${at}: links must be a list of links`;
     }
   }
   return null;
@@ -112,9 +121,21 @@ export async function planIngest({ obj, state, profile, overlay, fetch, now = Da
     return plan;
   }
   if (need === 'careers_page') return planCareers({ obj, state, fetch, now, plan });
+  if (need === 'people_search') return planPeople({ obj, state, plan, now });
   if (need === 'x_hiring_posts') {
     const known = new Set((state.posts || []).map((p) => p.url));
-    for (const p of obj.posts) if (!known.has(p.url)) plan.posts.push({ url: p.url, author: p.author, postedAt: p.postedAt, text: p.text.slice(0, 1000), status: 'new' });
+    // A post with a Greenhouse, Lever or Ashby link goes to the board check (the board API is the source of the job);
+    // the others are kept for review, where a post with no posting can become a lead.
+    const withBoard = obj.posts.filter((p) => (p.links || []).some((u) => resultKind(u).board));
+    for (const p of obj.posts) if (!withBoard.includes(p) && !known.has(p.url)) plan.posts.push({ url: p.url, author: p.author, postedAt: p.postedAt, text: p.text.slice(0, 1000), status: 'new', source: 'x' });
+    if (withBoard.length) {
+      const sub = await planIngest({ obj: { ...obj, need: 'web_search', status: 'ok', results: withBoard.map((p) => ({ url: p.links.find((u) => resultKind(u).board) })) }, state, profile, overlay, fetch, now });
+      plan.jobs.push(...sub.jobs);
+      plan.closed += sub.closed;
+      plan.unresolved += sub.unresolved;
+      plan.dropped += sub.dropped;
+      plan.held.push(...sub.held.map((h) => ({ ...h, detail: h.detail.replace('routed:web_search', 'routed:x_hiring_posts') })));
+    }
     return plan;
   }
   const eff = effectiveProfile(profile, overlay);
@@ -280,6 +301,17 @@ async function webPostings(results, getBoard, state) {
   return out;
 }
 
+// The router's people search for one job: a normal empty answer is not an error. Each person is a likely contact, marked
+// not confirmed, stored as a contact on the job; the intro comes from the writer call.
+function planPeople({ obj, state, plan }) {
+  if (!state.jobs[obj.jobKey]) {
+    plan.held.push({ reason: 'source_empty', detail: `routed:people_search: unknown job ${obj.jobKey}` });
+    return plan;
+  }
+  plan.people = { key: obj.jobKey, contacts: obj.contacts };
+  return plan;
+}
+
 // Step 3: a Haiku step read the employer's careers page and returned its links. Code fetches nothing from that page;
 // it runs the ownership and job checks through the board APIs only.
 async function planCareers({ obj, state, fetch, now, plan }) {
@@ -288,7 +320,9 @@ async function planCareers({ obj, state, fetch, now, plan }) {
     plan.held.push({ reason: 'source_empty', detail: `routed:careers_page: unknown job ${obj.jobKey}` });
     return plan;
   }
-  const page = careersFromLinks({ boardLinks: obj.boardLinks || [], otherLinks: obj.otherLinks || [], signIn: obj.signIn === true });
+  const page = obj.careersPageOnly
+    ? { kind: 'other_system', system: 'the employer\'s own careers page', url: obj.careersUrl } // a page on a system this skill does not fill
+    : careersFromLinks({ boardLinks: obj.boardLinks || [], otherLinks: obj.otherLinks || [], signIn: obj.signIn === true });
   const posting = { title: job.title, employer: job.company, city: job.city, remote: job.remote, postedAt: job.posted };
   const r = await resolveFromCareersPage(posting, page, { fetch, now });
   plan.careers = { key: obj.jobKey, result: r.match ? { employerPosting: r.match.employerPosting, job: r.match.job } : { reason: r.reason, other: r.other || null } };
@@ -310,6 +344,17 @@ export function persistIngest(plan, now = Date.now()) {
   const at = new Date(now).toISOString();
   return updateState((state) => {
     const added = mergeJobs(state, plan.jobs, at);
+    if (plan.people) {
+      const job = state.jobs[plan.people.key];
+      for (const c of plan.people.contacts) {
+        if ((state.contacts[job.key] || []).some((x) => x.sourceUrl === c.sourceUrl)) continue;
+        try {
+          applyOp(state, { op: 'contact', key: job.key, ...c });
+        } catch {} // a contact the rules refuse is simply not stored
+      }
+      job.contactsSearched = at;
+      state.contactsRequested = (state.contactsRequested || []).filter((k) => k !== job.key);
+    }
     if (plan.careers) {
       const j = state.jobs[plan.careers.key];
       const r = plan.careers.result;
@@ -344,7 +389,7 @@ export function persistIngest(plan, now = Date.now()) {
     }
     state.held = [...state.held.filter((h) => !String(h.detail).startsWith(`routed:${plan.need}`)), ...plan.held];
     state.routed = { ...(state.routed || {}), skipReason: null, lastSearchAt: at, lastCost: plan.cost || (state.routed || {}).lastCost || null };
-    return { added: added.length, applyYourself: plan.unresolved, careers: plan.careers ? (plan.careers.result.reason || 'resolved') : undefined, posts: plan.posts.length, closedOnBoard: plan.closed, dropped: plan.dropped, held: plan.held.map((h) => h.detail) };
+    return { added: added.length, contacts: plan.people ? plan.people.contacts.length : undefined, applyYourself: plan.unresolved, careers: plan.careers ? (plan.careers.result.reason || 'resolved') : undefined, posts: plan.posts.length, closedOnBoard: plan.closed, dropped: plan.dropped, held: plan.held.map((h) => h.detail) };
   });
 }
 
