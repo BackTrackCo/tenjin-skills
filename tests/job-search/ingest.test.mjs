@@ -18,19 +18,24 @@ const doc = () => JSON.parse(JSON.stringify(fixture('ingest-job-postings.json'))
 const run = (obj, extra = {}) => ing.ingest({ obj, state: store.loadState(), profile, overlay: empty, fetch: fakeFetch({ 'https://boards-api.greenhouse.io/': board }), now: NOW, ...extra });
 const reset = () => store.updateState((s) => { Object.assign(s, store.emptyState()); });
 
-test('a valid file: the Greenhouse posting is verified on its board and queued; others become apply-yourself items', async () => {
+test('a valid file: the Greenhouse posting is verified on its board and queued; the rest are kept as unresolved jobs', async () => {
   reset();
   const r = await run(doc());
-  assert.equal(r.added, 1);
-  assert.equal(r.applyYourself, 1);
+  assert.equal(r.added, 2);
+  assert.equal(r.applyYourself, 1, 'one posting has no employer posting yet');
   assert.equal(r.closedOnBoard, 1, 'a board that no longer lists the job means closed');
   assert.equal(r.dropped, 1, 'outside the place');
   const s = store.loadState();
-  const job = Object.values(s.jobs)[0];
+  const jobs = Object.values(s.jobs);
+  const job = jobs.find((j) => j.employerPosting);
   assert.equal(job.url, `https://boards.greenhouse.io/figma/jobs/${liveId}`);
   assert.equal(job.board, 'greenhouse:figma');
-  assert.equal(s.applyYourself[0].employer, 'Globex');
-  assert.deepEqual(s.applyYourself[0].links.map((l) => l.publisher), ['Example Jobs', 'Globex']);
+  assert.equal(job.employerPosting.confidence, 'exact');
+  assert.equal(job.employerPosting.source, 'apply_link');
+  const open = jobs.find((j) => !j.employerPosting);
+  assert.equal(open.company, 'Globex');
+  assert.equal(open.unresolved, 'unconfirmed_board', 'a board answered under the guessed name, but it is Figma, not Globex');
+  assert.equal(open.status, 'new');
   assert.equal(s.routed.lastCost, '$0.01');
   assert.ok(s.routed.lastSearchAt);
 });
@@ -46,17 +51,16 @@ test('only an apply link on Greenhouse, Lever or Ashby with a token and an id re
 test('a second ingest of the same file adds nothing: dedupe across runs', async () => {
   const again = await run(doc());
   assert.equal(again.added, 0);
-  assert.equal(again.applyYourself, 0);
-  assert.equal(Object.keys(store.loadState().jobs).length, 1);
+  assert.equal(Object.keys(store.loadState().jobs).length, 2);
 });
 
 test('dedupe across routed postings and watched boards: one job, same key', async () => {
   reset();
   const payload = await sweep.runSweep({ state: store.loadState(), profile: { includeOld: true, watch: [{ url: 'https://boards.greenhouse.io/figma' }] }, overlay: empty, fetch: fakeFetch({ 'https://boards-api.greenhouse.io/': board }), now: NOW });
   sweep.persist(payload);
-  const before = Object.keys(store.loadState().jobs).length;
+  const before = Object.values(store.loadState().jobs).filter((j) => j.employerPosting).length;
   await run(doc());
-  assert.equal(Object.keys(store.loadState().jobs).length, before, 'the routed posting is already a watched job');
+  assert.equal(Object.values(store.loadState().jobs).filter((j) => j.employerPosting).length, before, 'the routed posting is already a watched job');
 });
 
 test('a schema failure holds the source, with the reason, and invents nothing', async () => {
@@ -111,7 +115,6 @@ test('a board that cannot be read holds that board, not the whole source', async
   reset();
   const r = await run(doc(), { fetch: fakeFetch({ 'https://boards-api.greenhouse.io/': 429 }) });
   assert.match(r.held[0], /board greenhouse:figma unavailable \(rate limited \(429\)\)/);
-  assert.equal(r.applyYourself, 1);
 });
 
 test('X posts are stored for review, once, and become a post_review item', async () => {
@@ -137,7 +140,7 @@ test('search_due: due with no search yet, not due after one, due again after a d
   assert.equal(work.buildWorkList(s, empty, NOW, {}).items.length, 0, 'no search settings, no item');
 });
 
-test('the report: new jobs with their board, apply yourself, held sources, watched boards, cost', async () => {
+test('the report: new jobs with their board, apply yourself with a reason, held sources, watched boards, cost', async () => {
   reset();
   await run(doc());
   const s = store.loadState();
@@ -145,7 +148,7 @@ test('the report: new jobs with their board, apply yourself, held sources, watch
   s.watched = { checked: 2, ok: 1, at: 'x' };
   const text = report.renderReport(s, empty, { now: NOW });
   assert.match(text, /on its own board: greenhouse:figma/);
-  assert.match(text, /## Apply yourself \(1\)[\s\S]*careers\.globex\.test\/apply\/2 \(Globex\)/);
+  assert.match(text, /## Apply yourself \(1\)[\s\S]*Globex: only a board that may not be the employer's was found\. https:\/\/www\.example-jobs\.test\/view\/2/);
   assert.match(text, /## Sources held this run[\s\S]*http 500/);
   assert.match(text, /Watched boards checked: 1 of 2 answered/);
   assert.match(text, /Cost the router reported: \$0\.01/);
