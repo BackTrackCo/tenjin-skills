@@ -7,7 +7,7 @@ const emp = await import('../../skills/job-search/scripts/lib/employer.mjs');
 const ing = await import('../../skills/job-search/scripts/lib/ingest.mjs');
 const store = await import('../../skills/job-search/scripts/lib/store.mjs');
 const ap = await import('../../skills/job-search/scripts/lib/apply.mjs');
-const g = await import('../../skills/job-search/scripts/lib/guard.mjs');
+const net = await import('../../skills/job-search/scripts/lib/net.mjs');
 const report = await import('../../skills/job-search/scripts/lib/report.mjs');
 const work = await import('../../skills/job-search/scripts/lib/work.mjs');
 const fo = await import('../../skills/job-search/scripts/lib/fillonly.mjs');
@@ -196,9 +196,9 @@ test('a Y Combinator link is never opened, and a YC-only posting with nothing el
   assert.equal(only().employerPosting.url, 'https://boards.greenhouse.io/widgets/jobs/3');
 });
 
-test('platform and YC URLs are never handed out, and the guard denies them', () => {
+test('platform and YC URLs are never handed out, and no code fetch reaches them', async () => {
   const j = (url, over = {}) => mkJob({ status: 'apply_ready', fit: 90, sheet: { hash: 'h', passed: true, eeoMissing: false, fields: [] }, ...over, employerPosting: { url, system: 'greenhouse', token: 'x', jobId: '1', source: 'apply_link', confidence: 'exact', checkedAt: '' } });
-  const run1 = (job) => { const s = store.emptyState(); s.jobs[job.key] = job; s.approvals[job.key] = { sheetHash: 'h' }; return ap.applyNext({ state: s, profile: { eeo: 'decline_all' }, overlay: empty, mode: 'attended', now: NOW, guard: { ok: true }, deepseek: { enabled: false } }); };
+  const run1 = (job) => { const s = store.emptyState(); s.jobs[job.key] = job; s.approvals[job.key] = { sheetHash: 'h' }; return ap.applyNext({ state: s, profile: { eeo: 'decline_all' }, overlay: empty, mode: 'attended', now: NOW, batchOpen: true }); };
   for (const url of ['https://www.linkedin.com/jobs/view/1', 'https://de.indeed.com/viewjob?jk=1', 'https://www.glassdoor.com/job-listing/1', 'https://www.ziprecruiter.com/c/x', 'https://www.workatastartup.com/jobs/1', 'https://news.ycombinator.com/item?id=1', 'https://www.ycombinator.com/companies/x']) {
     assert.equal(run1(j(url)).queue[0].reason, 'platform_url', url);
     assert.equal(plat.isNeverAutomated(url), true, url);
@@ -209,13 +209,9 @@ test('platform and YC URLs are never handed out, and the guard denies them', () 
   assert.equal(run1(mkJob({ status: 'apply_ready', employerPosting: null, sheet: { hash: 'h', passed: true, fields: [] } })).queue[0].reason, 'no_employer_posting');
   assert.ok(run1(j('https://boards.greenhouse.io/acme/jobs/1')).handout);
   assert.equal(plat.isNeverAutomated('https://boards.greenhouse.io/acme'), false);
-  for (const mode of ['attended', 'unattended']) {
-    const p = g.openBatch({ mode, uploadPath: '/r.pdf' });
-    for (const url of ['https://www.workatastartup.com/jobs/1', 'https://news.ycombinator.com/item?id=1', 'https://www.ycombinator.com/jobs', 'https://www.glassdoor.com/x', 'https://www.ziprecruiter.com/x', 'https://de.indeed.com/x', 'https://www.linkedin.com/x']) {
-      assert.equal(g.decide({ tool_name: 'mcp__claude-in-chrome__navigate', tool_input: { url } }, p).decision, 'deny', `${mode} ${url}`);
-      assert.equal(g.decide({ tool_name: 'WebFetch', tool_input: { url } }, p).decision, 'deny', `${mode} fetch ${url}`);
-    }
-    g.closeBatch();
+  // the code's own fetches refuse these hosts too
+  for (const url of ['https://www.workatastartup.com/jobs/1', 'https://news.ycombinator.com/item?id=1', 'https://www.ycombinator.com/jobs', 'https://www.glassdoor.com/x', 'https://www.ziprecruiter.com/x', 'https://de.indeed.com/x', 'https://www.linkedin.com/x']) {
+    await assert.rejects(net.guardedFetch(url, {}, async () => ({})), /host not allowed/, url);
   }
 });
 
@@ -223,7 +219,7 @@ test('fill-only never submits, reaches fill_ready, and "I submitted it" makes th
   const j = mkJob({ status: 'apply_ready', fit: 90, company: 'Globex', sheet: { hash: 'h', passed: true, eeoMissing: false, fields: [] } });
   const s = store.emptyState();
   s.jobs[j.key] = j;
-  const next = (o = {}) => ap.applyNext({ state: s, profile: { eeo: 'decline_all' }, overlay: empty, mode: 'attended', now: NOW, guard: { ok: true }, deepseek: { enabled: false }, ...o });
+  const next = (o = {}) => ap.applyNext({ state: s, profile: { eeo: 'decline_all' }, overlay: empty, mode: 'attended', now: NOW, batchOpen: true, ...o });
   assert.equal(next().queue[0].reason, 'no_recorded_yes');
   assert.equal(fo.isFillOnly(j, empty), false);
   j.fillOnly = true;

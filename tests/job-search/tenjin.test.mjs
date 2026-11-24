@@ -43,41 +43,32 @@ test('findTenjin looks on PATH, then in ~/.local/bin', () => {
   assert.equal(t.findTenjin({ env: { PATH: '' }, home }), path.join(home, '.local', 'bin', 'tenjin'));
 });
 
-test('DeepSeek step: reads `tenjin config subagents --json`, read-only when off', () => {
-  const run = fakeRun([['config subagents --json', () => json({ enabled: false })]]);
-  assert.deepEqual(t.deepseekStep({ run, bin: '/x/tenjin', yes: true }), { state: 'off', enabled: false });
-  assert.deepEqual(run.calls, ['config subagents --json']);
+const balance = (atomic, usd) => ({ code: 0, stdout: JSON.stringify({ schemaVersion: 1, command: 'balance', ok: true, data: { address: '0x0', balance: { atomic: String(atomic), usd }, low: false } }) });
+
+test('the hint state: missing, outdated, unfunded or ready', () => {
+  const run = (version, bal) => fakeRun([['--version', () => ({ code: 0, stdout: version })], ['balance --json', () => bal]]);
+  assert.equal(t.hintState({ bin: null }).status, 'missing');
+  assert.equal(t.hintState({ bin: '/x/tenjin', run: run('0.1.0-alpha.30', balance(5000000, '$5.00')) }).status, 'outdated');
+  assert.equal(t.hintState({ bin: '/x/tenjin', run: run('0.1.0-alpha.35', balance(0, '$0.00')) }).status, 'unfunded');
+  assert.equal(t.hintState({ bin: '/x/tenjin', run: run('0.1.0-alpha.35', balance(5000000, '$5.00')) }).status, 'ready');
+  assert.equal(t.hintState({ bin: '/x/tenjin', run: run('0.1.0-alpha.110', balance(1, '$0.000001')) }).status, 'ready', 'a later build prints the same shape');
 });
 
-test('DeepSeek step: on, no yes: it explains and changes nothing', () => {
-  const run = fakeRun([['config subagents --json', () => json({ enabled: true, consent: true })]]);
-  const r = t.deepseekStep({ run, bin: '/x/tenjin' });
-  assert.equal(r.state, 'on_ask');
-  assert.match(r.why, /no Claude in Chrome tools/);
-  assert.ok(!run.calls.includes('config subagents off'));
+test('the balance is read in both known shapes, and an unreadable one is not called unfunded', () => {
+  const r = (out) => t.readBalance({ bin: '/x/tenjin', run: () => ({ code: 0, stdout: out }) });
+  assert.equal(r(JSON.stringify({ ok: true, data: { balance: { atomic: '0', usd: '$0.00' } } })).atomic, 0n);
+  assert.equal(r(JSON.stringify({ ok: true, data: { balance: { usd: '$2.50' } } })).atomic, 2500000n);
+  assert.equal(r('not json').ok, false);
+  assert.equal(t.hintState({ bin: '/x/tenjin', run: fakeRun([['--version', () => ({ code: 0, stdout: '0.1.0-alpha.35' })]]) }).status, 'ready');
 });
 
-test('DeepSeek step: `off` runs only after a yes, then reads back', () => {
-  let off = false;
-  const run = fakeRun([
-    ['config subagents --json', () => json({ enabled: !off })],
-    ['config subagents off', () => { off = true; return { code: 0, stdout: '' }; }],
-  ]);
-  const r = t.deepseekStep({ run, bin: '/x/tenjin', yes: true });
-  assert.equal(r.state, 'turned_off');
-  assert.deepEqual(run.calls, ['config subagents --json', 'config subagents off', 'config subagents --json']);
-});
-
-test('DeepSeek step: kept on is recorded, nothing runs; an unreadable answer is not guessed', () => {
-  const run = fakeRun([['config subagents --json', () => json({ enabled: true })]]);
-  assert.equal(t.deepseekStep({ run, bin: '/x/tenjin', keep: true }).state, 'on_kept');
-  assert.ok(!run.calls.includes('config subagents off'));
-  assert.equal(t.deepseekStep({ run: fakeRun([]), bin: '/x/tenjin', yes: true }).state, 'unreadable');
-  assert.equal(t.deepseekStep({ run, bin: null }).state, 'no_tenjin');
-});
-
-test('the skill runs no other Tenjin command that changes a setting', () => {
+test('the skill reads Tenjin with --version and balance --json only, and runs nothing that changes a setting', () => {
+  const calls = [];
+  const run = (cmd, args) => { calls.push(args.join(' ')); return args[0] === '--version' ? { code: 0, stdout: '0.1.0-alpha.35' } : balance(1, '$0.000001'); };
+  t.hintState({ bin: '/x/tenjin', run });
+  assert.deepEqual(calls, ['--version', 'balance --json']);
   const src = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'scripts', 'lib', 'tenjin.mjs'), 'utf8');
-  const calls = [...src.matchAll(/run\(bin, \[([^\]]*)\]/g)].map((m) => m[1].replace(/['\s]/g, ''));
-  assert.deepEqual(calls.sort(), ['--version', 'config,subagents,--json', 'config,subagents,off'].sort());
+  const cmds = [...src.matchAll(/run\(bin, \[([^\]]*)\]/g)].map((m) => m[1].replace(/['\s]/g, ''));
+  assert.deepEqual(cmds.sort(), ['--version', 'balance,--json'].sort());
+  assert.doesNotMatch(src, /config|subagents|deepseek/i);
 });

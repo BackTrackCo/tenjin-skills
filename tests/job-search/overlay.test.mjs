@@ -16,7 +16,7 @@ test('a rule keeps the words and the date', () => {
 });
 
 test('an effect outside the vocabulary is refused, including any that would grant consent', () => {
-  for (const effect of ['unattended', 'unattended_consent', 'grant_consent', 'disable_guard', 'host_add']) assert.throws(() => ov.addRule({ effect, value: true, words: 'sure' }), /vocabulary/);
+  for (const effect of ['unattended', 'unattended_consent', 'grant_consent', 'disable_batch_rules', 'host_add']) assert.throws(() => ov.addRule({ effect, value: true, words: 'sure' }), /vocabulary/);
 });
 
 test('a loosening lesson is refused; tightening ones are written from a template with evidence ids', () => {
@@ -66,7 +66,7 @@ test('rules take effect on jobs: exclusions, required terms, pay floor', () => {
 
 test('rules list and removal through the CLI; a bad effect exits 2', () => {
   const home = tmpHome();
-  const add = runJobs(home, ['rules', 'add', '--effect', 'daily_max', '--value', '5', '--words', 'at most 5 a day']);
+  const add = runJobs(home, ['rules', 'add', '--effect', 'period_max', '--value', '5', '--words', 'at most 5 a day']);
   assert.equal(add.json.value, 5);
   assert.equal(runJobs(home, ['rules']).json.length, 1);
   assert.equal(runJobs(home, ['rules', 'add', '--effect', 'unattended', '--value', 'true', '--words', 'go']).code, 2);

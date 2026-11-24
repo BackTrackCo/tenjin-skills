@@ -103,7 +103,7 @@ test('a failed install, or files that do not match the manifest, roll back to th
 
 test('an update leaves rules.json, profile.json and the writing rules byte for byte the same', async () => {
   const rulesFile = ov.rulesFile();
-  ov.addRule({ effect: 'daily_max', value: 3, words: 'at most 3 a day', date: '2026-11-20' });
+  ov.addRule({ effect: 'period_max', value: 3, words: 'at most 3 a day', date: '2026-11-20' });
   fs.mkdirSync(path.dirname(paths.writingRulesPath()), { recursive: true });
   fs.writeFileSync(paths.writingRulesPath(), '- 2026-11-20: never write "excited to apply"\n');
   fs.writeFileSync(path.join(paths.stateDir(), 'profile.json'), '{"facts":{"first_name":"Ada"}}\n');

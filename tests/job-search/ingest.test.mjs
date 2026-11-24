@@ -192,7 +192,7 @@ test('the ingest command reads a file; a broken file holds, exits 4 and never th
 
 test('search_due waits while an unattended batch is open, and is back when it closes', async () => {
   reset();
-  const g = await import('../../skills/job-search/scripts/lib/guard.mjs');
+  const g = await import('../../skills/job-search/scripts/lib/batch.mjs');
   store.updateState((st) => { Object.assign(st, store.emptyState()); });
   const fs = await import('node:fs');
   const path = await import('node:path');
@@ -202,8 +202,7 @@ test('search_due waits while an unattended batch is open, and is back when it cl
   g.openBatch({ mode: 'attended', uploadPath: '/r.pdf' });
   assert.equal(has(), true, 'an attended batch lets the search run');
   g.openBatch({ mode: 'unattended', uploadPath: '/r.pdf' });
-  assert.equal(has(), false);
-  assert.equal(g.decide({ tool_name: 'mcp__plugin_tenjin_router__request', tool_input: {} }, JSON.parse(fs.readFileSync(g.policyFile(), 'utf8'))).decision, 'deny', 'request stays denied in an unattended batch');
+  assert.equal(has(), false, 'the search runs in the next round: rounds run one at a time');
   g.closeBatch();
   assert.equal(has(), true);
 });

@@ -11,7 +11,7 @@ const store = await import('../../skills/job-search/scripts/lib/store.mjs');
 const work = await import('../../skills/job-search/scripts/lib/work.mjs');
 const ap = await import('../../skills/job-search/scripts/lib/apply.mjs');
 const report = await import('../../skills/job-search/scripts/lib/report.mjs');
-const g = await import('../../skills/job-search/scripts/lib/guard.mjs');
+const g = await import('../../skills/job-search/scripts/lib/batch.mjs');
 const co = await import('../../skills/job-search/scripts/lib/careerops.mjs');
 
 const NOW = Date.parse('2026-11-23T10:00:00Z');
@@ -168,11 +168,11 @@ test('a job whose open state is not confirmed stays in the report and never ente
   const s = store.emptyState();
   s.jobs[j.key] = j;
   s.approvals[j.key] = { sheetHash: 'h' };
-  const r = ap.applyNext({ state: s, profile: { eeo: 'decline_all' }, overlay: empty, mode: 'attended', now: NOW, guard: { ok: true }, deepseek: { enabled: false } });
+  const r = ap.applyNext({ state: s, profile: { eeo: 'decline_all' }, overlay: empty, mode: 'attended', now: NOW, batchOpen: true });
   assert.deepEqual(r.queue, [{ key: j.key, reason: 'not_confirmed_open' }]);
   assert.equal(r.handout, null);
   j.openConfirmed = true;
-  assert.ok(ap.applyNext({ state: s, profile: { eeo: 'decline_all' }, overlay: empty, mode: 'attended', now: NOW, guard: { ok: true }, deepseek: { enabled: false } }).handout);
+  assert.ok(ap.applyNext({ state: s, profile: { eeo: 'decline_all' }, overlay: empty, mode: 'attended', now: NOW, batchOpen: true }).handout);
   const u = mkJob({ employerPosting: null, openConfirmed: false, unresolved: 'no_board', warnings: ['not confirmed open'], applyLinks: ['https://x.test/1'] });
   const s2 = store.emptyState();
   s2.jobs[u.key] = u;
@@ -185,7 +185,7 @@ test('contacts: a source link, how to reach them and one thing they care about; 
   store.updateState((s) => { Object.assign(s, store.emptyState()); s.jobs[j.key] = j; });
   const c = (over) => [{ op: 'contact', key: j.key, name: 'Bo', title: 'VP Eng', sourceUrl: 'https://acme.test/team', how: 'GitHub issues', cares: 'developer tooling', ...over }];
   store.applyOps(c({}));
-  assert.deepEqual(Object.keys(store.loadState().contacts[j.key][0]).sort(), ['cares', 'how', 'name', 'notConfirmed', 'sourceUrl', 'title']);
+  assert.deepEqual(Object.keys(store.loadState().contacts[j.key][0]).sort(), ['cares', 'channel', 'how', 'name', 'notConfirmed', 'sourceUrl', 'title']);
   assert.throws(() => store.applyOps(c({ sourceUrl: undefined })), /source link/);
   assert.throws(() => store.applyOps(c({ how: '' })), /how to reach/);
   assert.throws(() => store.applyOps(c({ cares: undefined })), /one thing they care about/);
@@ -306,21 +306,15 @@ test('career-ops: a missing ## Pending heading is added; a file with no trailing
   assert.equal(co.pipelineLine(mkJob({ company: 'A', title: 'B', city: 'C' }), null).includes('note:'), false, 'no note when no person was found');
 });
 
-test('career-ops: the pipeline write is refused while a batch is open, and the guard denies it', () => {
+test('career-ops: the pipeline write is refused while a batch is open', () => {
   const d = careerOpsDir();
   runJobs(home, ['setup', 'careerops', '--pipeline', 'yes'], { cwd: d });
   const before = snapshot(d);
-  const p = g.openBatch({ mode: 'attended', uploadPath: '/r.pdf' });
-  const r = runJobs(home, ['pipeline', 'add']);
-  assert.equal(r.code, 4);
+  g.openBatch({ mode: 'attended', uploadPath: '/r.pdf' });
+  assert.equal(runJobs(home, ['pipeline', 'add']).code, 4);
   assert.deepEqual(snapshot(d), before);
   assert.equal(runJobs(home, ['setup', 'careerops'], { cwd: d }).code, 4);
-  for (const mode of ['attended', 'unattended']) {
-    const q = g.openBatch({ mode, uploadPath: '/r.pdf' });
-    for (const c of ['pipeline add', 'setup careerops --pipeline yes']) assert.equal(g.decide({ tool_name: 'Bash', tool_input: { command: `${q.commandPrefix} ${c}` } }, q).decision, 'deny', `${mode} ${c}`);
-  }
   g.closeBatch();
-  assert.ok(p);
 });
 
 // ---- 12 and 13. the description, the credit, no decline rule ------------------

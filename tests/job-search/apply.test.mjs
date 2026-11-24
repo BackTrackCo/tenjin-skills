@@ -14,7 +14,7 @@ const U = { roles: ['engineer'], places: ['Berlin'], remote: false, minPay: 1000
 const profile = () => ({ eeo: 'decline_all', unattended: { ...U } });
 const ready = (over = {}) => mkJob({ status: 'apply_ready', fit: 80, sheet: { hash: 'sh1', passed: true, eeoMissing: false, fields: [] }, verifiedAt: new Date(NOW - 3600000).toISOString(), ...over });
 const stateWith = (...jobs) => { const s = store.emptyState(); for (const j of jobs) s.jobs[j.key] = j; return s; };
-const run = (state, o = {}) => ap.applyNext({ state, profile: profile(), overlay: empty(), mode: 'attended', now: NOW, guard: GUARD, deepseek: DS_OFF, ...o });
+const run = (state, o = {}) => ap.applyNext({ state, profile: profile(), overlay: empty(), mode: 'attended', now: NOW, batchOpen: true, ...o });
 
 test('attended: no recorded yes means no hand-out', () => {
   const j = ready();
@@ -66,27 +66,23 @@ test('both modes: no second application to the same company and title within 90 
   assert.ok(run(s).handout);
 });
 
-test('both modes: the guard self-test and DeepSeek off come first', () => {
+test('both modes: a job is handed out only in an open batch', () => {
   const j = ready();
   const s = stateWith(j);
   s.approvals[j.key] = { sheetHash: 'sh1' };
-  assert.equal(run(s, { guard: { ok: false, reasons: ['probe_not_seen'] } }).refused, 'guard_missing');
-  assert.equal(run(s, { guard: null }).refused, 'guard_missing');
-  assert.equal(run(s, { deepseek: { enabled: true } }).refused, 'deepseek_on');
-  assert.equal(run(s, { deepseek: { enabled: null } }).refused, 'deepseek_on', 'unreadable counts as on');
+  assert.equal(run(s, { batchOpen: false }).refused, 'no_batch');
+  assert.equal(run(s, { batchOpen: undefined }).refused, 'no_batch');
+  assert.ok(run(s).handout);
 });
 
-test('the person\'s own daily_max, and no daily_max meaning no limit', () => {
-  const j = ready();
+test('a browser result with no Chrome tools holds the job: not handed out again, not applied', () => {
+  const j = ready({ noChromeTools: true });
   const s = stateWith(j);
   s.approvals[j.key] = { sheetHash: 'sh1' };
-  for (let i = 0; i < 40; i++) s.applications.push({ key: `x${i}`, companyKey: `c${i}|t`, at: new Date(NOW - 1000).toISOString() });
-  assert.ok(run(s).handout, 'forty applications today and no rule: no limit');
-  const o = { rules: [{ id: '1', effect: 'daily_max', value: 40 }], lessons: [] };
-  assert.equal(run(s, { overlay: o }).refused, 'daily_max');
-  o.rules[0].value = 41;
-  assert.ok(run(s, { overlay: o }).handout);
+  assert.deepEqual(run(s).queue, [{ key: j.key, reason: 'no_chrome_tools' }]);
+  assert.equal(s.applications.length, 0);
 });
+
 
 // ---- unattended -------------------------------------------------------
 const consented = (extra = {}) => {
@@ -168,10 +164,10 @@ test('unattended: a job outside the rules goes to the attended queue with its re
   assert.deepEqual(r.queue, [{ key: j.key, reason: 'level_excluded' }]);
 });
 
-test('unattended refuses to start without the guard', () => {
+test('unattended refuses to start without an open batch', () => {
   const s = consented();
   s.jobs.x = ready();
-  assert.equal(run(s, { mode: 'unattended', guard: { ok: false, reasons: ['hook_not_installed'] } }).refused, 'guard_missing');
+  assert.equal(run(s, { mode: 'unattended', batchOpen: false }).refused, 'no_batch');
 });
 
 test('consent needs complete rules and the EEO choice; no rule or lesson can record it', () => {

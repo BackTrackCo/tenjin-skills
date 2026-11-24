@@ -11,7 +11,7 @@ const sheet = await import('../../skills/job-search/scripts/lib/sheet.mjs');
 const store = await import('../../skills/job-search/scripts/lib/store.mjs');
 const ov = await import('../../skills/job-search/scripts/lib/overlay.mjs');
 const work = await import('../../skills/job-search/scripts/lib/work.mjs');
-const g = await import('../../skills/job-search/scripts/lib/guard.mjs');
+const g = await import('../../skills/job-search/scripts/lib/batch.mjs');
 
 const NOW = Date.parse('2026-11-23T12:00:00Z');
 const empty = { rules: [], lessons: [] };
@@ -86,7 +86,7 @@ const consentedState = (job, optionalWriting = 'skip') => {
   s.consent.dryRun = { records: [{ key: 'd' }], confirmedAt: new Date(NOW).toISOString(), rulesHash: ov.rulesHash(profile, empty) };
   return s;
 };
-const next = (s, o = {}) => ap.applyNext({ state: s, profile, overlay: empty, mode: 'unattended', now: NOW, guard: { ok: true }, deepseek: { enabled: false }, writingRulesText: '', ...o });
+const next = (s, o = {}) => ap.applyNext({ state: s, profile, overlay: empty, mode: 'unattended', now: NOW, batchOpen: true, writingRulesText: '', ...o });
 
 test('writing_needs_yes: no submit without the writing consent', () => {
   const j = readyJob(build());
@@ -174,7 +174,7 @@ test('attended mode is unchanged: the person sees the draft and says yes', () =>
   const s = store.emptyState();
   s.jobs[j.key] = j;
   s.approvals[j.key] = { sheetHash: j.sheet.hash };
-  assert.ok(ap.applyNext({ state: s, profile, overlay: empty, mode: 'attended', now: NOW, guard: { ok: true }, deepseek: { enabled: false } }).handout);
+  assert.ok(ap.applyNext({ state: s, profile, overlay: empty, mode: 'attended', now: NOW, batchOpen: true }).handout);
 });
 
 test('approving the text, as it is or edited, makes each field an earlier answer and returns the job to the queue', () => {
@@ -223,7 +223,7 @@ test('recording the writing consent returns jobs that only waited for it', () =>
   assert.equal(store.loadState().jobs[j.key].parked, null);
 });
 
-test('nothing else grants the writing consent: no rule, lesson, op, profile field or guarded command', () => {
+test('nothing else grants the writing consent: no rule, lesson, op, profile field or command in a batch', () => {
   for (const effect of ['writing_consent', 'consent', 'new_writing', 'allow_new_writing']) {
     assert.throws(() => ov.addRule({ effect, value: true, words: 'sure' }), /vocabulary/);
     assert.throws(() => ov.addLesson({ effect, subject: 'x' }), /tighten-only/);
@@ -232,8 +232,8 @@ test('nothing else grants the writing consent: no rule, lesson, op, profile fiel
   runJobs(home, ['profile', 'set', JSON.stringify({ consent: { writing: { at: 'x', hash: 'y' } } })]);
   store.updateState((s) => { Object.assign(s, store.emptyState()); });
   assert.equal(store.loadState().consent.writing, null);
-  const p = g.openBatch({ mode: 'attended', uploadPath: '/r.pdf' });
-  assert.equal(g.decide({ tool_name: 'Bash', tool_input: { command: `${p.commandPrefix} consent record writing` } }, p).decision, 'deny');
+  g.openBatch({ mode: 'attended', uploadPath: '/r.pdf' });
+  assert.equal(runJobs(home, ['consent', 'record', 'writing']).code, 4, 'the CLI refuses it in a batch');
   g.closeBatch();
   assert.equal(ap.writingConsentCurrent(store.emptyState(), ''), false);
 });
