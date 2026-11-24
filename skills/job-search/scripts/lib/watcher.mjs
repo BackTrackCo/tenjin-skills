@@ -8,7 +8,7 @@ import { loadState, updateState } from './store.mjs';
 import { loadOverlay } from './overlay.mjs';
 import { persist, runSweep, sweepDue } from './sweep.mjs';
 import { workList } from './work.mjs';
-import { hnDue, persistHn, readHn } from './hn.mjs';
+import { hnDue, runHn } from './hn.mjs';
 
 const DAY = 86400000;
 
@@ -35,7 +35,7 @@ export async function tick(ctx) {
   }
   if (fetchImpl && hnDue(loadState(), profile, now)) {
     try {
-      persistHn(await readHn({ fetch: fetchImpl, seen: (loadState().hn || {}).seen || [], profile, sleep: ctx.sleep }), now);
+      await runHn({ fetch: fetchImpl, profile, state: loadState(), budgetMs: ctx.hnBudgetMs || 60_000, sleep: ctx.sleep, clock: ctx.clock, now });
     } catch (e) {
       updateState((st) => { st.held = [...st.held.filter((h) => !String(h.detail).startsWith('hn:')), { reason: 'source_empty', detail: `hn: ${e.message}` }]; st.hn = { ...(st.hn || {}), lastAt: new Date(now).toISOString() }; });
     }

@@ -5,13 +5,14 @@ import { readJson, stateDir } from './paths.mjs';
 import { cleanupStale, isActive, policyFile } from './guard.mjs';
 import path from 'node:path';
 
+export const POST_BATCH = 25;
 const HOUR = 3600000;
 const DAY = 24 * HOUR;
 const GATES = {
   fill_ready: 'Filled and waiting. Do not submit. The person checks the open tab, presses submit and says so; then `J submitted <key>`.',
   employer_page: 'Passed review, no employer posting yet. Haiku: state the need "the employer\'s own careers page"; write {need:"careers_page", jobKey, careersUrl, status, fullResultPath}; `J ingest <file>`.',
   search_due: 'Run the routed search (references/search.md): Haiku subagent, state the needs to Tenjin, write the ingest file, run ingest.',
-  post_review: 'An X hiring post: find the employer, the role and an apply link on Greenhouse, Lever or Ashby, then ingest it as a posting; otherwise `J posts drop <url>`.',
+  post_review: 'A batch of up to 25 X or Hacker News hiring posts, one subagent, one ingest file. For each post: find the employer, the role and an apply link on Greenhouse, Lever or Ashby, then ingest it as a posting; otherwise `J posts drop <url>`.',
   new_job: 'Review: does the work match the title. Warn, never drop except on a mismatch. Score 0 to 100.',
   review_due: 'The posting changed. Review again.',
   reverify_due: 'Verify the job is still open before it goes further.',
@@ -56,7 +57,13 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
     const since = last ? new Date(Math.max(Date.parse(last) - 86400000, now - 14 * 86400000)) : new Date(now - 14 * 86400000);
     items.push({ key: 'search', reason: 'search_due', title: 'Daily routed search', company: '', gate: GATES.search_due, query: { role: profile.search.role, place: profile.search.place || '', remote: profile.search.remote === true, since: since.toISOString().slice(0, 10) } });
   }
-  for (const p of state.posts || []) if (p.status === 'new') items.push({ key: p.url, reason: 'post_review', title: p.text.slice(0, 80), company: p.author, gate: GATES.post_review });
+  // One Haiku subagent takes a batch of hiring posts and writes one ingest file. 25 posts is about 6,000 tokens of
+  // input, the size of one review round, and keeps one bad batch from costing the rest.
+  const fresh = (state.posts || []).filter((p) => p.status === 'new');
+  for (let i = 0; i < fresh.length; i += POST_BATCH) {
+    const batch = fresh.slice(i, i + POST_BATCH);
+    items.push({ key: `posts:${batch[0].url}`, reason: 'post_review', title: `${batch.length} hiring posts`, company: '', posts: batch.map((p) => ({ url: p.url, author: p.author, text: p.text })), gate: GATES.post_review });
+  }
   const inventory = [];
   const add = (j, reason) => items.push({ key: j.key, reason, title: j.title, company: j.company, gate: GATES[reason] });
   for (const j of Object.values(state.jobs)) {

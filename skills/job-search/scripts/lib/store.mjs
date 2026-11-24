@@ -30,6 +30,7 @@ export function emptyState() {
     posts: [],
     routed: { skipReason: null, lastSearchAt: null, lastCost: null },
     watched: null,
+    hn: { seen: [], lastAt: null, remaining: 0 },
   };
 }
 

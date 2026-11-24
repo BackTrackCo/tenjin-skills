@@ -32,7 +32,7 @@ Start, and after any compaction, `/resume` or new session: run `J tenjin`. If `m
 When Monitor prints a line, or the person asks, run `J work --commit`. Handle each item by `reason`, one subagent per item, summaries only:
 
 - `search_due`: references/search.md. One Agent `model: "haiku"` states each need to Tenjin's `request` tool, writes the ingest file, runs `J ingest <file>`. No Tenjin or no `request` tool yet: `J routed skip <why>`.
-- `post_review`: an X or Hacker News hiring post (`hn:<id>`; code reads HN through its official API, `J hn`). Find employer, role, the employer's website and any apply link; ingest it as a posting (`need` `x_hiring_posts` source: `job_postings`, HN: `hn_hiring_posts`), then `J posts drop <url>`.
+- `post_review`: a batch of up to 25 X or Hacker News hiring posts (`hn:<id>`; code reads HN through its official API, `J hn`, in time-boxed runs). One Haiku subagent takes the whole batch: for each post find employer, role, the employer's website and any apply link, write one ingest file (`need` `hn_hiring_posts`; X posts `job_postings`) with the usable postings, run `J ingest`, then `J posts drop <url...>` for every post in the batch.
 - `employer_page`: a reviewed job found on a platform with no employer posting yet. Haiku states the need "the employer's own careers page" to `request`, writes `{need:"careers_page",jobKey,careersUrl,status,fullResultPath}`, runs `J ingest`. Code fetches the page and matches the job; never open the platform link.
 - `fill_ready`: filled and waiting. Never submit. After the person submits and says so: `J submitted <key>`.
 - `new_job`, `review_due`: Agent `model: "haiku"`, follow references/review.md. Result: `J ops` rank and warn, then `J ops` transition to `reviewed`.

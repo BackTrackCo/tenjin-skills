@@ -35,4 +35,4 @@ Only `exact` and `confirmed` postings reach the apply queue. Everything else is 
 
 ## Hacker News
 
-Code reads the "Ask HN: Who is hiring?" thread and the job stories through the official API (`hacker-news.firebaseio.com`) once a day with `J hn`, one request a second, new ids only. A code prefilter keeps posts that name a role word and your place or remote. Each kept post is a `post_review` item; never fetch news.ycombinator.com.
+Code reads the "Ask HN: Who is hiring?" thread and the job stories through the official API (`hacker-news.firebaseio.com`) once a day, one request a second, new ids only. `J hn` reads for at most 90 seconds (`--budget <seconds>`), saves every 20 items, and reports how many are left; the watcher continues on its next tick, 60 seconds at a time. Posts go to Haiku review in batches of 25: one subagent, one ingest file per batch, about the input of one review round. A code prefilter keeps posts that name a role word and your place or remote. Each kept post is a `post_review` item; never fetch news.ycombinator.com.
