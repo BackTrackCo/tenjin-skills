@@ -147,12 +147,22 @@ test('the report: new jobs with their board, apply yourself with a reason, held 
   s.held.push({ reason: 'source_empty', detail: 'Figma (greenhouse:figma): http 500' });
   s.watched = { checked: 2, ok: 1, at: 'x' };
   const text = report.renderReport(s, empty, { now: NOW });
-  assert.match(text, /on its own board: greenhouse:figma/);
+  assert.match(text, /0 reviewed jobs have an employer posting ready to apply on \(no board yet\); 1 new jobs still wait for review\./);
   assert.match(text, /## Apply yourself \(1\)[\s\S]*Globex: only a board that may not be the employer's was found\. https:\/\/www\.example-jobs\.test\/view\/2/);
   assert.match(text, /## Sources held this run[\s\S]*http 500/);
   assert.match(text, /Watched boards checked: 1 of 2 answered/);
   assert.match(text, /Cost the router reported: \$0\.01/);
   assert.doesNotMatch(text, /did not run/);
+});
+
+test('the ready count: only reviewed jobs with an exact or confirmed employer posting', async () => {
+  reset();
+  await run(doc());
+  assert.match(report.renderReport(store.loadState(), empty, { now: NOW }), /0 reviewed jobs have an employer posting ready/);
+  store.updateState((st) => { for (const j of Object.values(st.jobs)) if (j.employerPosting) j.status = 'reviewed'; });
+  assert.match(report.renderReport(store.loadState(), empty, { now: NOW }), /1 reviewed jobs have an employer posting ready to apply on \(greenhouse:figma\); 0 new jobs still wait/);
+  store.updateState((st) => { for (const j of Object.values(st.jobs)) if (j.employerPosting) j.employerPosting.confidence = 'unconfirmed'; });
+  assert.match(report.renderReport(store.loadState(), empty, { now: NOW }), /0 reviewed jobs have an employer posting ready/);
 });
 
 test('the "routed search did not run" row names the reason, and the watched boards still run', async () => {

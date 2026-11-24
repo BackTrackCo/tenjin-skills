@@ -51,12 +51,49 @@ test('a city query drops a remote-only job unless remote was said', () => {
   assert.deepEqual(screenJob(remoteOnly, { ...base, remote: true }, empty, NOW).drop, []);
 });
 
-test('date window, contracts and old listings', () => {
-  const old = mkJob({ posted: new Date(NOW - 20 * 864e5).toISOString() });
-  assert.ok(screenJob(old, { windowDays: 14 }, empty, NOW).drop.includes('outside_date_window'));
-  const stale = mkJob({ posted: new Date(NOW - 90 * 864e5).toISOString() });
-  assert.ok(screenJob(stale, { windowDays: 14 }, empty, NOW).warnings.includes('listed over 60 days'));
+test('routed postings: the catch-up window is checked first, includeOld widens it, the 60-day warning only on a kept job', () => {
+  const at = (days) => mkJob({ posted: new Date(NOW - days * 864e5).toISOString() });
+  const screen = (days, profile) => screenJob(at(days), { windowDays: 14, ...profile }, empty, NOW);
+  assert.deepEqual(screen(10, {}), { drop: [], warnings: [] });
+  assert.deepEqual(screen(30, {}).drop, ['outside_date_window'], '15 to 60 days old is dropped');
+  assert.deepEqual(screen(90, {}).drop, ['outside_date_window'], 'over 60 days is dropped too, with no warning');
+  assert.deepEqual(screen(90, {}).warnings, []);
+  assert.deepEqual(screen(30, { includeOld: true }), { drop: [], warnings: [] });
+  assert.deepEqual(screen(90, { includeOld: true }), { drop: [], warnings: ['listed over 60 days'] });
+  assert.deepEqual(screenJob(at(20), { windowDays: 30 }, empty, NOW).drop, [], 'a wider window keeps it');
+});
+
+test('watched boards: age never drops a job, a job over 60 days only warns', () => {
+  const at = (days) => mkJob({ posted: new Date(NOW - days * 864e5).toISOString() });
+  const screen = (days, profile) => screenJob(at(days), { windowDays: 14, ...profile }, empty, NOW, { source: 'watched' });
+  for (const includeOld of [false, true]) {
+    assert.deepEqual(screen(10, { includeOld }), { drop: [], warnings: [] });
+    assert.deepEqual(screen(30, { includeOld }), { drop: [], warnings: [] });
+    assert.deepEqual(screen(90, { includeOld }), { drop: [], warnings: ['listed over 60 days'] });
+  }
+});
+
+test('contracts are a warning, not a drop', () => {
   assert.ok(screenJob(mkJob({ type: 'Contract' }), {}, empty, NOW).warnings.includes('contract'));
+});
+
+test('watched boards: a role filter on the title, widened by search.roleWords, counted in the sweep', async () => {
+  const roleProfile = { search: { role: 'software engineer' } };
+  const w = (title, extra = {}) => screenJob(mkJob({ title }), { ...roleProfile, ...extra }, empty, NOW, { source: 'watched' }).drop;
+  for (const t of ['Account Executive, Enterprise', 'Executive Assistant, CEO', 'Sales Operations Manager']) assert.deepEqual(w(t), ['outside_role'], t);
+  for (const t of ['Senior Software Engineer', 'Staff Software Engineering Manager', 'Engineer, Platform']) assert.deepEqual(w(t), [], t);
+  assert.deepEqual(w('Developer Advocate'), ['outside_role']);
+  assert.deepEqual(w('Developer Advocate', { search: { role: 'software engineer', roleWords: ['developer', 'engineer'] } }), [], 'roleWords widens the filter');
+  assert.deepEqual(screenJob(mkJob({ title: 'Account Executive' }), {}, empty, NOW, { source: 'watched' }).drop, [], 'no role set, no filter');
+  assert.deepEqual(screenJob(mkJob({ title: 'Account Executive' }), roleProfile, empty, NOW).drop, [], 'routed postings are not filtered by title');
+  const board = { jobs: [{ id: 1, title: 'Account Executive, Enterprise' }, { id: 2, title: 'Executive Assistant, CEO' }, { id: 3, title: 'Software Engineer' }].map((j) => ({ ...j, company_name: 'Figma', location: { name: 'Berlin' }, first_published: '2026-11-20T00:00:00Z', content: '' })) };
+  const payload = await sweep.runSweep({ state: store.emptyState(), profile: { ...roleProfile, watch: [{ url: 'https://boards.greenhouse.io/figma' }] }, overlay: empty, fetch: fakeFetch({ 'https://boards-api.greenhouse.io/': board }), now: NOW });
+  assert.equal(payload.jobs.length, 1);
+  assert.deepEqual(payload.dropCounts, { outside_role: 2 });
+  store.updateState((s) => { Object.assign(s, store.emptyState()); });
+  sweep.persist(payload);
+  const text = (await import('../../skills/job-search/scripts/lib/report.mjs')).renderReport(store.loadState(), empty, { now: NOW });
+  assert.match(text, /Dropped by code in the last sweep: 2 outside role/);
 });
 
 test('cross-source merge keeps one job and records the other URL', () => {

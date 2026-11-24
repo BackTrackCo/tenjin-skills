@@ -71,12 +71,13 @@ test('the network check: no script fetches news.ycombinator.com or workatastartu
 test('kept posts are stored once, as post_review items, with the seen ids', async () => {
   store.updateState((s) => { Object.assign(s, store.emptyState()); });
   const r = await hn.readHn({ fetch: hnFetch(), seen: [], profile, sleep: async () => {} });
-  assert.deepEqual(hn.persistHn(r, Date.parse('2026-11-23T10:00:00Z')), { fetched: 7, kept: 3 });
-  assert.deepEqual(hn.persistHn(r, Date.parse('2026-11-23T10:00:00Z')), { fetched: 7, kept: 0 });
+  assert.deepEqual(hn.persistHn(r, Date.parse('2026-11-23T10:00:00Z')), { fetched: 7, kept: 3, remaining: 0 });
+  assert.deepEqual(hn.persistHn(r, Date.parse('2026-11-23T10:00:00Z')), { fetched: 7, kept: 0, remaining: 0 });
   const s = store.loadState();
   assert.equal(s.hn.seen.length, 7);
   const items2 = work.buildWorkList(s, { rules: [], lessons: [] }, Date.parse('2026-11-23T11:00:00Z'), {}).items.filter((i) => i.reason === 'post_review');
-  assert.equal(items2.length, 3);
+  assert.equal(items2.length, 1, 'three posts are one batch');
+  assert.deepEqual(items2[0].posts.map((p) => p.url), ['hn:9101', 'hn:9105', 'hn:9201']);
   assert.equal(hn.hnDue(s, profile, Date.parse('2026-11-23T11:00:00Z')), false);
   assert.equal(hn.hnDue(s, profile, Date.parse('2026-11-24T11:00:00Z')), true);
   assert.equal(hn.hnDue(s, { ...profile, hn: false }, Date.parse('2026-11-24T11:00:00Z')), false);
@@ -90,4 +91,72 @@ test('an hn_hiring_posts ingest uses the posting shape and the same employer ste
   const r = await ing.ingest({ obj, state: store.loadState(), profile: { places: ['Berlin'], includeOld: true }, overlay: { rules: [], lessons: [] }, fetch: fakeFetch({ 'https://api.lever.co/v0/postings/acme': lever }), now: Date.parse('2026-11-23T10:00:00Z') });
   assert.equal(r.added, 1);
   assert.equal(Object.values(store.loadState().jobs)[0].via, 'hn');
+});
+
+test('a cut-off read keeps its seen ids and the next call continues from them', async () => {
+  store.updateState((s) => { Object.assign(s, store.emptyState()); });
+  let t = 0;
+  const clock = () => t;
+  const sleep = async (ms) => { t += ms; }; // each item costs one second on the fake clock
+  const r1 = await hn.runHn({ fetch: hnFetch(), profile, state: store.loadState(), budgetMs: 3500, sleep, clock, now: Date.parse('2026-11-23T10:00:00Z') });
+  assert.equal(r1.done, false);
+  assert.equal(r1.fetched, 5);
+  assert.equal(r1.remaining, 2);
+  assert.deepEqual(store.loadState().hn.seen, [9101, 9102, 9103, 9104, 9105], 'saved although the read did not finish');
+  assert.equal(store.loadState().hn.lastAt, null, 'not complete yet');
+  assert.equal(hn.hnDue(store.loadState(), profile, Date.parse('2026-11-23T10:01:00Z')), true, 'the next tick continues');
+  const f2 = hnFetch();
+  t = 0;
+  const r2 = await hn.runHn({ fetch: f2, profile, state: store.loadState(), budgetMs: 90000, sleep, clock, now: Date.parse('2026-11-23T10:02:00Z') });
+  assert.equal(r2.done, true);
+  assert.equal(r2.fetched, 2);
+  assert.ok(f2.calls.every((u) => !/\/item\/910[1-5]\.json/.test(u)), 'the first five are not fetched again');
+  const s = store.loadState();
+  assert.equal(s.hn.seen.length, 7);
+  assert.equal(s.hn.remaining, 0);
+  assert.ok(s.hn.lastAt);
+  assert.equal(s.posts.length, 3);
+  assert.equal(hn.hnDue(s, profile, Date.parse('2026-11-23T11:00:00Z')), false);
+});
+
+test('progress is saved every 20 items, before the read ends', async () => {
+  const many = {};
+  const kids = Array.from({ length: 45 }, (_, i) => 7000 + i);
+  many['9002'] = { id: 9002, type: 'story', title: 'Ask HN: Who is hiring? (X)', kids };
+  for (const k of kids) many[k] = { id: k, type: 'comment', by: 'x', time: 1795000000, text: 'Software engineer, Berlin' };
+  const f = async (url) => {
+    const respond = (v) => ({ ok: true, status: 200, json: async () => v });
+    if (url.endsWith('/user/whoishiring.json')) return respond({ submitted: [9002] });
+    if (url.endsWith('/jobstories.json')) return respond([]);
+    return respond(many[/item\/(\d+)/.exec(url)[1]]);
+  };
+  const saves = [];
+  await hn.readHn({ fetch: f, seen: [], profile, sleep: async () => {}, save: (c) => saves.push(c.newIds.length) });
+  assert.deepEqual(saves, [20, 20, 5]);
+});
+
+test('the watcher tick reads Hacker News in a time-boxed run and continues on the next tick', async () => {
+  store.updateState((s) => { Object.assign(s, store.emptyState()); });
+  const fs2 = await import('node:fs');
+  fs2.mkdirSync(path.join(process.env.TENJIN_SKILLS_DIR, 'job-search'), { recursive: true });
+  fs2.writeFileSync(path.join(process.env.TENJIN_SKILLS_DIR, 'job-search', 'profile.json'), JSON.stringify({ search: profile.search, updates: false }));
+  const lease = await import('../../skills/job-search/scripts/lib/lease.mjs');
+  const watcher = await import('../../skills/job-search/scripts/lib/watcher.mjs');
+  const now = Date.parse('2026-11-23T10:00:00Z');
+  await lease.claimLease({ holder: 'h', now });
+  let t = 0;
+  const sleep = async (ms) => { t += ms; };
+  await watcher.tick({ holder: 'h', now, fetchImpl: hnFetch(), sleep, clock: () => t, hnBudgetMs: 2500, seen: { sig: null } });
+  assert.equal(store.loadState().hn.remaining > 0, true);
+  t = 0;
+  await watcher.tick({ holder: 'h', now: now + 60000, fetchImpl: hnFetch(), sleep, clock: () => t, hnBudgetMs: 60000, seen: { sig: null } });
+  assert.equal(store.loadState().hn.remaining, 0);
+});
+
+test('post_review goes to Haiku in batches of 25, one item per batch', () => {
+  const s = store.emptyState();
+  s.posts = Array.from({ length: 60 }, (_, i) => ({ url: `hn:${i}`, author: 'a', text: 't', status: 'new' }));
+  const items = work.buildWorkList(s, { rules: [], lessons: [] }, Date.now(), {}).items.filter((i) => i.reason === 'post_review');
+  assert.deepEqual(items.map((i) => i.posts.length), [25, 25, 10]);
+  assert.equal(work.POST_BATCH, 25);
 });

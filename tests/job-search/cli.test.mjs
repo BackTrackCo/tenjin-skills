@@ -131,3 +131,26 @@ test('a state or rules write never lands outside the temporary HOME', () => {
   assert.ok(process.env.TENJIN_SKILLS_DIR.startsWith(home));
   assert.ok(fs.existsSync(path.join(home, '.tenjin-skills', 'job-search', 'state.json')));
 });
+
+test('profile set refuses a bad shape with the reason, and saves nothing', () => {
+  const file = path.join(home, '.tenjin-skills', 'job-search', 'profile.json');
+  const before = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
+  for (const [bad, msg] of [
+    [{ places: [{ city: 'San Francisco' }] }, /places must be a list of strings/],
+    [{ search: { role: 'x', roleWords: 'dev' } }, /search\.roleWords must be a list of strings/],
+    [{ search: { place: 'Berlin' } }, /search needs a role/],
+    [{ watch: ['https://boards.greenhouse.io/acme'] }, /watch must be a list/],
+    [{ windowDays: 'ten' }, /windowDays/],
+    [{ sweepHour: 25 }, /sweepHour/],
+    [{ unattended: { roles: 'engineer' } }, /unattended\.roles/],
+    [{ facts: { first_name: { a: 1 } } }, /facts/],
+    [{ eeo: 'yes' }, /eeo/],
+  ]) {
+    const r = runJobs(home, ['profile', 'set', JSON.stringify(bad)]);
+    assert.equal(r.code, 2, JSON.stringify(bad));
+    assert.match(r.json.error, msg);
+  }
+  assert.equal(fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null, before);
+  const ok = runJobs(home, ['profile', 'set', JSON.stringify({ places: ['San Francisco'], remote: true, search: { role: 'software engineer', roleWords: ['developer'] }, watch: [{ url: 'https://boards.greenhouse.io/acme' }] })]);
+  assert.equal(ok.code, 0);
+});

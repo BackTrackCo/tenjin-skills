@@ -16,7 +16,8 @@ const dec = (p, pol) => g.decide(p, pol).decision;
 test('settings: install touches no other entry; uninstall removes only its own', () => {
   const original = { model: 'sonnet', permissions: { allow: ['Bash(ls)'] }, hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo mine' }] }], Stop: [{ hooks: [{ type: 'command', command: 'echo stop' }] }] } };
   fs.writeFileSync(settingsFile(), JSON.stringify(original));
-  g.installGuard();
+  const first = g.installGuard();
+  assert.deepEqual([first.installed, first.updated], [true, false], 'a fresh write says installed, not updated');
   const after = JSON.parse(fs.readFileSync(settingsFile(), 'utf8'));
   assert.deepEqual(after.permissions, original.permissions);
   assert.deepEqual(after.hooks.Stop, original.hooks.Stop);
@@ -24,7 +25,8 @@ test('settings: install touches no other entry; uninstall removes only its own',
   assert.deepEqual(after.hooks.PreToolUse[0], original.hooks.PreToolUse[0]);
   assert.equal(after.hooks.PreToolUse.length, 2);
   assert.equal(g.guardInstalled(), true);
-  g.installGuard(); // idempotent
+  const again = g.installGuard(); // idempotent
+  assert.deepEqual([again.installed, again.updated], [false, true], 'a second install replaces its own entry');
   assert.equal(JSON.parse(fs.readFileSync(settingsFile(), 'utf8')).hooks.PreToolUse.length, 2);
   assert.equal(g.uninstallGuard().removed, 1);
   assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile(), 'utf8')), original);
