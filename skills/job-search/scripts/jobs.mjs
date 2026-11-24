@@ -560,7 +560,7 @@ const commands = {
   // The payload for Claude Code's question tool, so the questions are asked as choices, never as a list in prose.
   async ask([kind], flags) {
     const arg = flags.json ? readJsonArg(flags.json) : {};
-    const make = { start: () => qs.startQuestions(), resume: () => qs.resumeChoiceQuestion(arg), tenjin: () => qs.tenjinAsk(arg), eeo: () => qs.eeoQuestion(), contacts: () => qs.contactsCountQuestion(), 'optional-writing': () => qs.optionalWritingQuestion(), fact: () => qs.factQuestion(arg), yes: () => qs.sheetYesQuestion(arg) }[kind];
+    const make = { start: () => qs.startQuestions(), resume: () => qs.resumeChoiceQuestion(arg), tenjin: () => qs.tenjinAsk(arg), eeo: () => qs.eeoQuestion(), follow_up: () => qs.followUpQuestion(arg), contacts: () => qs.contactsCountQuestion(), 'optional-writing': () => qs.optionalWritingQuestion(), fact: () => qs.factQuestion(arg), yes: () => qs.sheetYesQuestion(arg) }[kind];
     if (!make) return out({ error: 'ask start | resume --json {header,question,guess,next} | tenjin --json {line,status} | eeo | optional-writing | fact --json {label,options} | yes --json {company,title}' }, 2);
     if (batch.isActive() && batch.batchMode() === 'unattended') return out({ error: 'no questions in an unattended turn: nobody can answer; hold the job and notify' }, 4);
     const p = make();
@@ -630,6 +630,20 @@ const commands = {
     return out(updateState((s) => {
       for (const k of keys) if (s.jobs[k]) s.jobs[k].left = null;
       return { retried: keys.length };
+    }));
+  },
+
+  // What happened with an application, from the person: the follow-up item's outcome command.
+  async outcome([key], flags) {
+    const to = { reply: null, interview: 'interview', rejected: 'rejected', offer: 'offer', no_reply: null, withdrawn: 'withdrawn' }[flags.status];
+    if (!key || flags.status === undefined || (to === undefined)) return out({ error: 'outcome <key> --status reply|interview|rejected|offer|no_reply|withdrawn' }, 2);
+    return out(updateState((s) => {
+      const job = s.jobs[key];
+      if (!job) throw new Error(`unknown job: ${key}`);
+      applyOp(s, { op: 'signal', kind: flags.status === 'no_reply' ? 'no_reply' : flags.status });
+      if (to) applyOp(s, { op: 'transition', key, to });
+      job.followUpAsked = new Date().toISOString(); // asked: not due again until something changes
+      return { recorded: flags.status, status: job.status };
     }));
   },
 

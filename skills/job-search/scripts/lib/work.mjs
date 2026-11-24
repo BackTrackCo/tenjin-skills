@@ -21,7 +21,6 @@ const GATES = {
   post_review: 'A batch of up to 25 X or Hacker News hiring posts, one subagent, one ingest file with batch[] (every post link) and outcomes[] (one per post: job, lead, not_hiring or no_fit). A post with a posting goes in postings[]; a post with no posting but a person to write to goes in leads[]. A file with a post that has no outcome is refused.',
   new_job: 'Review: does the work match the title. Warn, never drop except on a mismatch. Score 0 to 100.',
   review_due: 'The posting changed. Review again.',
-  reverify_due: 'Verify the job is still open before it goes further.',
   contacts_requested: 'Find a contact with a source link, or say none was found.',
   prepare_due: 'Build the sheet, then have the writer draft the prose. Facts only from the profile.',
   apply_ready: 'Attended: show the sheet, wait for a yes. Never submit without it.',
@@ -110,6 +109,17 @@ export function waitsForPerson(state, profile, item) {
   return false;
 }
 
+// Work on a job's employer posting is worth doing only for the jobs this period can use: ranked best fit first within the
+// positions rule (all of them when there is no limit), and above the person's score floor when they set one.
+export function inPeriodSet(state, job, profile, overlay) {
+  const floor = (profile.unattended || {}).minScore;
+  if (typeof floor === 'number' && !(typeof job.fit === 'number' && job.fit >= floor)) return false;
+  const limit = periodLimit(overlay);
+  if (limit === null) return true;
+  const ranked = Object.values(state.jobs).filter((x) => x.status === 'reviewed' && !x.employerPosting && (typeof floor !== 'number' || (typeof x.fit === 'number' && x.fit >= floor))).sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1)).slice(0, limit);
+  return ranked.some((x) => x.key === job.key);
+}
+
 // Where Tenjin would do better, and what it adds there. Code decides when; the model never does.
 export const HINT_LINES = {
   daily_search: 'With Tenjin I can also run the router\'s job-posting search and a live X search, on top of the free searches.',
@@ -164,7 +174,7 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
       add(j, 'fill_ready');
       continue;
     }
-    if (j.status === 'reviewed' && !j.employerPosting && !j.careersChecked && ['no_board', 'unconfirmed_board', 'no_match', 'no_apply_link', 'yc_platform_only'].includes(j.unresolved)) {
+    if (j.status === 'reviewed' && !j.employerPosting && !j.careersChecked && ['no_board', 'unconfirmed_board', 'no_match', 'no_apply_link', 'yc_platform_only'].includes(j.unresolved) && inPeriodSet(state, j, profile, overlay)) {
       items.push({ key: j.key, reason: 'employer_page', title: j.title, company: j.company, website: j.employerWebsite || null, gate: GATES.employer_page });
       continue;
     }
@@ -174,7 +184,6 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
     else if (j.status === 'shortlisted') add(j, 'prepare_due');
     else if (j.status === 'apply_ready') add(j, 'apply_ready');
     else if (j.status === 'submitted' && !j.followUpAsked && now - Date.parse(j.statusAt) > graph().followUpDays * DAY) add(j, 'follow_up_due');
-    if (['reviewed', 'shortlisted', 'prepared', 'apply_ready'].includes(j.status) && now - Date.parse(j.verifiedAt) > graph().unattendedWindow.verifiedHours * HOUR) add(j, 'reverify_due');
   }
   for (const key of state.contactsRequested || []) if (state.jobs[key] && !(state.contacts[key] || []).length) add(state.jobs[key], 'contacts_requested');
   for (const i of items) {
@@ -222,6 +231,8 @@ export function waitingSet(state) {
     else if (j.status === 'apply_ready' && !state.approvals[j.key] && j.employerPosting) w[`yes:${j.key}`] = `${j.hash}|${j.company}`;
   }
   for (const h of state.held) if (PERSON_HELD.includes(h.reason)) w[`held:${h.reason}:${h.detail || ''}`] = h.reason;
+  // An update line goes to the report and the notify set, never a wake of its own.
+  (state.updateLines || []).forEach((l, i) => { w[`update:${i}:${l}`] = l; });
   // Every consent change and writing approval is visible: one notification, and a line in the next report.
   for (const c of state.consentLog || []) if (!c.acked) w[`consent:${c.at}`] = c.what;
   return w;
@@ -244,6 +255,7 @@ export function notifyLine(state, overlay, now = Date.now(), { unattended = fals
   const stops = fresh.filter((k) => k.startsWith('park:'));
   const held = fresh.filter((k) => k.startsWith('held:')).map((k) => k.split(':')[1]);
   const consents = fresh.filter((k) => k.startsWith('consent:'));
+  const updates = fresh.filter((k) => k.startsWith('update:'));
   const parts = [];
   if (filled) parts.push(`${filled} filled, waiting for your submit (fill ready)`);
   if (yes) parts.push(`${yes} application${yes > 1 ? 's' : ''} wait for your yes`);
@@ -251,6 +263,7 @@ export function notifyLine(state, overlay, now = Date.now(), { unattended = fals
     const j = state.jobs[stops[0].slice(5)];
     parts.push(`${stops.length} stop${stops.length > 1 ? 's' : ''} need you${stops.length === 1 && j ? ` at ${j.company}` : ''} (${j && j.parked ? (j.parked.reasons[0] === 'needs_facts' && (j.missingFacts || []).length ? `needs facts: ${j.missingFacts.map((f) => f.replace(/_/g, ' ')).join(', ')}` : j.parked.reasons[0].replace(/_/g, ' ')) : 'parked'})`);
   }
+  if (updates.length) parts.push(`${updates.length} update${updates.length > 1 ? 's' : ''} for the report`);
   if (consents.length) parts.push(`consent changed: ${[...new Set(consents.map((k) => w[k]))].join('; ')}`);
   if (held.length) parts.push(`needs you: ${[...new Set(held)].join(', ').replace(/_/g, ' ')}`);
   let line = parts.join(', ').replace(/[*_`#\[\]]/g, '');

@@ -56,6 +56,16 @@ export function contactsCountQuestion() {
   ])] };
 }
 
+// A follow-up that is due: what happened with an application. Asked in an attended turn, never a wake.
+export function followUpQuestion({ company, title }) {
+  return { questions: [q('Follow-up', `What happened with ${title} at ${company}?`, [
+    { label: 'No reply yet (Recommended)', description: 'Keep waiting; I will ask again in 14 days.' },
+    { label: 'They replied', description: 'Record a reply; tell me more through Other if you want it noted.' },
+    { label: 'Interview', description: 'Record an interview.' },
+    { label: 'Rejected', description: 'Record a rejection and stop following up.' },
+  ])] };
+}
+
 export function eeoQuestion() {
   return { questions: [q('EEO', 'This form asks voluntary demographic questions. How should I answer them from now on?', [
     { label: 'Decline to answer all (Recommended)', description: 'Chooses "decline to self-identify" wherever a form offers it.' },

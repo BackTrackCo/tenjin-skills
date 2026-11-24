@@ -55,8 +55,7 @@ export async function tick(ctx) {
   const s2 = loadState();
   if (profile.updates !== false && fetchImpl && (!s2.update.lastCheckAt || now - Date.parse(s2.update.lastCheckAt) >= DAY)) {
     const result = await checkRelease({ fetchImpl, runner, now });
-    recordRelease(result, now);
-    if (result.line) lines.push(result.line);
+    recordRelease(result, now); // the line goes to the report and the notify set, with no wake of its own
   }
   const wl = workList({ now, commit: false });
   // Wake the model only for due work it can act on now. What waits for the person never wakes it (its one notification
@@ -70,6 +69,7 @@ export async function tick(ctx) {
   if (fresh.length || newNotify) {
     const counts = {};
     for (const i of actionable.filter((x) => fresh.includes(`${x.key}:${x.reason}:${x.v}`))) counts[i.reason] = (counts[i.reason] || 0) + 1;
+    updateState((st) => { (st.wakes ||= []).push({ at: new Date(now).toISOString(), counts, notify: Boolean(newNotify) }); });
     lines.push(`job-search: ${Object.entries(counts).map(([k, n]) => `${n} ${k}`).join(', ') || 'waiting on you'}${newNotify ? `; notify: ${wl.notify}` : ''}. Run: jobs.mjs work`);
   }
   updateState((state) => {

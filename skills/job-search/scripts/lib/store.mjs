@@ -33,6 +33,8 @@ export function emptyState() {
     answerV: 0,
     watcher: { sent: [], fingerprint: null, notify: null },
     found: [],
+    wakes: [],
+    updateLines: [],
     leads: [],
     postOutcomes: {},
     removedBoards: [],

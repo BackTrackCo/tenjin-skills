@@ -99,6 +99,12 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
   const oc = state.postOutcomes || {};
   const skipped = ['not_hiring', 'no_fit'].filter((k) => oc[k]);
   if (skipped.length) L.push('', `Hiring posts set aside: ${skipped.map((k) => `${oc[k]} ${k.replace('_', ' ')}`).join(', ')}.`);
+  const today = (state.wakes || []).filter((w) => now - Date.parse(w.at) < 86400000);
+  if (today.length) {
+    const sum = {};
+    for (const w of today) for (const [k, n] of Object.entries(w.counts)) sum[k] = (sum[k] || 0) + n;
+    L.push('', `Model wakes in the last day: ${today.length}${Object.keys(sum).length ? ` (${Object.entries(sum).map(([k, n]) => `${n} ${k}`).join(', ')})` : ''}.`);
+  }
   const consent = (state.consentLog || []).filter((c) => !c.acked);
   if (consent.length) {
     L.push('', '## Consent changes (check that each one was yours)');
