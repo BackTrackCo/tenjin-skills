@@ -1,8 +1,9 @@
 // The only network door for the scripts. Hosts outside this list are refused.
 export const ALLOWED_HOSTS = [
   'boards-api.greenhouse.io',
+  'boards-api.eu.greenhouse.io', // not verified
   'api.lever.co',
-  'api.eu.lever.co',
+  'api.eu.lever.co', // not verified
   'api.ashbyhq.com',
   'api.github.com',
 ];

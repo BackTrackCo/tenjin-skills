@@ -19,6 +19,7 @@ import { buildSheet, checkReadBack, checkSheet, parseGreenhouseQuestions } from 
 import { buildContactMessageRequest, buildWritingRequest, parseWritingResult } from './lib/writing.mjs';
 import { renderReport } from './lib/report.mjs';
 import { observations } from './lib/signals.mjs';
+import { ingest } from './lib/ingest.mjs';
 
 const out = (o, code = 0) => {
   process.stdout.write(JSON.stringify(o, null, 2) + '\n');
@@ -168,7 +169,7 @@ const commands = {
     const r = await claimLease({ holder });
     if (!r.ok) return out({ armed: false, heldBy: r.heldBy, note: 'another session holds the lease; attended work still works' });
     const monitor = `node "${path.join(SKILL_DIR, 'scripts', 'jobs.mjs')}" watch --holder ${holder}`;
-    return out({ armed: true, monitor, note: 'Run this with Monitor, persistent if the tool offers it, else timeout_ms 1800000 and run arm again at the deadline notice.', view: view(loadState(), { limit: 10 }) });
+    return out({ armed: true, monitor, note: 'Run this with Monitor, persistent if the tool offers it, else timeout_ms 1800000 and run arm again at the deadline message.', view: view(loadState(), { limit: 10 }) });
   },
   async watch(_, flags) {
     const holder = flags.holder;
@@ -330,6 +331,34 @@ const commands = {
       return out(r);
     }
     return out({ error: 'release check | apply (after the person says yes)' }, 2);
+  },
+
+  async ingest([file]) {
+    if (!file) return out({ error: 'ingest <file>' }, 2);
+    let obj;
+    try {
+      obj = JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch (e) {
+      obj = null;
+    }
+    const state = loadState();
+    const r = await ingest({ obj, state, profile: readProfile(), overlay: loadOverlay(), fetch: globalThis.fetch });
+    return out(r, r.held.length && !r.added && !r.applyYourself && !r.posts ? 4 : 0);
+  },
+  // The routed search did not run: no Tenjin, or no request tool before the next session.
+  async routed([sub, ...reason]) {
+    if (sub !== 'skip') return out({ error: 'routed skip <reason>' }, 2);
+    return out(updateState((s) => {
+      s.routed = { ...s.routed, skipReason: reason.join(' ') || 'not run', lastSearchAt: new Date().toISOString() };
+      return s.routed;
+    }));
+  },
+  async posts([sub, ...urls]) {
+    if (sub !== 'drop') return out({ error: 'posts drop <url...>' }, 2);
+    return out(updateState((s) => {
+      s.posts = (s.posts || []).filter((p) => !urls.includes(p.url));
+      return { left: s.posts.length };
+    }));
   },
 
   async gates(_, flags) {

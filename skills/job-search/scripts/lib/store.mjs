@@ -27,6 +27,10 @@ export function emptyState() {
     stops: [],
     contactsRequested: [],
     answers: {},
+    applyYourself: [],
+    posts: [],
+    routed: { skipReason: null, lastSearchAt: null, lastCost: null },
+    watched: null,
   };
 }
 

@@ -36,10 +36,20 @@ export function hostedUrl({ ats, region = 'us', token, jobId }) {
 
 export function boardApiUrl({ ats, region = 'us', token }) {
   if (!/^[A-Za-z0-9._-]+$/.test(token || '')) throw new Error('bad board token');
-  if (ats === 'greenhouse') return `https://boards-api.greenhouse.io/v1/boards/${token}/jobs?content=true`;
+  // The EU API hosts (boards-api.eu.greenhouse.io, api.eu.lever.co) are not verified.
+  if (ats === 'greenhouse') return `https://${region === 'eu' ? 'boards-api.eu.greenhouse.io' : 'boards-api.greenhouse.io'}/v1/boards/${token}/jobs?content=true`;
   if (ats === 'lever') return `https://${region === 'eu' ? 'api.eu.lever.co' : 'api.lever.co'}/v0/postings/${token}?mode=json`;
   if (ats === 'ashby') return `https://api.ashbyhq.com/posting-api/job-board/${token}`;
   throw new Error(`unsupported ats: ${ats}`);
+}
+
+// A watched company is a careers URL the person pastes. Code reads the system and the token.
+// Returns {ats, region, token, jobId} or {needsBoard: true} (a page with only ?gh_jid=) or null.
+export function parseCareersUrl(raw) {
+  const p = parseBoardUrl(raw);
+  if (!p) return null;
+  if (!p.token || !/^[A-Za-z0-9._-]+$/.test(p.token)) return { needsBoard: true, ats: p.ats, jobId: p.jobId };
+  return p;
 }
 
 // Normalizers -----------------------------------------------------------

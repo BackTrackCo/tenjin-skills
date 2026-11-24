@@ -1,10 +1,14 @@
 import { graph } from './graph.mjs';
 import { updateState, loadState } from './store.mjs';
 import { loadOverlay, activeLessons, ruleValue } from './overlay.mjs';
+import { readJson, stateDir } from './paths.mjs';
+import path from 'node:path';
 
 const HOUR = 3600000;
 const DAY = 24 * HOUR;
 const GATES = {
+  search_due: 'Run the routed search (references/search.md): Haiku subagent, state the needs to Tenjin, write the ingest file, run ingest.',
+  post_review: 'An X hiring post: find the employer, the role and an apply link on Greenhouse, Lever or Ashby, then ingest it as a posting; otherwise `J posts drop <url>`.',
   new_job: 'Review: does the work match the title. Warn, never drop except on a mismatch. Score 0 to 100.',
   review_due: 'The posting changed. Review again.',
   reverify_due: 'Verify the job is still open before it goes further.',
@@ -26,8 +30,23 @@ export function unpark(job) {
   job.parked = null;
 }
 
-export function buildWorkList(state, overlay, now = Date.now()) {
+export function searchDue(state, profile, now) {
+  if (!profile.search || !profile.search.role) return false;
+  if (state.held.some((h) => h.reason === 'tenjin_missing')) return false;
+  const last = state.routed && state.routed.lastSearchAt ? Date.parse(state.routed.lastSearchAt) : null;
+  if (last === null) return true;
+  const elapsed = now - last;
+  return elapsed >= 26 * HOUR || (elapsed >= 20 * HOUR && new Date(now).getHours() >= (profile.sweepHour ?? graph().sweep.defaultHour));
+}
+
+export function buildWorkList(state, overlay, now = Date.now(), profile = {}) {
   const items = [];
+  if (searchDue(state, profile, now)) {
+    const last = state.routed.lastSearchAt;
+    const since = last ? new Date(Math.max(Date.parse(last) - 86400000, now - 14 * 86400000)) : new Date(now - 14 * 86400000);
+    items.push({ key: 'search', reason: 'search_due', title: 'Daily routed search', company: '', gate: GATES.search_due, query: { role: profile.search.role, place: profile.search.place || '', remote: profile.search.remote === true, since: since.toISOString().slice(0, 10) } });
+  }
+  for (const p of state.posts || []) if (p.status === 'new') items.push({ key: p.url, reason: 'post_review', title: p.text.slice(0, 80), company: p.author, gate: GATES.post_review });
   const inventory = [];
   const add = (j, reason) => items.push({ key: j.key, reason, title: j.title, company: j.company, gate: GATES[reason] });
   for (const j of Object.values(state.jobs)) {
@@ -98,7 +117,7 @@ export function workList({ now = Date.now(), commit = false } = {}) {
   const overlay = loadOverlay();
   let res;
   const compute = (state) => {
-    const wl = buildWorkList(state, overlay, now);
+    const wl = buildWorkList(state, overlay, now, readJson(path.join(stateDir(), 'profile.json'), {}));
     const n = notifyLine(state, overlay, now);
     wl.notify = n.line;
     if (commit) state.notified = n.next;

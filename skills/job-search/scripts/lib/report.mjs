@@ -11,11 +11,21 @@ export function renderReport(state, overlay, { since = null, now = Date.now() } 
   L.push(`## New jobs (${fresh.length})`);
   for (const j of fresh.slice(0, 20)) L.push(`- ${j.fit ?? '?'} | ${j.title}, ${j.company}, ${[j.city, j.region].filter(Boolean).join(', ') || (j.remote ? 'remote' : '')}${j.fitLine ? ` | ${j.fitLine}` : ''}${(j.warnings || []).length ? ` | warnings: ${j.warnings.join('; ')}` : ''} | ${j.url}`);
   if (fresh.length > 20) L.push(`- and ${fresh.length - 20} more`);
+  const readyJobs = jobs.filter((j) => j.status === 'new' || j.status === 'reviewed');
+  if (readyJobs.length) L.push('', `(${readyJobs.length} new jobs above are ready to apply, each on its own board: ${[...new Set(readyJobs.map((j) => j.board))].join(', ')})`);
+  const ay = state.applyYourself || [];
+  L.push('', `## Apply yourself (${ay.length})`);
+  for (const a of ay.slice(-20)) L.push(`- ${a.title}, ${a.employer}: ${a.links.map((l) => `${l.url}${l.publisher ? ` (${l.publisher})` : ''}`).join(' | ')}`);
   const held = state.held.filter((h) => h.reason === 'source_empty');
-  if (held.length) {
-    L.push('', '## Sources held this run');
-    for (const h of held) L.push(`- ${h.detail}`);
-  }
+  L.push('', '## Sources held this run');
+  if (held.length) for (const h of held) L.push(`- ${h.detail}`);
+  else L.push('- none');
+  const noTenjin = state.held.find((h) => h.reason === 'tenjin_missing');
+  const skip = noTenjin ? `no Tenjin (${noTenjin.detail})` : state.routed && state.routed.skipReason;
+  if (skip) L.push('', `## The routed search did not run`, `- ${skip}. The watched boards still ran.`);
+  const w = state.watched;
+  L.push('', `## Watched boards checked: ${w ? `${w.ok} of ${w.checked} answered` : 'none yet'}`);
+  L.push('', `Cost the router reported: ${(state.routed && state.routed.lastCost) || 'none reported'}`);
   const newRules = (overlay.rules || []).filter((r) => !since || r.date >= since.slice(0, 10));
   if (newRules.length) {
     L.push('', '## Rules (your words)');
