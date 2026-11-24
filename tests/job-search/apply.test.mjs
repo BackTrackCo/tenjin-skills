@@ -121,9 +121,9 @@ test('unattended: a table of rule cases, each to apply or to the attended queue'
 
 test('unattended: rules and lessons from the person and the skill', () => {
   const o = { rules: [{ id: 'r1', effect: 'exclude_company', value: 'Globex' }], lessons: [{ effect: 'host_attended', subject: 'lever', expires: new Date(NOW + 864e5).toISOString() }, { effect: 'company_attended', subject: 'Hooli', expires: new Date(NOW + 864e5).toISOString() }] };
-  assert.equal(ap.unattendedRuleFailure(ready({ company: 'Globex Inc' }), profile(), o), 'company_excluded');
-  assert.equal(ap.unattendedRuleFailure(ready({ ats: 'lever' }), profile(), o), 'lesson_host_attended');
-  assert.equal(ap.unattendedRuleFailure(ready({ company: 'Hooli' }), profile(), o), 'lesson_company_attended');
+  assert.equal(ap.unattendedRuleFailure(ready({ company: 'Globex Inc' }), profile(), o, NOW), 'company_excluded');
+  assert.equal(ap.unattendedRuleFailure(ready({ ats: 'lever' }), profile(), o, NOW), 'lesson_host_attended');
+  assert.equal(ap.unattendedRuleFailure(ready({ company: 'Hooli' }), profile(), o, NOW), 'lesson_company_attended');
 });
 
 test('unattended: no submit without a recorded consent', () => {

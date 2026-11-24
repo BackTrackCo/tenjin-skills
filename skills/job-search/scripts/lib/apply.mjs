@@ -67,7 +67,7 @@ export function confirmDryRun(state, profile, overlay, now = Date.now()) {
 export const dryRunDone = (state, profile, overlay) => Boolean(state.consent.dryRun.confirmedAt && state.consent.dryRun.rulesHash === rulesHash(profile, overlay));
 
 // ---- the unattended rules against one job ---------------------------------
-export function unattendedRuleFailure(job, profile, overlay) {
+export function unattendedRuleFailure(job, profile, overlay, now = Date.now()) {
   const u = profile.unattended;
   const title = job.title.toLowerCase();
   if (!u.hosts.includes(job.ats)) return 'host_not_in_rules';
@@ -84,7 +84,7 @@ export function unattendedRuleFailure(job, profile, overlay) {
   if (excluded.some((c) => c && String(job.company).toLowerCase().includes(String(c).toLowerCase()))) return 'company_excluded';
   if (typeof job.fit !== 'number' || job.fit < u.minScore) return 'score_below_rule';
   if ((job.warnings || []).some((w) => /layoff|stealth|recruiter|injection/i.test(w))) return 'warning_blocks_unattended';
-  for (const l of activeLessons(overlay)) {
+  for (const l of activeLessons(overlay, now)) {
     if (l.effect === 'host_attended' && l.subject === job.ats) return 'lesson_host_attended';
     if (l.effect === 'company_attended' && String(job.company).toLowerCase() === String(l.subject).toLowerCase()) return 'lesson_company_attended';
   }
@@ -150,7 +150,7 @@ export function jobFailure({ job, state, profile, overlay, mode, now, writingOk 
     if (a.sheetHash !== job.sheet.hash) return 'sheet_changed_needs_new_yes';
     return null;
   }
-  const rule = unattendedRuleFailure(job, profile, overlay);
+  const rule = unattendedRuleFailure(job, profile, overlay, now);
   if (rule) return rule;
   // New writing needs its own consent. Optional writing follows the recorded skip or wait.
   if (!writingOk) {
