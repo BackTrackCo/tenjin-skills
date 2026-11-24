@@ -125,18 +125,19 @@ test('X posts are stored for review, once, and become a post_review item', async
   assert.ok(wl.items.some((i) => i.reason === 'post_review'));
 });
 
-test('search_due: due with no search yet, not due after one, due again after a day; none without Tenjin', () => {
+test('search_due: due with no search yet, not due after one, due again after a day; without Tenjin the item is not routed', () => {
   reset();
   const s = store.loadState();
   const items = (st, now) => work.buildWorkList(st, empty, now, profile).items.filter((i) => i.reason === 'search_due');
   const [due] = items(s, NOW);
-  assert.deepEqual(due.query, { role: 'software engineer', place: 'Berlin', remote: false, since: '2026-11-09' });
+  assert.deepEqual(due.query, { role: 'software engineer', place: 'Berlin', remote: false, since: '2026-11-09', variant: null, round: 0 });
   s.routed.lastSearchAt = new Date(NOW - 3600000).toISOString();
   assert.equal(items(s, NOW).length, 0);
   assert.equal(items(s, NOW + 27 * 3600000).length, 1);
   s.routed.lastSearchAt = null;
   s.held.push({ reason: 'tenjin_missing', detail: 'missing' });
-  assert.equal(items(s, NOW).length, 0);
+  assert.equal(items(s, NOW).length, 1, 'the free web searches run without Tenjin');
+  assert.equal(items(s, NOW)[0].routed, false);
   assert.equal(work.buildWorkList(s, empty, NOW, {}).items.length, 0, 'no search settings, no item');
 });
 

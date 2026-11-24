@@ -96,20 +96,18 @@ test('the job match: titles, place, dates, exactly one hit; two hits, none and a
 test('step 3, the careers page: a linked board is confirmed, another system is named, a sign-in page is a stop', async () => {
   const jobs = [{ id: 7, title: 'Software Engineer' }];
   const p = { title: 'Software Engineer', employer: 'Acme', city: 'Berlin', remote: false, postedAt: '2026-11-16T00:00:00Z' };
-  const linked = emp.parseCareersPage({ status: 200, finalUrl: 'https://acme.test/careers', text: '<a href="https://job-boards.greenhouse.io/acmeco/jobs/1">Jobs</a>' });
-  assert.deepEqual(linked.boards, [{ ats: 'greenhouse', token: 'acmeco', region: 'us' }]);
+  const linked = emp.careersFromLinks({ boardLinks: ['https://job-boards.greenhouse.io/acmeco/jobs/1', 'https://job-boards.greenhouse.io/acmeco/jobs/2', 'https://boards.greenhouse.io/embed/job_app?for=acmeco&token=1'] });
+  assert.deepEqual(linked.boards, [{ ats: 'greenhouse', token: 'acmeco', region: 'us' }], 'the same board once');
   const r = await emp.resolveFromCareersPage(p, linked, { fetch: fakeFetch({ [`${GH}/acmeco/`]: ghBoard('Totally Different Name', jobs) }), now: NOW });
   assert.equal(r.match.employerPosting.source, 'careers_page');
   assert.equal(r.match.employerPosting.confidence, 'confirmed', 'linked from the employer\'s own page, so no name check');
   const two = await emp.resolveFromCareersPage(p, linked, { fetch: fakeFetch({ [`${GH}/acmeco/`]: ghBoard('X', [...jobs, { id: 8, title: 'Software Engineer' }]) }), now: NOW });
   assert.equal(two.reason, 'multiple_matches');
-  const other = emp.parseCareersPage({ status: 200, finalUrl: 'https://acme.test/careers', text: 'Apply: https://acme.wd5.myworkdayjobs.com/en-US/External/job/1' });
+  const other = emp.careersFromLinks({ otherLinks: ['https://acme.wd5.myworkdayjobs.com/en-US/External/job/1'] });
   assert.deepEqual((await emp.resolveFromCareersPage(p, other, { fetch: fakeFetch({}) })).other.system, 'Workday');
-  for (const page of [{ status: 403, text: '' }, { status: 200, finalUrl: 'https://acme.test/login?next=/careers', text: '' }, { status: 200, finalUrl: 'https://acme.test/careers', text: '<input type="password" name="p">' }]) {
-    assert.equal(emp.parseCareersPage(page).kind, 'sign_in');
-    assert.equal((await emp.resolveFromCareersPage(p, emp.parseCareersPage(page), { fetch: fakeFetch({}) })).reason, 'sign_in_wall');
-  }
-  assert.equal(emp.parseCareersPage({ status: 200, finalUrl: 'https://acme.test/careers', text: 'nothing here' }).kind, 'none');
+  assert.equal((await emp.resolveFromCareersPage(p, emp.careersFromLinks({ signIn: true }), { fetch: fakeFetch({}) })).reason, 'sign_in_wall');
+  assert.equal(emp.careersFromLinks({}).kind, 'none');
+  assert.equal(emp.careersFromLinks({ boardLinks: ['https://boards.greenhouse.io/embed/job_app?for=&token=1'] }).kind, 'none');
 });
 
 test('through ingest: a platform-only posting resolves by a board probe, and the platform URL is kept off the job', async () => {
@@ -145,7 +143,7 @@ test('each "apply yourself" reason', async () => {
   }
 });
 
-test('careers-page outcomes through ingest: no page, a sign-in wall, another system, a linked board', async () => {
+test('careers-page outcomes through ingest: links returned by the Haiku step, and code fetches nothing from the page', async () => {
   const setup = async () => {
     reset();
     await run(doc([posting()]), fakeFetch({}));
@@ -153,31 +151,33 @@ test('careers-page outcomes through ingest: no page, a sign-in wall, another sys
     store.updateState((s) => { s.jobs[j.key].status = 'reviewed'; });
     return j;
   };
-  const careers = (j, careersUrl = 'https://acme.test/careers') => ({ need: 'careers_page', jobKey: j.key, careersUrl, status: 'fulfilled', fullResultPath: '/x' });
-  const step = (j, map, o) => ing.ingest({ obj: careers(j, o), state: store.loadState(), profile: {}, overlay: empty, fetch: fakeFetch(map), now: NOW });
+  const careers = (j, extra) => ({ need: 'careers_page', jobKey: j.key, careersUrl: 'https://acme.test/careers', status: 'fulfilled', fullResultPath: '/x', ...extra });
+  const step = async (j, map, extra) => {
+    const f = fakeFetch(map);
+    await ing.ingest({ obj: careers(j, extra), state: store.loadState(), profile: {}, overlay: empty, fetch: f, now: NOW });
+    assert.ok(f.calls.every((u) => !/acme\.test/.test(u)), 'the careers page itself is never fetched by code');
+  };
   let j = await setup();
-  assert.ok(work.workList({ now: NOW }).items.some((i) => i.reason === 'employer_page'), 'a reviewed job without an employer posting asks for the careers page');
-  await step(j, { 'https://acme.test/careers': '<html>nothing</html>' });
+  assert.ok(work.workList({ now: NOW }).items.some((i) => i.reason === 'employer_page'));
+  await step(j, {}, {});
   assert.equal(only().unresolved, 'no_careers_page');
   assert.equal(work.workList({ now: NOW }).items.some((i) => i.reason === 'employer_page'), false, 'asked once');
   j = await setup();
-  await step(j, { 'https://acme.test/careers': { __page: true, status: 403, text: '' } });
+  await step(j, {}, { signIn: true });
   assert.equal(only().unresolved, 'sign_in_wall');
   j = await setup();
-  await step(j, { 'https://acme.test/careers': 'Apply at https://jobs.smartrecruiters.com/Acme/1' });
+  await step(j, {}, { otherLinks: ['https://jobs.smartrecruiters.com/Acme/1'] });
   assert.equal(only().otherSystem.system, 'SmartRecruiters');
   assert.match(report.renderReport(store.loadState(), empty, { now: NOW }), /Apply on the employer's site \(1\)[\s\S]*SmartRecruiters/);
   j = await setup();
-  await step(j, { 'https://acme.test/careers': '<a href="https://boards.greenhouse.io/acmeco">jobs</a>', [`${GH}/acmeco/`]: ghBoard('Elsewhere', [{ id: 9, title: 'Software Engineer' }]) });
+  await step(j, { [`${GH}/acmeco/`]: ghBoard('Elsewhere', [{ id: 9, title: 'Software Engineer' }]) }, { boardLinks: ['https://boards.greenhouse.io/acmeco'] });
   const done = only();
   assert.equal(done.employerPosting.source, 'careers_page');
   assert.equal(done.employerPosting.confidence, 'confirmed');
+  assert.equal(done.openConfirmed, true);
   assert.equal(done.ats, 'greenhouse');
-  // a platform or private address is never fetched as a careers page
-  j = await setup();
-  const bad = await step(j, {}, 'https://www.linkedin.com/company/acme');
-  assert.equal(only().unresolved, 'no_careers_page');
-  assert.ok(bad);
+  const bad = await ing.ingest({ obj: { need: 'careers_page', jobKey: j.key, careersUrl: 'http://acme.test', status: 'fulfilled' }, state: store.loadState(), profile: {}, overlay: empty, fetch: fakeFetch({}), now: NOW });
+  assert.match(bad.held[0], /https careersUrl/);
 });
 
 test('a Y Combinator link is never opened, and a YC-only posting with nothing else reports the Work at a Startup link', async () => {

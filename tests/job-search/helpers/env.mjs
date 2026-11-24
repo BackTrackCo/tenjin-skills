@@ -19,8 +19,8 @@ export function tmpHome() {
   return dir;
 }
 
-export function runJobs(home, args, { input } = {}) {
-  const r = spawnSync(process.execPath, [JOBS, ...args], { encoding: 'utf8', input, env: { ...process.env, HOME: home, TENJIN_SKILLS_DIR: path.join(home, '.tenjin-skills'), PATH: '/usr/bin:/bin' } });
+export function runJobs(home, args, { input, cwd } = {}) {
+  const r = spawnSync(process.execPath, [JOBS, ...args], { encoding: 'utf8', input, cwd, env: { ...process.env, HOME: home, TENJIN_SKILLS_DIR: path.join(home, '.tenjin-skills'), PATH: '/usr/bin:/bin' } });
   let json = null;
   try { json = JSON.parse(r.stdout); } catch {}
   return { code: r.status, json, stdout: r.stdout, stderr: r.stderr };
@@ -47,5 +47,5 @@ export function mkJob(over = {}) {
   const key = over.key || `https://boards.greenhouse.io/acme/jobs/${Math.floor(Math.random() * 1e9)}`;
   const epUrl = { greenhouse: /^https:/.test(key) ? key : 'https://boards.greenhouse.io/acme/jobs/1', lever: 'https://jobs.lever.co/acme/abc-1', ashby: 'https://jobs.ashbyhq.com/acme/abc-1' }[ats] || key;
   const employerPosting = ats ? { url: epUrl, system: ats, token: 'acme', jobId: '1', source: 'apply_link', confidence: 'exact', checkedAt: new Date().toISOString() } : null;
-  return { key, url: key, employerPosting, ats: 'greenhouse', board: 'greenhouse:acme', title: 'Software Engineer', company: 'Acme', city: 'Berlin', region: '', country: '', remote: false, posted: new Date().toISOString(), type: 'Full-time', salary: null, desc: 'build things', place: 'Berlin|', hash: 'h1', status: 'new', firstSeen: new Date().toISOString(), lastSeen: new Date().toISOString(), verifiedAt: new Date().toISOString(), warnings: [], parked: null, ...over };
+  return { key, url: key, employerPosting, openConfirmed: true, ats: 'greenhouse', board: 'greenhouse:acme', title: 'Software Engineer', company: 'Acme', city: 'Berlin', region: '', country: '', remote: false, posted: new Date().toISOString(), type: 'Full-time', salary: null, desc: 'build things', place: 'Berlin|', hash: 'h1', status: 'new', firstSeen: new Date().toISOString(), lastSeen: new Date().toISOString(), verifiedAt: new Date().toISOString(), warnings: [], parked: null, ...over };
 }
