@@ -8,21 +8,23 @@ import { employerName } from './employer.mjs';
 import { sha } from './dedupe.mjs';
 import { canonical } from './overlay.mjs';
 import { cleanupStale, isActive, batchMode } from './batch.mjs';
+import { postFacts } from './postinfo.mjs';
 import path from 'node:path';
 
 export const POST_BATCH = 25;
 const HOUR = 3600000;
 const DAY = 24 * HOUR;
 const GATES = {
-  web_search_due: 'Run the free web searches for this round (references/search.md, section 1) as one Haiku step, ingest the file, then `J search web-done`.',
+  web_search_due: 'Free web searches for this round: `J search plan` prints the exact queries. One Haiku step runs them and returns the raw results; `J ingest` the file (code extracts and sorts the URLs), then `J search web-done`.',
+  need_due: 'A routed need that code cannot run (no adapter for its supplier). One Haiku step: state it in plain words through `request` if the tool is there, write the ingest file for it (references/search.md, section 2), `J ingest`, then `J search done <kind>`. No Tenjin tool: `J leave need:<kind> --reason no_web_search`.',
   fill_ready: 'Filled and waiting. Do not submit. The person checks the open tab, presses submit and says so; then `J submitted <key>`.',
   employer_page: 'Passed review, no employer posting yet. Haiku: find and read the employer\'s careers page; write {need:"careers_page", jobKey, careersUrl, status, fullResultPath, boardLinks, otherLinks, signIn}; `J ingest <file>`. Code fetches nothing from the page.',
   search_due: 'Run this search round (references/search.md): free web searches first, then the router needs if Tenjin is there; one ingest file per need with query.round; then `J search next`.',
-  post_review: 'A batch of up to 25 X or Hacker News hiring posts, one subagent, one ingest file with batch[] (every post link) and outcomes[] (one per post: job, lead, not_hiring or no_fit). A post with a posting goes in postings[]; a post with no posting but a person to write to goes in leads[]. A file with a post that has no outcome is refused.',
+  post_review: 'A batch of up to 25 X or Hacker News hiring posts, one subagent, one ingest file with batch[] (every post link) and outcomes[] (one per post: job, lead, not_hiring or no_fit; an unreadable post is not_hiring with reason unreadable). Each post carries its board links, author handle and emails, found by code. A post with a posting goes in postings[]; a lead with the handle or email of its item needs no leads[] record. A file with a post that has no outcome is refused.',
   new_job: 'Review: does the work match the title. Warn, never drop except on a mismatch. Score 0 to 100.',
   review_due: 'The posting changed. Review again.',
-  contacts_requested: 'Find a contact with a source link, or say none was found.',
-  prepare_due: 'Build the sheet, then have the writer draft the prose. Facts only from the profile.',
+  contacts_requested: 'Free ways only (the router\'s people search is `J contacts route`, in code). Find a contact with a source link, or `J leave contacts:<key> --reason none_found`.',
+  prepare_due: 'The sheet needs new writing, or its questions need the browser first (Lever, Ashby). Round writer call: `J write-prompt --round`, then `J write-result --round`. Facts only from the profile.',
   apply_ready: 'Attended: show the sheet, wait for a yes. Never submit without it.',
   follow_up_due: 'Ask the person for the status. Do not contact the employer.',
 };
@@ -82,19 +84,51 @@ export function advanceSearch(state, profile) {
 // work, until that hash changes: new data (another source merged, a new apply link), a board that could match it
 // joins the watch list, its content or open state changes, the person answers, or a rule that affects it changes. Never on a timer.
 export const LEAVE_REASONS = ['low_score', 'no_match', 'no_careers_page', 'sign_in', 'other_system', 'not_a_job', 'duplicate'];
+// The other work-list keys take their own reasons. A search item (the round, the free web search, a need code could not
+// run) comes back at the next period; a contacts item comes back on news about its job. A post batch is never left.
+export const ITEM_LEAVE_REASONS = { search: ['no_web_search'], contacts: ['none_found'] };
+export const itemKind = (key) => (key === 'search' || key === 'web' || String(key).startsWith('need:') ? 'search' : String(key).startsWith('contacts:') ? 'contacts' : String(key).startsWith('posts:') ? 'posts' : 'job');
 const RULE_EFFECTS = ['exclude_company', 'exclude_term', 'require_term', 'min_pay', 'place', 'remote', 'employment_type'];
 export const rulesVersion = (overlay) => (overlay.rules || []).filter((r) => RULE_EFFECTS.includes(r.effect)).map((r) => `${r.effect}=${r.value}`).sort().join('|');
-export function inputsHash(state, job, overlay, profile = {}) {
+const hostOf = (u) => { try { return new URL(/^https?:/i.test(u) ? u : `https://${u}`).hostname.replace(/^www\./, '').toLowerCase(); } catch { return ''; } };
+// The host a sign-in wall sits on: the other system's page, else the employer's site, else the posting.
+export const signInHost = (job) => hostOf((job.otherSystem && job.otherSystem.url) || job.employerWebsite || (job.employerPosting && job.employerPosting.url) || (job.applyLinks || [])[0] || '');
+export const hasAccount = (profile, job) => {
+  const host = signInHost(job);
+  return Boolean(host) && String((profile.facts || {}).account || '').split(/[\s,]+/).filter(Boolean).map(hostOf).some((a) => a === host || host.endsWith(`.${a}`) || a.endsWith(`.${host}`));
+};
+// What the choice rested on. `other_system` also rests on the release's list of supported hiring systems (graph.json), so a
+// release that adds the system brings the job back; `sign_in` rests on whether the person said they have an account there.
+export function inputsHash(state, job, overlay, profile = {}, reason = null) {
   const co = employerName(job.company);
   const boards = (state.found || []).filter((b) => employerName(b.name) === co).map((b) => b.board).sort();
   const ep = job.employerPosting;
-  return sha(canonical({ hash: job.hash, closed: job.status === 'closed', alsoAt: job.alsoAt || [], links: job.applyLinks || [], ep: ep ? [ep.url, ep.confidence] : null, boards, answers: state.answerV || 0, rules: rulesVersion(overlay), floor: (profile.unattended || {}).minScore ?? null, search: [(profile.search || {}).place || '', (profile.search || {}).remote === true] })).slice(0, 16);
+  const extra = reason === 'other_system' ? { systems: sha(JSON.stringify([...graph().hosts].sort())).slice(0, 8) } : reason === 'sign_in' ? { account: hasAccount(profile, job) } : null;
+  return sha(canonical({ hash: job.hash, closed: job.status === 'closed', alsoAt: job.alsoAt || [], links: job.applyLinks || [], ep: ep ? [ep.url, ep.confidence] : null, boards, answers: state.answerV || 0, rules: rulesVersion(overlay), floor: (profile.unattended || {}).minScore ?? null, search: [(profile.search || {}).place || '', (profile.search || {}).remote === true], ...(extra ? { extra } : {}) })).slice(0, 16);
 }
 export function leaveRecord(state, job, overlay, reason, profile = {}) {
   if (!LEAVE_REASONS.includes(reason)) throw new Error(`the reason is one of ${LEAVE_REASONS.join(', ')}`);
-  return { reason, at: new Date().toISOString(), inputs: inputsHash(state, job, overlay, profile) };
+  return { reason, at: new Date().toISOString(), inputs: inputsHash(state, job, overlay, profile, reason) };
 }
-export const stillLeft = (state, job, overlay, profile = {}) => Boolean(job.left && job.left.inputs === inputsHash(state, job, overlay, profile));
+export const stillLeft = (state, job, overlay, profile = {}) => Boolean(job.left && job.left.inputs === inputsHash(state, job, overlay, profile, job.left.reason));
+
+// Items that are not a job. A search item comes back at the next period (its own trigger); a contacts item comes back when
+// its job changes or the person answers.
+export const itemInputs = (state, key, profile, now) => {
+  if (itemKind(key) === 'contacts') {
+    const job = state.jobs[key.slice(9)];
+    return sha(canonical({ v: job ? itemVersion(job) : null, answers: state.answerV || 0 })).slice(0, 16);
+  }
+  return String(periodStart(now, frequencyOf(profile)));
+};
+export function leaveItem(state, key, reason, profile, now = Date.now()) {
+  const kind = itemKind(key);
+  if (kind === 'posts') throw new Error('a whole batch of posts is never left: give each post its outcome (an unreadable post is not_hiring with reason unreadable)');
+  if (kind === 'contacts' && !state.jobs[key.slice(9)]) throw new Error(`unknown job: ${key.slice(9)}`);
+  if (!(ITEM_LEAVE_REASONS[kind] || []).includes(reason)) throw new Error(`the reason for ${key} is one of ${(ITEM_LEAVE_REASONS[kind] || []).join(', ')}`);
+  (state.leftItems ||= {})[key] = { reason, at: new Date(now).toISOString(), inputs: itemInputs(state, key, profile, now) };
+}
+export const itemStillLeft = (state, key, profile, now) => Boolean(state.leftItems && state.leftItems[key] && state.leftItems[key].inputs === itemInputs(state, key, profile, now));
 // Every write to an item raises its state version: the version is a hash of the job's own record, apart from the clocks
 // that a re-verify touches without any news.
 export function itemVersion(job) {
@@ -144,20 +178,22 @@ export function tenjinAsk(state, { unattended = false } = {}) {
 export function buildWorkList(state, overlay, now = Date.now(), profile = {}, opts = {}) {
   const items = [];
   const inventory = [];
-  if (searchDue(state, profile, now, opts)) {
+  if (searchDue(state, profile, now, opts) && !itemStillLeft(state, 'search', profile, now)) {
     const round = searchRound(state, profile, now);
     const last = state.routed.lastSearchAt;
     const since = last ? new Date(Math.max(Date.parse(last) - 86400000, now - 14 * 86400000)) : new Date(now - 14 * 86400000);
     items.push({ key: 'search', reason: 'search_due', title: 'Daily routed search', company: '', gate: GATES.search_due, hint: tenjinHint(state, 'daily_search'), askTenjin: tenjinAsk(state, { unattended: opts.unattended === true }), query: { role: profile.search.role, place: profile.search.place || '', remote: profile.search.remote === true, since: since.toISOString().slice(0, 10), variant: variantFor(profile, round), round }, routed: !state.held.some((h) => h.reason === 'tenjin_missing') && !['missing', 'outdated', 'unfunded'].includes((state.tenjin || {}).status) });
   }
   // The web search stays a model step with Tenjin (the router answers native): one item per round, until recorded as done.
-  if (state.search.webPending) items.push({ key: 'web', reason: 'web_search_due', title: 'Free web searches', company: '', gate: GATES.web_search_due, query: { role: profile.search && profile.search.role, place: profile.search && profile.search.place, round: state.search.webPending.round } });
+  if (state.search.webPending && !itemStillLeft(state, 'web', profile, now)) items.push({ key: 'web', reason: 'web_search_due', title: 'Free web searches', company: '', gate: GATES.web_search_due, query: { role: profile.search && profile.search.role, place: profile.search && profile.search.place, round: state.search.webPending.round } });
+  // A routed need that code could not run (no adapter, an unknown supplier) is one Haiku item in the round's wake.
+  for (const n of state.search.needPending || []) if (!itemStillLeft(state, `need:${n.kind}`, profile, now)) items.push({ key: `need:${n.kind}`, reason: 'need_due', title: `Search: ${n.kind.replace(/_/g, ' ')}`, company: '', gate: GATES.need_due, query: { ...n.query, kind: n.kind, text: n.text, round: n.round } });
   // One Haiku subagent takes a batch of hiring posts and writes one ingest file. 25 posts is about 6,000 tokens of
   // input, the size of one review round, and keeps one bad batch from costing the rest.
   const fresh = (state.posts || []).filter((p) => p.status === 'new');
   for (let i = 0; i < fresh.length; i += POST_BATCH) {
     const batch = fresh.slice(i, i + POST_BATCH);
-    items.push({ key: `posts:${batch[0].url}`, reason: 'post_review', title: `${batch.length} hiring posts`, company: '', posts: batch.map((p) => ({ url: p.url, author: p.author, text: p.text })), gate: GATES.post_review });
+    items.push({ key: `posts:${batch[0].url}`, reason: 'post_review', title: `${batch.length} hiring posts`, company: '', posts: batch.map(postFacts), gate: GATES.post_review });
   }
   const add = (j, reason) => items.push({ key: j.key, reason, title: j.title, company: j.company, gate: GATES[reason] });
   for (const j of Object.values(state.jobs)) {
@@ -181,14 +217,21 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
     if (j.status === 'new') {
       if (!(j.reviewedHash && j.reviewedHash === j.hash)) add(j, j.reviewedHash ? 'review_due' : 'new_job');
     }
-    else if (j.status === 'shortlisted') add(j, 'prepare_due');
+    else if (j.status === 'shortlisted') {
+      // Model work only when the sheet has new writing, or its questions need the browser first (Lever, Ashby, a failed fetch).
+      if (j.needsWriting || (!j.questions && (j.questionsTried || j.ats !== 'greenhouse'))) add(j, 'prepare_due');
+    }
     else if (j.status === 'apply_ready') add(j, 'apply_ready');
     else if (j.status === 'submitted' && !j.followUpAsked && now - Date.parse(j.statusAt) > graph().followUpDays * DAY) add(j, 'follow_up_due');
   }
-  for (const key of state.contactsRequested || []) if (state.jobs[key] && !(state.contacts[key] || []).length) add(state.jobs[key], 'contacts_requested');
+  for (const key of state.contactsRequested || []) {
+    const cj = state.jobs[key];
+    if (!cj || (state.contacts[key] || []).length || itemStillLeft(state, `contacts:${key}`, profile, now)) continue;
+    items.push({ key, leaveKey: `contacts:${key}`, reason: 'contacts_requested', title: cj.title, company: cj.company, gate: GATES.contacts_requested });
+  }
   for (const i of items) {
     const job = state.jobs[i.key];
-    i.v = job ? itemVersion(job) : i.reason === 'search_due' ? `${(state.search.session || {}).round ?? 'new'}:${state.routed.lastSearchAt}` : String(i.posts ? i.posts.length : 0);
+    i.v = i.reason === 'web_search_due' ? `${state.search.webPending.round}:${state.search.webPending.at}` : i.reason === 'need_due' ? (() => { const n = state.search.needPending.find((x) => `need:${x.kind}` === i.key); return `${n.round}:${n.at}`; })() : job ? itemVersion(job) : i.reason === 'search_due' ? `${(state.search.session || {}).round ?? 'new'}:${state.routed.lastSearchAt}` : String(i.posts ? i.posts.length : 0);
     i.waitsForPerson = waitsForPerson(state, profile, i);
   }
   for (const i of items) {
@@ -286,6 +329,7 @@ export function workList({ now = Date.now(), commit = false, unattended = false 
     if (commit) {
       state.notified = n.next;
       for (const j of Object.values(state.jobs)) if (j.left && !stillLeft(state, j, overlay, readJson(path.join(stateDir(), 'profile.json'), {}))) j.left = null; // news came: due again
+      for (const k of Object.keys(state.leftItems || {})) if (!itemStillLeft(state, k, readJson(path.join(stateDir(), 'profile.json'), {}), now)) delete state.leftItems[k];
       for (const k of wl.bring) state.jobs[k].broughtAt = new Date(now).toISOString(); // brought for the person's yes
     }
     return wl;

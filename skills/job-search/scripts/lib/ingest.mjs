@@ -6,11 +6,13 @@ import { careersFromLinks, classifyLinks, probeBoards, resolveFromCareersPage } 
 import { isNeverAutomated, isYc } from './platforms.mjs';
 import { loadSkipUrls } from './careerops.mjs';
 import { parseBoardUrl } from './boards.mjs';
-import { mergeJobs, normalizeUrl } from './dedupe.mjs';
+import { mergeJobs, normalizeUrl, sha } from './dedupe.mjs';
 import { effectiveProfile } from './overlay.mjs';
 import { catchUpDays } from './sweep.mjs';
 import { screenJob } from './verify.mjs';
-import { updateState } from './store.mjs';
+import { loadState, updateState } from './store.mjs';
+import { flattenRaw } from './websearch.mjs';
+import { postLinks, boardLinksOf, emailsIn, handleOf } from './postinfo.mjs';
 
 // The request tool's envelope status, copied exactly. Only a fulfilled result is clean. Every other word
 // (unverified, running, needs_approval, needs_input, unpaid, failed, native) holds the source for this run.
@@ -48,6 +50,10 @@ export function validateIngest(o) {
   const delivered = o.need === 'web_search' ? [...DELIVERED, 'ok'] : DELIVERED;
   if (!delivered.includes(o.status)) return `status "${o.status}" is not a delivered result (${delivered.join(' or ')})`;
   if (o.need === 'web_search') {
+    if (o.raw !== undefined) {
+      if (!Array.isArray(o.raw) || !o.raw.every((q) => q && typeof q.query === 'string' && Array.isArray(q.results))) return 'raw must be a list of {query, results[]}';
+      o = normalizeWeb(o);
+    }
     if (!Array.isArray(o.results)) return 'results must be a list';
     if (!o.results.length) return 'the list is empty';
     for (const [i, r] of o.results.entries()) {
@@ -98,6 +104,16 @@ export function validateIngest(o) {
   return null;
 }
 
+// Raw results from the free web searches: code reads the URLs, drops repeats, keeps board links first, then X posts, then
+// platform results. A result that is none of those and has no title and company from the model cannot be used and is dropped.
+export function normalizeWeb(o) {
+  if (!o || o.need !== 'web_search' || !Array.isArray(o.raw)) return o;
+  const rank = (r) => { const k = resultKind(r.url); return k.board ? 0 : k.x ? 1 : 2; };
+  const all = flattenRaw(o.raw);
+  const usable = all.filter((r) => rank(r) < 2 || (isStr(r.title) && isStr(r.company)));
+  return { ...o, results: usable.sort((a, b) => rank(a) - rank(b)), droppedRaw: all.length - usable.length };
+}
+
 // A web search result is one of three things, decided by its URL alone: a board link, an X post, or the rest.
 // A platform result (LinkedIn, Indeed and similar) is used only from the search result and never fetched.
 export function resultKind(url) {
@@ -112,10 +128,11 @@ export function resultKind(url) {
 const salaryText = (s) => (s ? `${s.min ?? ''}-${s.max ?? ''} ${s.currency}/${s.period}` : null);
 
 // Pure with respect to state: reads a snapshot, returns what to persist.
-export async function planIngest({ obj, state, profile, overlay, fetch, now = Date.now() }) {
+export async function planIngest({ obj: given, state, profile, overlay, fetch, now = Date.now() }) {
+  const obj = normalizeWeb(given);
   const reason = validateIngest(obj);
   const need = obj && NEEDS.includes(obj.need) ? obj.need : 'unknown';
-  const plan = { need, held: [], jobs: [], unresolved: 0, careers: null, posts: [], dropped: 0, closed: 0, cost: obj && obj.cost !== undefined ? String(typeof obj.cost === 'object' ? JSON.stringify(obj.cost) : obj.cost).slice(0, 80) : null };
+  const plan = { need, held: [], jobs: [], unresolved: 0, careers: null, posts: [], dropped: (obj && obj.droppedRaw) || 0, closed: 0, cost: obj && obj.cost !== undefined ? String(typeof obj.cost === 'object' ? JSON.stringify(obj.cost) : obj.cost).slice(0, 80) : null };
   if (reason) {
     plan.held.push({ reason: 'source_empty', detail: `routed:${need}: ${reason}` });
     return plan;
@@ -124,12 +141,13 @@ export async function planIngest({ obj, state, profile, overlay, fetch, now = Da
   if (need === 'people_search') return planPeople({ obj, state, plan, now });
   if (need === 'x_hiring_posts') {
     const known = new Set((state.posts || []).map((p) => p.url));
+    const seenAlready = (p) => known.has(p.url) || postSeen(state, p);
     // A post with a Greenhouse, Lever or Ashby link goes to the board check (the board API is the source of the job);
     // the others are kept for review, where a post with no posting can become a lead.
-    const withBoard = obj.posts.filter((p) => (p.links || []).some((u) => resultKind(u).board));
-    for (const p of obj.posts) if (!withBoard.includes(p) && !known.has(p.url)) plan.posts.push({ url: p.url, author: p.author, postedAt: p.postedAt, text: p.text.slice(0, 1000), status: 'new', source: 'x' });
+    const withBoard = obj.posts.filter((p) => postLinks(p).some((u) => resultKind(u).board));
+    for (const p of obj.posts) if (!withBoard.includes(p) && !seenAlready(p)) plan.posts.push({ url: p.url, author: p.author, postedAt: p.postedAt, text: p.text.slice(0, 1000), status: 'new', source: 'x' });
     if (withBoard.length) {
-      const sub = await planIngest({ obj: { ...obj, need: 'web_search', status: 'ok', results: withBoard.map((p) => ({ url: p.links.find((u) => resultKind(u).board) })) }, state, profile, overlay, fetch, now });
+      const sub = await planIngest({ obj: { ...obj, need: 'web_search', status: 'ok', results: withBoard.map((p) => ({ url: postLinks(p).find((u) => resultKind(u).board) })) }, state, profile, overlay, fetch, now });
       plan.jobs.push(...sub.jobs);
       plan.closed += sub.closed;
       plan.unresolved += sub.unresolved;
@@ -212,13 +230,13 @@ export async function planIngest({ obj, state, profile, overlay, fetch, now = Da
     }
     if (tooOld) screen.warnings.push(`posted ${String(p.postedAt).slice(0, 10)}, still open`);
     if (ep) {
-      plan.jobs.push({ ...boardJob, openConfirmed: true, company: boardJob.company && boardJob.company !== ep.token ? boardJob.company : p.employer, salary: boardJob.salary || salaryText(p.salary), posted: boardJob.posted || p.postedAt, warnings: screen.warnings, via, employerPosting: ep, employerWebsite: p.employerWebsite || null });
+      plan.jobs.push({ ...boardJob, openConfirmed: true, company: boardJob.company && boardJob.company !== ep.token ? boardJob.company : p.employer, salary: boardJob.salary || salaryText(p.salary), posted: boardJob.posted || p.postedAt, warnings: screen.warnings, via, employerPosting: ep, employerWebsite: p.employerWebsite || null, fromPost: p.sourceUrl });
       continue;
     }
     // Unresolved: kept as a job so review can run; it never reaches the apply queue without an exact or confirmed posting.
     const key = p.applyLinks.length ? p.applyLinks[0].url : p.sourceUrl;
     const yc = p.applyLinks.map((l) => l.url).find((u) => /workatastartup\.com/.test(u)) || p.applyLinks.map((l) => l.url).find(isYc) || null;
-    plan.jobs.push({ url: key, ats: null, board: null, title: p.title, company: p.employer, city: p.city, region: p.region, country: p.country, remote: p.remote, posted: p.postedAt, type: p.employmentType, salary: salaryText(p.salary), desc: p.description, applyLinks: p.applyLinks.map((l) => l.url), place: `${p.city}|${p.region}`, warnings: [...screen.warnings, 'not confirmed open'], via, employerPosting: null, unresolved, otherSystem: cl.other, workAtStartupUrl: unresolved === 'yc_platform_only' ? yc : null, platformLinks: cl.platform, employerWebsite: p.employerWebsite || null, sourceUrl: p.sourceUrl, openConfirmed: false });
+    plan.jobs.push({ url: key, ats: null, board: null, title: p.title, company: p.employer, city: p.city, region: p.region, country: p.country, remote: p.remote, posted: p.postedAt, type: p.employmentType, salary: salaryText(p.salary), desc: p.description, applyLinks: p.applyLinks.map((l) => l.url), place: `${p.city}|${p.region}`, warnings: [...screen.warnings, 'not confirmed open'], via, employerPosting: null, unresolved, fromPost: p.sourceUrl, otherSystem: cl.other, workAtStartupUrl: unresolved === 'yc_platform_only' ? yc : null, platformLinks: cl.platform, employerWebsite: p.employerWebsite || null, sourceUrl: p.sourceUrl, openConfirmed: false });
     plan.unresolved++;
   }
   // a job the person's career-ops folder already has is not added again
@@ -238,8 +256,10 @@ function planPosts({ obj, state, plan }) {
     if (!posts.has(o.url)) return `outcome for a post that is not in the queue: ${o.url}`;
     if (o.outcome === 'job' && !(obj.postings || []).some((p) => p.sourceUrl === o.url)) return `post ${o.url} is marked job but has no posting with that sourceUrl`;
     if (o.outcome === 'lead') {
-      const l = leads.get(o.url);
       const post = posts.get(o.url);
+      // The handle and the email are read by code from the post's own record and text; the model's record is optional.
+      const emails = emailsIn(post.text || '');
+      const l = leads.get(o.url) || (post.source === 'x' || /^https?:\/\/(x|twitter)\.com\//i.test(o.url) || emails.length === 1 ? { url: o.url, ...(emails.length === 1 ? { email: emails[0] } : {}) } : null);
       if (!l) return `post ${o.url} is marked lead but has no lead record`;
       const text = post.text || '';
       const handle = l.handle ? String(l.handle).replace(/^@/, '') : null;
@@ -260,6 +280,10 @@ function planPosts({ obj, state, plan }) {
   return null;
 }
 
+// A post that left the queue is remembered by its text: it comes back only when its text changes.
+const postHash = (p) => sha(String(p.text || '')).slice(0, 12);
+export const postSeen = (state, p) => Boolean(state.postsDone && state.postsDone[p.url] && state.postsDone[p.url] === postHash(p));
+
 // One lead per post: x.com and twitter.com links normalize to the status id, HN to the item id.
 export function leadKey(url) {
   const m = /(?:x|twitter)\.com\/[^/]+\/status\/(\d+)/i.exec(url);
@@ -275,7 +299,7 @@ async function webPostings(results, getBoard, state) {
   for (const r of results) {
     const k = resultKind(r.url);
     if (k.x) {
-      if (!known.has(r.url)) {
+      if (!known.has(r.url) && !postSeen(state, { url: r.url, text: String(r.snippet || r.title || '').slice(0, 1000) })) {
         known.add(r.url);
         out.posts.push({ url: r.url, author: r.author || '', postedAt: r.postedAt || null, text: String(r.snippet || r.title || '').slice(0, 1000), status: 'new', source: 'x' });
       }
@@ -355,6 +379,7 @@ export function persistIngest(plan, now = Date.now()) {
       job.contactsSearched = at;
       state.contactsRequested = (state.contactsRequested || []).filter((k) => k !== job.key);
     }
+    for (const pj of plan.jobs) authorContact(state, pj, plan);
     if (plan.careers) {
       const j = state.jobs[plan.careers.key];
       const r = plan.careers.result;
@@ -378,8 +403,12 @@ export function persistIngest(plan, now = Date.now()) {
     if (plan.outcomes) {
       // the batch is done: its posts leave the queue, each counted by outcome; leads join the list, once per post
       const done = new Set(plan.outcomes.map((o) => o.url));
+      for (const p of state.posts) if (done.has(p.url)) (state.postsDone ||= {})[p.url] = postHash(p);
       state.posts = state.posts.filter((p) => !done.has(p.url));
-      for (const o of plan.outcomes) (state.postOutcomes ||= {})[o.outcome] = (state.postOutcomes[o.outcome] || 0) + 1;
+      for (const o of plan.outcomes) {
+        (state.postOutcomes ||= {})[o.outcome] = (state.postOutcomes[o.outcome] || 0) + 1;
+        if (o.reason && o.outcome === 'not_hiring') (state.postReasons ||= {})[o.reason] = (state.postReasons[o.reason] || 0) + 1;
+      }
       for (const l of plan.leads) if (!(state.leads || []).some((x) => x.key === l.key)) (state.leads ||= []).push(l);
       joinLeads(state);
     }
@@ -388,7 +417,7 @@ export function persistIngest(plan, now = Date.now()) {
       if (plan.round === state.search.session.round) state.search.session.roundAdded += added.length;
     }
     state.held = [...state.held.filter((h) => !String(h.detail).startsWith(`routed:${plan.need}`)), ...plan.held];
-    state.routed = { ...(state.routed || {}), skipReason: null, lastSearchAt: at, lastCost: plan.cost || (state.routed || {}).lastCost || null };
+    state.routed = { ...(state.routed || {}), skipReason: null, lastSearchAt: plan.noClock || plan.need === 'people_search' ? (state.routed || {}).lastSearchAt || null : at, lastCost: plan.cost || (state.routed || {}).lastCost || null };
     return { added: added.length, contacts: plan.people ? plan.people.contacts.length : undefined, applyYourself: plan.unresolved, careers: plan.careers ? (plan.careers.result.reason || 'resolved') : undefined, posts: plan.posts.length, closedOnBoard: plan.closed, dropped: plan.dropped, held: plan.held.map((h) => h.detail) };
   });
 }
@@ -398,3 +427,47 @@ export async function ingest(args) {
 }
 
 export { boardTarget, normalizeUrl };
+
+// The author of a post that led to a job is a contact, made in code from the post's own record: the X handle, or the one
+// email that appears in the text. A contact the rules refuse is simply not stored.
+function authorContact(state, pj, plan) {
+  if (!pj.fromPost) return;
+  const post = (state.posts || []).find((p) => p.url === pj.fromPost);
+  if (!post) return;
+  let key;
+  try {
+    key = normalizeUrl(pj.url);
+  } catch {
+    return;
+  }
+  const job = state.jobs[key];
+  if (!job || (state.contacts[key] || []).some((c) => c.sourceUrl === post.url)) return;
+  const handle = handleOf(post);
+  const emails = emailsIn(post.text || '');
+  const how = handle ? `DM @${handle} on X` : emails.length === 1 ? emails[0] : null;
+  if (!how) return;
+  try {
+    applyOp(state, { op: 'contact', key, name: post.author || handle || 'the poster', title: '', sourceUrl: post.url, how, cares: `hiring for ${job.title}`, channel: handle ? 'x' : 'email' });
+  } catch {}
+}
+
+// A hiring post with a Greenhouse, Lever or Ashby link becomes a posting in code, with no model step: the board API is
+// the source of the job, and the post's author becomes its contact.
+export async function resolveBoardPosts({ profile, overlay, fetch, now = Date.now() }) {
+  const state = loadState();
+  const found = (state.posts || []).filter((p) => p.status === 'new' && boardLinksOf(p).length);
+  if (!found.length) return { resolved: 0 };
+  const results = found.map((p) => ({ url: boardLinksOf(p)[0] }));
+  const plan = await planIngest({ obj: { need: 'web_search', status: 'ok', query: { role: 'post', place: '', remote: false, since: null }, results }, state, profile, overlay, fetch, now });
+  if (plan.held.length) return { resolved: 0, held: plan.held.length }; // a board that did not answer: the posts stay queued
+  plan.noClock = true;
+  plan.outcomes = found.map((p) => ({ url: p.url, outcome: 'job', reason: null }));
+  plan.leads = [];
+  for (const j of plan.jobs) {
+    const ep = j.employerPosting;
+    const p = ep && found.find((x) => { const t = boardTarget([{ url: boardLinksOf(x)[0] }]); return t && t.token === ep.token && String(t.jobId) === String(ep.jobId); });
+    if (p) j.fromPost = p.url;
+  }
+  persistIngest(plan, now);
+  return { resolved: found.length, added: plan.jobs.length };
+}

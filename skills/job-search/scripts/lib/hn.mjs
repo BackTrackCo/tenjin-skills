@@ -1,3 +1,4 @@
+import { postSeen } from './ingest.mjs';
 import { guardedFetch } from './net.mjs';
 import { HN_API_HOST } from './platforms.mjs';
 import { updateState } from './store.mjs';
@@ -99,7 +100,7 @@ export async function readJobStories({ fetch, seen = [], profile, sleep = (ms) =
 export function persistHn(chunk, now = Date.now()) {
   return updateState((state) => {
     const known = new Set((state.posts || []).map((p) => p.url));
-    const add = (chunk.kept || []).filter((p) => !known.has(p.url));
+    const add = (chunk.kept || []).filter((p) => !known.has(p.url) && !postSeen(state, p));
     state.posts = [...(state.posts || []), ...add];
     const prev = state.hn || {};
     const remaining = chunk.remaining !== undefined ? chunk.remaining : prev.remaining || 0;

@@ -8,7 +8,11 @@ import { SKILL_DIR, ensureDir, readJson, stateDir, writeJsonAtomic } from './lib
 import { applyOp, applyOps, compact, loadState, updateState, view } from './lib/store.mjs';
 import { addLesson, addRule, deriveLessons, loadOverlay, removeRule } from './lib/overlay.mjs';
 import { persist, runSweep } from './lib/sweep.mjs';
-import { LEAVE_REASONS, advanceSearch, leaveRecord, park, unpark, workList } from './lib/work.mjs';
+import { LEAVE_REASONS, ITEM_LEAVE_REASONS, advanceSearch, itemKind, leaveItem, leaveRecord, park, unpark, workList } from './lib/work.mjs';
+import { applyRoundDrafts, checkJobSheet, prepareInCode, writableFields } from './lib/prepare.mjs';
+import { logRun } from './lib/runlog.mjs';
+import { buildRoundRequest, parseRoundResult } from './lib/writing.mjs';
+import { webPlan } from './lib/websearch.mjs';
 import { claimLease } from './lib/lease.mjs';
 import { readProfile, tick, watcherCodeHash } from './lib/watcher.mjs';
 import { applyUpdate, checkRelease, gatesHash, recordRelease } from './lib/release.mjs';
@@ -25,7 +29,7 @@ import { appendPending, isCareerOpsDir, pipelineLine, readCareerOps } from './li
 import { observations } from './lib/signals.mjs';
 import { ingest, joinLeads, leadKey } from './lib/ingest.mjs';
 import { validateProfile } from './lib/profile.mjs';
-import { routedRounds } from './lib/routed.mjs';
+import { routeContacts, routedRounds } from './lib/routed.mjs';
 import { resumeHeld } from './lib/held.mjs';
 import { DEFAULT_BUDGET_MS, runHn } from './lib/hn.mjs';
 import { isFillOnly, markFillReady, markSubmitted } from './lib/fillonly.mjs';
@@ -147,7 +151,11 @@ const commands = {
     return out(view(loadState(), { keys: flags.keys ? String(flags.keys).split(',') : undefined, limit: Number(flags.limit) || 30 }));
   },
   async ops([arg]) {
-    return out(applyOps(readJsonArg(arg)));
+    const ops = readJsonArg(arg);
+    const r = applyOps(ops);
+    const ranked = (Array.isArray(ops) ? ops : []).filter((o) => o.op === 'rank').length;
+    if (ranked) updateState((s) => logRun(s, 'review', ranked));
+    return out(r);
   },
   async persist([arg]) {
     return out(persist(readJsonArg(arg)));
@@ -175,19 +183,8 @@ const commands = {
     const monitor = `node "${path.join(SKILL_DIR, 'scripts', 'jobs.mjs')}" watch --holder ${holder}`;
     return out({ armed: true, monitor, note: 'Run this with Monitor, persistent if the tool offers it, else timeout_ms 1800000 and run arm again at the deadline message.', view: view(loadState(), { limit: 10 }) });
   },
-  async watch(_, flags) {
-    const holder = flags.holder;
-    const seen = { sig: null };
-    const startHash = watcherCodeHash();
-    for (let first = true; ; first = false) {
-      const r = await tick({ holder, fetchImpl: globalThis.fetch, runner: asyncRun, firstTick: first, seen, startHash });
-      for (const l of r.lines) process.stdout.write(l + '\n');
-      if (r.stop) return;
-      await new Promise((res) => setTimeout(res, 60000));
-    }
-  },
-
   async work(_, flags) {
+    await prepareInCode({ fetch: globalThis.fetch, profile: readProfile() });
     const wl = workList({ commit: flags.commit === true, unattended: flags.unattended === true });
     return out(wl, wl.exit === 0 ? 0 : 3);
   },
@@ -210,17 +207,7 @@ const commands = {
       const res = updateState((s) => {
         const job = s.jobs[key];
         if (!job || !job.sheet) throw new Error('build the sheet first');
-        const r = checkSheet(job.sheet, live);
-        job.sheet.passed = r.ok;
-        if (r.ok) {
-          unpark(job);
-          if (job.status === 'prepared') job.status = 'apply_ready';
-        } else {
-          // A missing form fact holds only this job, with the names of what is missing; the question comes at its trigger.
-          const facts = job.sheet.unanswered.filter((u) => u.factKey).map((u) => u.factKey);
-          job.missingFacts = [...new Set(facts)];
-          park(job, [job.sheet.eeoMissing ? 'eeo_missing' : facts.length && facts.length === job.sheet.unanswered.length ? 'needs_facts' : job.sheet.unanswered.length ? 'unknown_field' : job.sheet.forbidden.length ? 'forbidden_field' : 'form_changed']);
-        }
+        const r = checkJobSheet(job, live);
         return r;
       });
       return out(res, res.ok ? 0 : 4);
@@ -242,6 +229,7 @@ const commands = {
     let batchClosed = false;
     updateState((s) => {
       for (const q of res.queue) if (s.jobs[q.key] && !['sheet_not_checked', 'no_recorded_yes', 'no_chrome_tools'].includes(q.reason)) park(s.jobs[q.key], [q.reason]);
+      if (res.handout) logRun(s, 'browser', 1);
       if (res.handout) (s.handouts ||= []).push({ key: res.handout.key, at: new Date().toISOString(), counted: Boolean(res.handout.submit || res.handout.fillOnly) });
       // An unattended round ends in code: nothing left to submit (empty, held, parked or refused) closes the batch.
       if (mode === 'unattended' && !res.handout && s.batch && s.batch.mode === 'unattended') {
@@ -367,7 +355,13 @@ const commands = {
       if (v !== 'all' && !(Number.isInteger(v) && v > 0)) return out({ error: 'contacts count <number>|all [--words text]' }, 2);
       return out(addRule({ effect: 'contact_count', value: v, words: String(flags.words || `contacts for ${v} jobs`) }));
     }
-    if (sub !== 'request') return out({ error: 'contacts request [key...] | count <n|all>' }, 2);
+    if (sub === 'route') {
+      // The router's people search, in code, for the jobs asked (or every requested job). Held, never retried.
+      const st = loadState();
+      const log = await routeContacts({ keys: keys.length ? keys : st.contactsRequested || [], profile: readProfile(), fetch: globalThis.fetch });
+      return out({ routed: log });
+    }
+    if (sub !== 'request') return out({ error: 'contacts request [key...] | count <n|all> | route [key...]' }, 2);
     if (!keys.length) {
       const rule = loadOverlay().rules.filter((r) => r.effect === 'contact_count').pop();
       // The first request asks how many (J ask contacts); no answer means 5, and the answer is stored once.
@@ -384,6 +378,21 @@ const commands = {
   },
 
   async 'write-prompt'([key], flags) {
+    if (flags.round) {
+      // One writer call per round: the sheets that need writing, the new leads and the contacts that can be messaged.
+      const st = loadState();
+      const sheets = Object.values(st.jobs).filter((j) => j.status === 'shortlisted' && j.needsWriting && j.sheet && j.questions).map((j) => {
+        const want = new Set(writableFields(j.sheet).map((u) => u.label));
+        return { job: j, fields: j.questions.filter((q) => want.has(q.label)) };
+      }).filter((x) => x.fields.length);
+      const leads = (st.leads || []).filter((l) => l.status === 'new' && !l.intro);
+      const intros = Object.values(st.jobs).map((j) => ({ job: j, contacts: (st.contacts[j.key] || []).filter((c) => c.channel && !c.intro) })).filter((x) => x.contacts.length);
+      try {
+        return out(buildRoundRequest({ sheets, leads, intros, profile: readProfile() }));
+      } catch (e) {
+        return out({ error: e.message, nothing: true }, 3);
+      }
+    }
     if (flags.leads) {
       return out(buildLeadIntroRequest({ leads: (loadState().leads || []).filter((l) => l.status === 'new' && !l.intro), profile: readProfile() }));
     }
@@ -401,9 +410,32 @@ const commands = {
     return out(buildWritingRequest({ job: s.jobs[key], profile, questions: loadQuestions(flags.questions) }));
   },
   async 'write-result'([key], flags) {
+    if (flags.round) {
+      const profile = readProfile();
+      const r = parseRoundResult(fs.readFileSync(flags.result, 'utf8'));
+      return out(updateState((s) => {
+        const sheets = applyRoundDrafts(s, r.answers, profile);
+        const leads = saveLeadIntros(s, r.leads);
+        let intros = 0;
+        let refused = 0;
+        for (const [jk, byName] of Object.entries(r.intros)) {
+          for (const [name, v] of Object.entries(byName)) {
+            try {
+              applyOp(s, { op: 'intro', key: jk, name, subject: v.subject, text: v.text });
+              intros++;
+            } catch {
+              refused++;
+            }
+          }
+        }
+        logRun(s, 'writer', sheets.written + sheets.stopped + leads + intros);
+        return { ...sheets, leads, intros, refused };
+      }));
+    }
     const profile = readProfile();
     const r = parseWritingResult(fs.readFileSync(flags.result, 'utf8'), loadQuestions(flags.questions), profile);
     updateState((s) => {
+      logRun(s, 'writer', 1);
       const job = s.jobs[key];
       job.drafts = { ...(job.drafts || {}), ...r.drafts };
       if (!r.ok) {
@@ -459,6 +491,7 @@ const commands = {
     }
     const state = loadState();
     const r = await ingest({ obj, state, profile: readProfile(), overlay: loadOverlay(), fetch: globalThis.fetch });
+    if (obj && !r.held.length) updateState((s) => logRun(s, obj.need === 'web_search' ? 'web_search' : obj.need === 'careers_page' ? 'careers' : Array.isArray(obj.batch) ? 'post_review' : obj.need === 'people_search' ? 'contacts' : 'search', 1));
     return out(r, r.held.length && !r.added && !r.applyYourself && !r.posts ? 4 : 0);
   },
   // The routed search did not run: no Tenjin, or no request tool before the next session.
@@ -474,16 +507,8 @@ const commands = {
     if (sub === 'save') {
       const r = parseIntroResult(fs.readFileSync(flags.result, 'utf8'));
       return out(updateState((s) => {
-        let n = 0;
-        for (const l of s.leads || []) {
-          const v = r[l.url];
-          if (!v) continue;
-          const text = String(v.text).trim();
-          if (l.channel === 'email' ? !String(v.subject || '').trim() || text.split(/\s+/).length > 120 : text.length > 300) throw new Error(`the intro for ${l.url} does not fit its channel`);
-          l.intro = { channel: l.channel, subject: l.channel === 'email' ? v.subject : null, text, writtenAt: new Date().toISOString() };
-          n++;
-        }
-        joinLeads(s);
+        const n = saveLeadIntros(s, r);
+        logRun(s, 'writer', n);
         return { saved: n };
       }));
     }
@@ -525,10 +550,17 @@ const commands = {
   },
 
   // After a search round is ingested: code decides whether another round (the next role-word variant) is worth it.
-  async search([sub]) {
-    if (sub === 'web-done') return out(updateState((s) => { s.search.webPending = null; return { done: true }; }));
-    if (sub !== 'next') return out({ error: 'search next | web-done' }, 2);
+  async search([sub, kind]) {
     const profile = readProfile();
+    if (sub === 'plan') {
+      if (!profile.search || !profile.search.role) return out({ error: 'no search role in the profile' }, 2);
+      const st = loadState();
+      const round = st.search.webPending ? st.search.webPending.round : st.search.session ? st.search.session.round : 0;
+      return out(webPlan(profile, round, st.routed.lastSearchAt));
+    }
+    if (sub === 'web-done') return out(updateState((s) => { s.search.webPending = null; return { done: true }; }));
+    if (sub === 'done') return out(updateState((s) => { s.search.needPending = (s.search.needPending || []).filter((n) => n.kind !== kind); return { done: kind }; }));
+    if (sub !== 'next') return out({ error: 'search plan | next | web-done | done <need kind>' }, 2);
     return out(updateState((s) => advanceSearch(s, profile)));
   },
 
@@ -576,14 +608,27 @@ const commands = {
   async fact([sub, name, ...rest]) {
     if (sub !== 'set' || !name || !rest.length) return out({ error: 'fact set <name> <value>' }, 2);
     const profile = readProfile();
-    const next = { ...profile, facts: { ...(profile.facts || {}), [name]: rest.join(' ') } };
+    // `account` is a list of hosts where the person has an account: each call adds one.
+    const value = name === 'account' ? [...new Set([...String((profile.facts || {}).account || '').split(/[\s,]+/).filter(Boolean), ...rest.join(' ').split(/[\s,]+/).filter(Boolean)])].join(' ') : rest.join(' ');
+    const next = { ...profile, facts: { ...(profile.facts || {}), [name]: value } };
     const bad = validateProfile(next);
     if (bad.length) return out({ error: bad.join('; ') }, 2);
     writeJsonAtomic(profileFile(), next);
     return out({ saved: name, resumed: resumeHeld(next) });
   },
   // Watched boards the skill found itself, and the person's removals. A removed company is never added again.
-  async watch([sub, name]) {
+  async watch([sub, name], flags) {
+    if (flags.holder) {
+      // the Monitor command: the watcher loop, one tick a minute
+      const seen = { sig: null };
+      const startHash = watcherCodeHash();
+      for (let first = true; ; first = false) {
+        const r = await tick({ holder: flags.holder, fetchImpl: globalThis.fetch, runner: asyncRun, firstTick: first, seen, startHash });
+        for (const l of r.lines) process.stdout.write(l + '\n');
+        if (r.stop) return;
+        await new Promise((res) => setTimeout(res, 60000));
+      }
+    }
     if (sub === 'list') return out({ found: loadState().found || [], pasted: readProfile().watch || [], removed: loadState().removedBoards || [] });
     if (sub !== 'remove' || !name) return out({ error: 'watch list | remove <company or board>' }, 2);
     return out(updateState((s) => {
@@ -599,6 +644,7 @@ const commands = {
     if (sub !== 'save') return out({ error: 'intros save <key> --result file' }, 2);
     const r = parseIntroResult(fs.readFileSync(flags.result, 'utf8'));
     const ops = Object.entries(r).map(([name, v]) => ({ op: 'intro', key, name, subject: v.subject, text: v.text }));
+    updateState((s) => logRun(s, 'writer', ops.length));
     return out(applyOps(ops));
   },
   async ack() {
@@ -616,19 +662,29 @@ const commands = {
   // "Leave it": the item stays in the report but is not due work until there is news about the job, an answer from the
   // person, or a rule that affects it. Every handled item ends with its J outcome command, or the watcher shows it again.
   async leave(keys, flags) {
-    if (!keys.length || !LEAVE_REASONS.includes(flags.reason)) return out({ error: `leave <key...> --reason <${LEAVE_REASONS.join('|')}>` }, 2);
+    const jobs = keys.filter((k) => itemKind(k) === 'job');
+    const allowed = [...LEAVE_REASONS, ...Object.values(ITEM_LEAVE_REASONS).flat()];
+    if (!keys.length || !allowed.includes(flags.reason)) return out({ error: `leave <key...> --reason <${LEAVE_REASONS.join('|')}> for jobs; ${Object.entries(ITEM_LEAVE_REASONS).map(([k, v]) => `${k === 'search' ? 'search, web, need:<kind>' : 'contacts:<key>'}: ${v.join('|')}`).join('; ')}` }, 2);
     const overlay = loadOverlay();
     const profile = readProfile();
     return out(updateState((s) => {
-      for (const k of keys) if (!s.jobs[k]) throw new Error(`unknown job: ${k}`);
-      for (const k of keys) s.jobs[k].left = leaveRecord(s, s.jobs[k], overlay, flags.reason, profile);
+      for (const k of jobs) if (!s.jobs[k]) throw new Error(`unknown job: ${k}`);
+      for (const k of keys) {
+        if (itemKind(k) === 'job') {
+          if (!LEAVE_REASONS.includes(flags.reason)) throw new Error(`the reason for a job is one of ${LEAVE_REASONS.join(', ')}`);
+          s.jobs[k].left = leaveRecord(s, s.jobs[k], overlay, flags.reason, profile);
+        } else leaveItem(s, k, flags.reason, profile);
+      }
       return { left: keys.length, reason: flags.reason };
     }));
   },
   // The person said "try again" about a job: it is due work again.
   async retry(keys) {
     return out(updateState((s) => {
-      for (const k of keys) if (s.jobs[k]) s.jobs[k].left = null;
+      for (const k of keys) {
+        if (s.jobs[k]) s.jobs[k].left = null;
+        if (s.leftItems && s.leftItems[k]) delete s.leftItems[k];
+      }
       return { retried: keys.length };
     }));
   },
@@ -662,6 +718,21 @@ const commands = {
   },
 };
 
+// A lead's intro must fit its channel. Never sent.
+function saveLeadIntros(s, r) {
+  let n = 0;
+  for (const l of s.leads || []) {
+    const v = r[l.url];
+    if (!v) continue;
+    const text = String(v.text).trim();
+    if (l.channel === 'email' ? !String(v.subject || '').trim() || text.split(/\s+/).length > 120 : text.length > 300) throw new Error(`the intro for ${l.url} does not fit its channel`);
+    l.intro = { channel: l.channel, subject: l.channel === 'email' ? v.subject : null, text, writtenAt: new Date().toISOString() };
+    n++;
+  }
+  joinLeads(s);
+  return n;
+}
+
 function coerce(v) {
   if (v === 'true') return true;
   if (v === 'false') return false;
@@ -677,7 +748,7 @@ async function main() {
   try {
     await commands[cmd](pos, flags);
     // The person's answer is news: items left alone come back for it.
-    if (!process.exitCode && ['fact set', 'profile set', 'answer add', 'writing approve'].includes(`${cmd} ${pos[0]}`)) updateState((st) => { st.answerV = (st.answerV || 0) + 1; });
+    if (!process.exitCode && (['fact set', 'profile set', 'answer add', 'writing approve'].includes(`${cmd} ${pos[0]}`) && !(cmd === 'fact' && pos[1] === 'account'))) updateState((st) => { st.answerV = (st.answerV || 0) + 1; });
   } catch (e) {
     out({ error: e.message }, 2);
   }
