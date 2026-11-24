@@ -46,6 +46,8 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
     L.push('', `## Left alone (${leftAlone.length}): not due work until there is news about the job, an answer from you, or a rule that affects it`);
     for (const j of leftAlone.slice(-40)) L.push(`- ${j.title}, ${j.company}: ${j.left.reason}`);
   }
+  const leftItems = Object.entries(state.leftItems || {});
+  if (leftItems.length) L.push('', `Left until the next period or news (${leftItems.length}): ${leftItems.map(([k, v]) => `${k} (${v.reason})`).join(', ')}`);
   const found = jobs.filter((j) => j.employerPosting && j.employerPosting.source !== 'apply_link');
   L.push('', `## Found on the employer's site (${found.length})`);
   for (const j of found) L.push(`- ${j.title}, ${j.company}: ${j.employerPosting.url} (${j.employerPosting.source}, ${j.employerPosting.confidence})`);
@@ -98,12 +100,18 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
   }
   const oc = state.postOutcomes || {};
   const skipped = ['not_hiring', 'no_fit'].filter((k) => oc[k]);
-  if (skipped.length) L.push('', `Hiring posts set aside: ${skipped.map((k) => `${oc[k]} ${k.replace('_', ' ')}`).join(', ')}.`);
+  if (skipped.length) L.push('', `Hiring posts set aside: ${skipped.map((k) => `${oc[k]} ${k.replace('_', ' ')}${k === 'not_hiring' && (state.postReasons || {}).unreadable ? ` (${state.postReasons.unreadable} unreadable)` : ''}`).join(', ')}.`);
   const today = (state.wakes || []).filter((w) => now - Date.parse(w.at) < 86400000);
   if (today.length) {
     const sum = {};
     for (const w of today) for (const [k, n] of Object.entries(w.counts)) sum[k] = (sum[k] || 0) + n;
     L.push('', `Model wakes in the last day: ${today.length}${Object.keys(sum).length ? ` (${Object.entries(sum).map(([k, n]) => `${n} ${k}`).join(', ')})` : ''}.`);
+  }
+  const ran = (state.runs || []).filter((r) => now - Date.parse(r.at) < 86400000);
+  if (ran.length) {
+    const by = {};
+    for (const r of ran) by[r.kind] = (by[r.kind] || 0) + 1;
+    L.push('', `Subagent runs in the last day: ${ran.length} (${Object.entries(by).map(([k, n]) => `${n} ${k.replace(/_/g, ' ')}`).join(', ')}).`);
   }
   const consent = (state.consentLog || []).filter((c) => !c.acked);
   if (consent.length) {
