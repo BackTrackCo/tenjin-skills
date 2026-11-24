@@ -20,13 +20,12 @@ export function emptyState() {
     lease: null,
     setup: { stage: null, next: null, deepseek: null },
     update: { lastCheckAt: null, status: null, installed: null, waiting: null },
-    consent: { unattended: null, dryRun: { records: [], confirmedAt: null } },
+    consent: { unattended: null, writing: null, dryRun: { records: [], confirmedAt: null } },
     notified: {},
     rounds: [],
     queryYield: {},
     stops: [],
     contactsRequested: [],
-    answers: {},
     applyYourself: [],
     posts: [],
     routed: { skipReason: null, lastSearchAt: null, lastCost: null },
@@ -150,9 +149,6 @@ export function applyOp(state, op) {
     case 'approve':
       if (!job.sheet || job.sheet.hash !== op.sheetHash) throw new Error('the yes must name this job and its current sheet hash');
       state.approvals[op.key] = { sheetHash: op.sheetHash, at: op.at || new Date().toISOString() };
-      break;
-    case 'answer':
-      state.answers = { ...(state.answers || {}), [normLabel(op.label)]: String(op.value) };
       break;
     case 'signal': {
       const k = op.kind + (op.reason ? `:${op.reason}` : '');

@@ -12,11 +12,12 @@ import { park, unpark, workList } from './lib/work.mjs';
 import { claimLease } from './lib/lease.mjs';
 import { readProfile, tick, watcherCodeHash } from './lib/watcher.mjs';
 import { applyUpdate, checkRelease, gatesHash, recordRelease } from './lib/release.mjs';
-import { applyNext, confirmDryRun, recordConsent, recordDryRun } from './lib/apply.mjs';
+import { applyNext, confirmDryRun, recordConsent, recordDryRun, recordWritingConsent, revokeConsent } from './lib/apply.mjs';
+import { addAnswer, approveWriting, loadAnswers } from './lib/answers.mjs';
 import * as guard from './lib/guard.mjs';
 import { checkTenjin, deepseekStep, defaultRun, findTenjin, readSubagents } from './lib/tenjin.mjs';
 import { buildSheet, checkReadBack, checkSheet, parseGreenhouseQuestions } from './lib/sheet.mjs';
-import { buildContactMessageRequest, buildWritingRequest, parseWritingResult } from './lib/writing.mjs';
+import { buildContactMessageRequest, buildWritingRequest, parseWritingResult, readWritingRules } from './lib/writing.mjs';
 import { renderReport } from './lib/report.mjs';
 import { observations } from './lib/signals.mjs';
 import { ingest } from './lib/ingest.mjs';
@@ -195,7 +196,8 @@ const commands = {
       return out(updateState((s) => {
         const job = s.jobs[key];
         if (!job) throw new Error(`unknown job: ${key}`);
-        const sheet = buildSheet({ job, questions, profile, answers: s.answers, drafts: job.drafts || {} });
+        const sheet = buildSheet({ job, questions, profile, answers: loadAnswers().entries, drafts: job.drafts || {} });
+        job.questions = questions;
         job.sheet = { ...sheet, passed: false };
         return sheet;
       }));
@@ -229,7 +231,7 @@ const commands = {
     const bin = findTenjin();
     const ds = bin ? readSubagents({ bin }) : { ok: true, enabled: false };
     const state = loadState();
-    const res = applyNext({ state, profile: readProfile(), overlay: loadOverlay(), mode, guard: guard.selftest(), deepseek: { enabled: ds.ok ? ds.enabled : null } });
+    const res = applyNext({ state, profile: readProfile(), overlay: loadOverlay(), mode, guard: guard.selftest(), deepseek: { enabled: ds.ok ? ds.enabled : null }, writingRulesText: readWritingRules() });
     updateState((s) => {
       s.held = s.held.filter((h) => !['deepseek_on', 'guard_missing'].includes(h.reason));
       if (res.refused === 'deepseek_on' || res.refused === 'guard_missing') s.held.push({ reason: res.refused, detail: mode });
@@ -242,9 +244,44 @@ const commands = {
     return out(applyOps([{ op: 'approve', key, sheetHash: loadState().jobs[key].sheet.hash }]));
   },
 
-  async consent([sub]) {
-    if (sub !== 'unattended') return out({ error: 'consent unattended' }, 2);
-    return out(updateState((s) => recordConsent(s, readProfile(), loadOverlay())));
+  // Consent is recorded or revoked only by the person's yes, in an attended session. Recording is refused while a batch is open.
+  async consent([sub, which], flags) {
+    if (sub === 'revoke') {
+      return out(updateState((s) => {
+        revokeConsent(s, which);
+        return { revoked: which };
+      }));
+    }
+    if (sub !== 'record' || !['unattended', 'writing'].includes(which)) return out({ error: 'consent record unattended --optional-writing skip|wait | record writing | revoke unattended|writing' }, 2);
+    if (guard.isActive()) return out({ error: 'consent is recorded in an attended session; close the batch first' }, 4);
+    return out(updateState((s) => {
+      if (which === 'unattended') return recordConsent(s, readProfile(), loadOverlay(), Date.now(), flags['optional-writing']);
+      const c = recordWritingConsent(s, readWritingRules());
+      // jobs that only waited for this consent go back to the queue
+      for (const j of Object.values(s.jobs)) if (j.parked && j.parked.reasons.length === 1 && j.parked.reasons[0] === 'writing_needs_yes') unpark(j);
+      return c;
+    }));
+  },
+  // The person read the draft: approve it as it is or edited. Each new-writing field becomes an earlier answer.
+  async writing([sub, key], flags) {
+    if (sub !== 'approve') return out({ error: 'writing approve <key> [--edits file.json]' }, 2);
+    const profile = readProfile();
+    const job = loadState().jobs[key];
+    if (!job || !job.sheet) throw new Error('build the sheet first');
+    const approved = approveWriting(job, profile, flags.edits ? readJsonArg(flags.edits) : {});
+    return out(updateState((s) => {
+      const j = s.jobs[key];
+      const sheet = buildSheet({ job: j, questions: j.questions, profile, answers: loadAnswers().entries, drafts: j.drafts || {} });
+      j.sheet = { ...sheet, passed: checkSheet(sheet).ok };
+      if (j.parked && j.parked.reasons.includes('writing_needs_yes')) unpark(j);
+      return { approved: approved.length, tags: sheet.fields.filter((f) => f.tag === 'new_writing').length, passed: j.sheet.passed };
+    }));
+  },
+  async answer([sub], flags) {
+    if (sub !== 'add') return out({ error: 'answer add --label L --value V [--key jobkey]' }, 2);
+    const job = flags.key ? loadState().jobs[flags.key] : null;
+    const q = ((job && job.questions) || []).find((x) => x.label === flags.label) || {};
+    return out(addAnswer({ question: flags.label, answer: flags.value, how: 'typed', source: flags.key || null, type: q.type || 'input_text', options: q.options && q.options.length ? q.options : null }));
   },
   async dryrun([sub, key, json]) {
     return out(updateState((s) => {

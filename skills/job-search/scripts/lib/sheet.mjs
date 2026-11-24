@@ -1,6 +1,7 @@
 import { canonical } from './overlay.mjs';
 import { sha } from './dedupe.mjs';
 import { normLabel } from './store.mjs';
+import { matchAnswer } from './answers.mjs';
 
 // Labels that always stop a job: the profile has no field for these.
 const FORBIDDEN = /\b(ssn|social security|national id|government id|passport|driver'?s? licen[cs]e|date of birth|birth ?date|birthday|\bdob\b|bank|routing number|account number|iban|password|tax id)\b|\bid number\b|\bid card\b/i;
@@ -45,7 +46,14 @@ export function checkDraft(text, { limit = null, profile = {} } = {}) {
   return problems;
 }
 
-export function buildSheet({ job, questions, profile, answers = {}, drafts = {} }) {
+export const TAGS = ['fact', 'upload', 'answer', 'new_writing'];
+
+// Every field carries one source tag:
+//   fact: a profile value (the EEO choice and a select option chosen from a fact included)
+//   upload: the resume file
+//   answer: an earlier answer that matches by the code-only rule (answers.mjs)
+//   new_writing: drafted text the person has not approved for this exact question
+export function buildSheet({ job, questions, profile, answers = [], drafts = {} }) {
   const facts = profile.facts || {};
   const fields = [];
   const unanswered = [];
@@ -58,30 +66,31 @@ export function buildSheet({ job, questions, profile, answers = {}, drafts = {} 
     }
     const nl = normLabel(q.label);
     let value;
-    let source;
+    let tag;
     if (q.type === 'input_file' && /resume|cv/.test(nl)) {
       value = '<resume>';
-      source = 'profile.resume';
+      tag = 'upload';
     } else if (EEO.test(q.label)) {
       const e = profile.eeo;
       if (!e) eeoMissing = true;
       else {
         value = e === 'decline_all' ? 'Decline to self-identify' : (e.answers || {})[nl] || 'Decline to self-identify';
-        source = 'profile.eeo';
+        tag = 'fact';
       }
-    } else if (answers[nl] !== undefined) {
-      value = answers[nl];
-      source = 'saved_answer';
     } else {
+      const earlier = matchAnswer(q, answers);
       const hit = FACTS.find(([re]) => re.test(nl));
-      if (hit && facts[hit[1]] !== undefined && facts[hit[1]] !== '') {
+      if (earlier) {
+        value = earlier.answer;
+        tag = 'answer';
+      } else if (hit && facts[hit[1]] !== undefined && facts[hit[1]] !== '') {
         value = String(facts[hit[1]]);
-        source = `profile.${hit[1]}`;
+        tag = 'fact';
       } else if (drafts[q.label] !== undefined) {
         const problems = checkDraft(drafts[q.label], { limit: q.maxLength, profile });
         if (!problems.length) {
           value = drafts[q.label];
-          source = 'draft';
+          tag = 'new_writing';
         } else if (q.required) {
           unanswered.push({ label: q.label, why: `draft failed: ${problems.join(', ')}` });
           continue;
@@ -89,10 +98,10 @@ export function buildSheet({ job, questions, profile, answers = {}, drafts = {} 
       }
     }
     if (value === undefined) {
-      if (q.required && !(EEO.test(q.label) && eeoMissing)) unanswered.push({ label: q.label, why: 'no fact, saved answer or checked draft' });
+      if (q.required && !(EEO.test(q.label) && eeoMissing)) unanswered.push({ label: q.label, why: 'no fact, earlier answer or checked draft' });
       continue;
     }
-    fields.push({ label: q.label, value, source, required: q.required });
+    fields.push({ label: q.label, value, tag, required: q.required });
   }
   const sheet = { job: job.key, fields, unanswered, forbidden, eeoMissing };
   sheet.hash = sha(canonical({ job: job.key, fields: fields.map((f) => [f.label, f.value]) })).slice(0, 16);
@@ -105,6 +114,7 @@ export function checkSheet(sheet, live = null) {
   if (sheet.forbidden.length) problems.push(`form asks for something the profile never holds: ${sheet.forbidden.join(', ')}`);
   if (sheet.unanswered.length) problems.push(`unanswered required fields: ${sheet.unanswered.map((u) => u.label).join(', ')}`);
   if (sheet.eeoMissing) problems.push('the EEO choice is not made');
+  if (sheet.fields.some((f) => !TAGS.includes(f.tag))) problems.push('a field has no source tag');
   if (live) {
     const known = new Set(sheet.fields.map((f) => normLabel(f.label)));
     for (const f of live) {
@@ -125,16 +135,4 @@ export function checkReadBack(sheet, read) {
     if (by.get(normLabel(f.label)) !== String(f.value).trim()) problems.push(`read-back differs: ${f.label}`);
   }
   return { ok: problems.length === 0, problems };
-}
-
-export function nearMatch(label, answers) {
-  const nl = normLabel(label);
-  if (answers[nl] !== undefined) return { exact: true };
-  const words = new Set(nl.split(' '));
-  for (const k of Object.keys(answers)) {
-    const kw = k.split(' ');
-    const overlap = kw.filter((w) => words.has(w)).length / Math.max(kw.length, words.size);
-    if (overlap >= 0.6) return { exact: false, near: k };
-  }
-  return null;
 }

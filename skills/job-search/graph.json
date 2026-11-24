@@ -26,7 +26,7 @@
     "offer": []
   },
   "terminal": ["skipped", "closed", "rejected", "withdrawn", "offer"],
-  "ops": ["rank", "warn", "transition", "contact", "draft", "approve", "answer", "signal"],
+  "ops": ["rank", "warn", "transition", "contact", "draft", "approve", "signal"],
   "workReasons": ["search_due", "post_review", "new_job", "review_due", "reverify_due", "contacts_requested", "prepare_due", "apply_ready", "follow_up_due"],
   "heldReasons": ["source_empty", "tenjin_missing", "chrome_disconnected", "stopped", "update_waiting", "update_failed", "guard_missing", "deepseek_on"],
   "ruleEffects": ["exclude_company", "exclude_term", "require_term", "min_pay", "place", "remote", "employment_type", "daily_max", "contact_count", "notify_quiet_hours", "notify_off", "note"],

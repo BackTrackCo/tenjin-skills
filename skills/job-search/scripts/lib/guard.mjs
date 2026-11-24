@@ -99,7 +99,7 @@ export function decide(payload, policy) {
     const prefix = strip(policy.commandPrefix);
     if (/jobs\.mjs\s+guard\s+probe\s+[0-9a-f]+/.test(cmd) && cmd.startsWith(prefix)) return { decision: 'allow', probe: /guard\s+probe\s+([0-9a-f]+)/.exec(cmd)[1] };
     if (/\brules\s+add\b/.test(cmd)) return deny('rules come only from the person, not from a batch');
-    if (/\bunattended\b.*\bconsent\b|\bconsent\b.*\bunattended\b/.test(cmd)) return deny('consent is recorded in an attended session only');
+    if (/\bconsent\s+record\b/.test(cmd)) return deny('consent is recorded in an attended session only');
     if (cmd.startsWith(prefix)) {
       if (touchesProtected(cmd.slice(prefix.length), policy)) return deny('writes to the skill, state, guard and settings folders are denied');
       if (unattended && /[;&|`\n]|\$\(/.test(cmd.slice(prefix.length))) return deny('no chained shell in an unattended batch');

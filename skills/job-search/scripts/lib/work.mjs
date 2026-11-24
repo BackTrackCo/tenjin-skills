@@ -112,7 +112,7 @@ export function notifyLine(state, overlay, now = Date.now()) {
   if (yes) parts.push(`${yes} application${yes > 1 ? 's' : ''} wait for your yes`);
   if (stops.length) {
     const j = state.jobs[stops[0].slice(5)];
-    parts.push(`${stops.length} stop${stops.length > 1 ? 's' : ''} need you${stops.length === 1 && j ? ` at ${j.company}` : ''} (${j && j.parked ? j.parked.reasons[0] : 'parked'})`);
+    parts.push(`${stops.length} stop${stops.length > 1 ? 's' : ''} need you${stops.length === 1 && j ? ` at ${j.company}` : ''} (${j && j.parked ? j.parked.reasons[0].replace(/_/g, ' ') : 'parked'})`);
   }
   if (held.length) parts.push(`needs you: ${[...new Set(held)].join(', ').replace(/_/g, ' ')}`);
   let line = parts.join(', ').replace(/[*_`#\[\]]/g, '');
