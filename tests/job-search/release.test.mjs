@@ -14,7 +14,7 @@ const R = (tag, ageDays, extra = {}) => ({ tag_name: tag, published_at: new Date
 
 function copySkill() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skillcopy-'));
-  fs.cpSync(SKILL, dir, { recursive: true, filter: (s) => !s.endsWith('employers.tsv') });
+  fs.cpSync(SKILL, dir, { recursive: true });
   return dir;
 }
 const setManifest = (dir, patch) => {

@@ -3,10 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ROOT, fakeFetch, fixture } from './helpers/env.mjs';
-import { boardApiUrl, fetchBoard, hostedUrl, normalizeAshby, normalizeGreenhouse, normalizeLever, parseBoardUrl } from '../../skills/job-search/scripts/lib/boards.mjs';
+import { parseCareersUrl, boardApiUrl, fetchBoard, hostedUrl, normalizeAshby, normalizeGreenhouse, normalizeLever, parseBoardUrl } from '../../skills/job-search/scripts/lib/boards.mjs';
 import { normalizeUrl } from '../../skills/job-search/scripts/lib/dedupe.mjs';
 import { ALLOWED_HOSTS, guardedFetch } from '../../skills/job-search/scripts/lib/net.mjs';
-import { lookupEmployer } from '../../skills/job-search/scripts/lib/registry.mjs';
 
 test('board URLs parse for each host, including gh_jid pages', () => {
   assert.deepEqual(parseBoardUrl('https://boards.greenhouse.io/figma/jobs/123?gh_src=x'), { ats: 'greenhouse', region: 'us', token: 'figma', jobId: '123' });
@@ -63,9 +62,47 @@ test('network host check: scripts name no host beyond the allowed list and docum
   }
 });
 
-test('the employer list finds a token, with region, for the three hosts', () => {
-  const hit = lookupEmployer('Figma', { ats: 'greenhouse' });
-  assert.ok(hit.some((h) => h.token === 'figma'));
-  assert.equal(lookupEmployer('Linear', { ats: 'ashby' })[0].token, 'Linear');
-  assert.deepEqual(lookupEmployer('definitely not a company 12345'), []);
+test('careers URLs: every documented pattern gives the system and the token', () => {
+  const cases = [
+    ['https://boards.greenhouse.io/acme', 'greenhouse', 'acme', 'us'],
+    ['https://job-boards.greenhouse.io/acme/jobs/123', 'greenhouse', 'acme', 'us'],
+    ['https://job-boards.eu.greenhouse.io/acme', 'greenhouse', 'acme', 'eu'],
+    ['https://boards.greenhouse.io/embed/job_app?for=acme&token=999', 'greenhouse', 'acme', 'us'],
+    ['https://jobs.lever.co/acme', 'lever', 'acme', 'us'],
+    ['https://jobs.lever.co/acme/0b0b0b0b-1111-2222-3333-444444444444/apply', 'lever', 'acme', 'us'],
+    ['https://jobs.eu.lever.co/acme', 'lever', 'acme', 'eu'],
+    ['https://jobs.ashbyhq.com/Acme', 'ashby', 'Acme', 'us'],
+    ['https://jobs.ashbyhq.com/Acme/uuid-1/application', 'ashby', 'Acme', 'us'],
+  ];
+  for (const [url, ats, token, region] of cases) {
+    const p = parseCareersUrl(url);
+    assert.deepEqual([p.ats, p.token, p.region], [ats, token, region], url);
+  }
+  assert.equal(parseCareersUrl('https://www.example.com/careers'), null);
+});
+
+test('a page with only ?gh_jid= has no token: the report asks for the board link', async () => {
+  const p = parseCareersUrl('https://www.acme.test/careers/role?gh_jid=555');
+  assert.deepEqual(p, { needsBoard: true, ats: 'greenhouse', jobId: '555' });
+  const { resolveWatchList, runSweep } = await import('../../skills/job-search/scripts/lib/sweep.mjs');
+  const r = resolveWatchList({ watch: [{ url: 'https://www.acme.test/careers/role?gh_jid=555', name: 'Acme' }] });
+  assert.deepEqual(r.entries, []);
+  assert.deepEqual(r.unresolved, ['Acme']);
+  const { emptyState } = await import('../../skills/job-search/scripts/lib/store.mjs');
+  const p2 = await runSweep({ state: emptyState(), profile: { watch: [{ url: 'https://www.acme.test/x?gh_jid=5', name: 'Acme' }] }, overlay: { rules: [], lessons: [] }, fetch: fakeFetch({}), now: Date.now() });
+  assert.match(p2.held[0].detail, /Acme: no board link found, paste the board link/);
+});
+
+test('no cap: every watched company is read, in turn', async () => {
+  const { resolveWatchList } = await import('../../skills/job-search/scripts/lib/sweep.mjs');
+  const watch = Array.from({ length: 120 }, (_, i) => ({ url: `https://boards.greenhouse.io/co${i}` }));
+  assert.equal(resolveWatchList({ watch }).entries.length, 120);
+  assert.equal(resolveWatchList({ watch: [...watch, { url: 'https://boards.greenhouse.io/co0/jobs/1' }] }).entries.length, 120, 'the same board twice is read once');
+});
+
+test('the EU API hosts are allowed and still marked not verified in code', () => {
+  assert.match(boardApiUrl({ ats: 'greenhouse', region: 'eu', token: 'acme' }), /^https:\/\/boards-api\.eu\.greenhouse\.io\//);
+  assert.match(boardApiUrl({ ats: 'lever', region: 'eu', token: 'acme' }), /^https:\/\/api\.eu\.lever\.co\//);
+  const src = fs.readFileSync(path.join(ROOT, 'skills', 'job-search', 'scripts', 'lib', 'net.mjs'), 'utf8');
+  assert.match(src, /boards-api\.eu\.greenhouse\.io', \/\/ not verified/);
 });
