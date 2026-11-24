@@ -21,7 +21,7 @@ test('SKILL.md has the Claude Code frontmatter and the gates come first', () => 
 test('SKILL.md names no private repo, no home path and no em dash', () => {
   for (const f of ['SKILL.md', ...fs.readdirSync(path.join(SKILL, 'references')).map((r) => `references/${r}`)]) {
     const t = fs.readFileSync(path.join(SKILL, f), 'utf8');
-    assert.doesNotMatch(t, /tenjin-notes|tenjin-workspace|\/Users\/|—/, f);
+    assert.doesNotMatch(t, /tenjin-notes|tenjin-workspace|\/Users\/|\u2014/, f);
   }
 });
 
