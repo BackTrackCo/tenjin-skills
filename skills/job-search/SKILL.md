@@ -44,6 +44,8 @@ When Monitor prints a line, or the person asks, run `J work --commit` (add `--un
 - `contacts_requested`: references/contacts.md. The first request asks how many jobs (`J ask contacts`; no answer means 5; `J contacts count <n|all>` keeps it as the person's rule). Haiku, then one Opus writer call per job for contacts with a channel (`J write-prompt --intros <key>`, `J intros save`). Intros are drafts the person sends; never send one.
 - `follow_up_due`: references/track.md.
 
+Every handled item ends with its J outcome command (`J ops`, `J ingest`, `J leave <key...> --reason <low_score|no_match|no_careers_page|sign_in|other_system|not_a_job|duplicate>`, ...), or the watcher shows it again; a left item returns only on news about it, an answer or a rule change.
+
 If `notify` is set, send it with PushNotification, one line, as given. If it is not sent, say once that Remote Control would carry it to the phone.
 
 ## Unattended applying (opt-in)
