@@ -32,7 +32,10 @@ export function validateIngest(o) {
   const q = o.query;
   if (!q || typeof q !== 'object' || !isStr(q.role) || typeof q.place !== 'string' || typeof q.remote !== 'boolean' || !(q.since === null || isStr(q.since))) return 'query needs role, place, remote and since';
   if (!isStr(o.status)) return 'status is missing';
-  if (!DELIVERED.includes(o.status)) return `status "${o.status}" is not a delivered result (fulfilled)`;
+  // A free web search has no router envelope: its status is the skill's own word `ok` (the native WebSearch returned
+  // results), or the envelope word when Tenjin answered it through `request`. Every other need needs `fulfilled`.
+  const delivered = o.need === 'web_search' ? [...DELIVERED, 'ok'] : DELIVERED;
+  if (!delivered.includes(o.status)) return `status "${o.status}" is not a delivered result (${delivered.join(' or ')})`;
   if (o.need === 'web_search') {
     if (!Array.isArray(o.results)) return 'results must be a list';
     if (!o.results.length) return 'the list is empty';

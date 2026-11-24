@@ -20,7 +20,7 @@ const GH = 'https://boards-api.greenhouse.io/v1/boards';
 const ghBoard = (name, jobs) => ({ jobs: jobs.map((j) => ({ id: j.id, title: j.title, company_name: name, location: { name: j.loc || 'Berlin, Germany' }, first_published: j.at || '2026-11-15T00:00:00Z', content: '' })) });
 const reset = () => store.updateState((s) => { Object.assign(s, store.emptyState()); });
 const prof = { places: ['Berlin'], search: { role: 'software engineer', place: 'Berlin', variants: ['backend engineer', 'platform engineer'] } };
-const webDoc = (results, round = 0) => ({ need: 'web_search', query: { role: 'software engineer', place: 'Berlin', remote: false, since: null, variant: null, round }, status: 'fulfilled', fullResultPath: '/x', results });
+const webDoc = (results, round = 0) => ({ need: 'web_search', query: { role: 'software engineer', place: 'Berlin', remote: false, since: null, variant: null, round }, status: 'ok', results });
 const run = (obj, f, profile = prof) => ing.ingest({ obj, state: store.loadState(), profile, overlay: empty, fetch: f, now: NOW });
 
 // ---- 1. free web searches ------------------------------------------------
@@ -73,6 +73,30 @@ test('web search: the schema is checked, and nothing is guessed', async () => {
   assert.match((await run({ ...webDoc([{ url: 'x' }]) }, fakeFetch({}))).held[0], /url is required/);
   assert.match((await run({ ...webDoc([{ url: 'https://x.com/a/1' }]), status: 'failed' }, fakeFetch({}))).held[0], /not a delivered result/);
   assert.equal(Object.keys(store.loadState().jobs).length, 0);
+});
+
+test('web_search status: ok (the native search) or fulfilled (the router) is delivered; every other need still needs fulfilled', async () => {
+  const f = fakeFetch({ [`${GH}/acme/`]: ghBoard('Acme', [{ id: 77, title: 'Software Engineer' }]) });
+  const board = [{ url: 'https://boards.greenhouse.io/acme/jobs/77' }];
+  reset();
+  assert.equal((await run(webDoc(board), f)).added, 1, 'ok, and no fullResultPath');
+  reset();
+  assert.equal((await run({ ...webDoc(board), status: 'fulfilled', fullResultPath: '/x' }, f)).added, 1, 'the router word works too');
+  for (const status of ['unverified', 'running', 'needs_approval', 'failed', 'completed']) {
+    reset();
+    const r = await run({ ...webDoc(board), status }, f);
+    assert.equal(r.added, 0, status);
+    assert.match(r.held[0], new RegExp(`status "${status}" is not a delivered result \\(fulfilled or ok\\)`));
+  }
+  reset();
+  const posting = { title: 'Software Engineer', employer: 'Acme', city: 'Berlin', region: '', country: 'DE', remote: false, postedAt: null, employmentType: '', salary: null, applyLinks: [{ url: 'https://boards.greenhouse.io/acme/jobs/77', publisher: '' }], description: 'x', sourceUrl: 'https://src.test/1' };
+  const jp = { need: 'job_postings', query: { role: 'r', place: '', remote: false, since: null }, fullResultPath: '/x', postings: [posting] };
+  const held = await run({ ...jp, status: 'ok' }, f);
+  assert.equal(held.added, 0);
+  assert.match(held.held[0], /not a delivered result \(fulfilled\)/);
+  assert.equal((await run({ ...jp, status: 'fulfilled' }, f)).added, 1);
+  reset();
+  assert.match((await run({ ...webDoc([]), status: 'ok' }, f)).held[0], /the list is empty/);
 });
 
 // ---- 2. search rounds -----------------------------------------------------

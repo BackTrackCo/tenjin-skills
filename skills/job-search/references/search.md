@@ -11,13 +11,13 @@ Use the web search tool for the round's role (the variant if there is one) and p
 
 ```json
 {"need":"web_search","query":{"role":"..","place":"..","remote":false,"since":"2026-11-16","variant":null,"round":0},
- "status":"fulfilled","fullResultPath":"..",
+ "status":"ok",
  "results":[{"url":"https://job-boards.greenhouse.io/acme/jobs/1"},
             {"url":"https://www.linkedin.com/jobs/view/1","title":"..","company":"..","city":"..","remote":false,"postedAt":null,"snippet":".."},
             {"url":"https://x.com/someone/status/1","author":"someone","snippet":"<the post text from the result>"}]}
 ```
 
-Put the result's own fields in; invent none. Code turns a board link into the employer's posting (read from the board API) and sends a LinkedIn, Indeed or similar result through the employer-posting steps, from the search result only. Never fetch a platform page, never open an X page, and never search or fetch a Y Combinator site.
+Status: `ok` when the native web search returned results; when Tenjin answered the search through `request`, copy the envelope word exactly (then only `fulfilled` is delivered, as for the other needs). `fullResultPath` is optional here. Put the result's own fields in; invent none. Code turns a board link into the employer's posting (read from the board API) and sends a LinkedIn, Indeed or similar result through the employer-posting steps, from the search result only. Never fetch a platform page, never open an X page, and never search or fetch a Y Combinator site.
 
 ## 2. The router's needs (only when `routed` is true)
 
