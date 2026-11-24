@@ -76,14 +76,26 @@ test('a schema failure holds the source, with the reason, and invents nothing', 
   assert.ok(store.loadState().held.some((h) => h.reason === 'source_empty' && h.detail.startsWith('routed:')));
 });
 
-test('a status that is not a delivered result holds the source', async () => {
+test('only the envelope status fulfilled is delivered; every other word holds the source and shows in the report line', async () => {
   reset();
-  for (const status of ['needs_approval', 'failed', 'pending', '']) {
+  assert.deepEqual(ing.DELIVERED, ['fulfilled']);
+  for (const status of ['ok', 'completed', 'unverified', 'running', 'needs_approval', 'needs_input', 'unpaid', 'failed', 'native', 'Fulfilled', '']) {
     const d = doc();
     d.status = status;
     const r = await run(d);
-    assert.equal(r.added, 0);
-    assert.match(r.held[0], /status|missing/);
+    assert.equal(r.added, 0, status);
+    assert.match(r.held[0], status ? new RegExp(`status "${status}" is not a delivered result`) : /status is missing/, status);
+  }
+});
+
+test('unverified and running are held on their own, with the word in the state', async () => {
+  reset();
+  for (const status of ['unverified', 'running']) {
+    const d = doc();
+    d.status = status;
+    await run(d);
+    assert.ok(store.loadState().held.some((h) => h.detail.includes(`status "${status}"`)), status);
+    assert.equal(Object.keys(store.loadState().jobs).length, 0);
   }
 });
 
@@ -162,4 +174,22 @@ test('the ingest command reads a file; a broken file holds, exits 4 and never th
   const r = runJobs(process.env.HOME, ['ingest', f]);
   assert.equal(r.code, 4);
   assert.match(r.json.held[0], /not an object/);
+});
+
+test('search_due waits while an unattended batch is open, and is back when it closes', async () => {
+  reset();
+  const g = await import('../../skills/job-search/scripts/lib/guard.mjs');
+  store.updateState((st) => { Object.assign(st, store.emptyState()); });
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  fs.writeFileSync(path.join(process.env.HOME, '.tenjin-skills', 'job-search', 'profile.json'), JSON.stringify(profile));
+  const has = () => work.workList({ now: NOW }).items.some((i) => i.reason === 'search_due');
+  assert.equal(has(), true);
+  g.openBatch({ mode: 'attended', uploadPath: '/r.pdf' });
+  assert.equal(has(), true, 'an attended batch lets the search run');
+  g.openBatch({ mode: 'unattended', uploadPath: '/r.pdf' });
+  assert.equal(has(), false);
+  assert.equal(g.decide({ tool_name: 'mcp__plugin_tenjin_router__request', tool_input: {} }, JSON.parse(fs.readFileSync(g.policyFile(), 'utf8'))).decision, 'deny', 'request stays denied in an unattended batch');
+  g.closeBatch();
+  assert.equal(has(), true);
 });

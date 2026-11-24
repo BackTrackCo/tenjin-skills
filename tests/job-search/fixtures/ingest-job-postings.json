@@ -1,7 +1,7 @@
 {
   "need": "job_postings",
   "query": { "role": "software engineer", "place": "Berlin", "remote": false, "since": "2026-11-16" },
-  "status": "ok",
+  "status": "fulfilled",
   "fullResultPath": "/tmp/example-result.json",
   "cost": "$0.01",
   "postings": [

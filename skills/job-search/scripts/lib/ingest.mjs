@@ -6,9 +6,9 @@ import { catchUpDays } from './sweep.mjs';
 import { screenJob } from './verify.mjs';
 import { updateState } from './store.mjs';
 
-// The request tool's status as returned. The exact vocabulary is not verified, so a delivered result
-// is one of these words; anything else holds the source.
-export const DELIVERED = ['ok', 'completed', 'delivered', 'success', 'succeeded'];
+// The request tool's envelope status, copied exactly. Only a fulfilled result is clean. Every other word
+// (unverified, running, needs_approval, needs_input, unpaid, failed, native) holds the source for this run.
+export const DELIVERED = ['fulfilled'];
 const NEEDS = ['job_postings', 'x_hiring_posts'];
 const isStr = (v) => typeof v === 'string' && v.trim() !== '';
 
@@ -19,7 +19,7 @@ export function validateIngest(o) {
   const q = o.query;
   if (!q || typeof q !== 'object' || !isStr(q.role) || typeof q.place !== 'string' || typeof q.remote !== 'boolean' || !(q.since === null || isStr(q.since))) return 'query needs role, place, remote and since';
   if (!isStr(o.status)) return 'status is missing';
-  if (!DELIVERED.includes(o.status.toLowerCase())) return `status "${o.status}" is not a delivered result`;
+  if (!DELIVERED.includes(o.status)) return `status "${o.status}" is not a delivered result (fulfilled)`;
   const list = o.need === 'job_postings' ? o.postings : o.posts;
   if (!Array.isArray(list)) return o.need === 'job_postings' ? 'postings must be a list' : 'posts must be a list';
   if (!list.length) return 'the list is empty';

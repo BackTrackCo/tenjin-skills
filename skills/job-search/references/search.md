@@ -13,12 +13,12 @@ Write one file per need in the skill's own shape, filled from what `request` ret
 
 ```json
 {"need":"job_postings","query":{"role":"..","place":"..","remote":false,"since":"2026-11-16"},
- "status":"<the result status as returned>","fullResultPath":"..","cost":"<cost as reported>",
+ "status":"<the envelope status word, copied exactly>","fullResultPath":"..","cost":"<cost as reported>",
  "postings":[{"title":"","employer":"","city":"","region":"","country":"","remote":false,"postedAt":"2026-11-20T00:00:00Z",
    "employmentType":"","salary":{"min":0,"max":0,"currency":"USD","period":"year"},"applyLinks":[{"url":"","publisher":""}],
    "description":"at most 2000 characters","sourceUrl":""}]}
 ```
 
-`salary` is null when the listing shows none. For `x_hiring_posts` use `"posts":[{"url","author","postedAt","text"}]` in place of `postings`. Then run `J ingest <file>`.
+`salary` is null when the listing shows none. For `x_hiring_posts` use `"posts":[{"url","author","postedAt","text"}]` in place of `postings`. Copy the envelope `status` word exactly as the tool returned it; never translate or rename it. Only `fulfilled` is a delivered result. Every other status (`unverified`, `running`, `needs_approval`, `needs_input`, `unpaid`, `failed`, `native`) holds the source for this run, and the report line carries the word. Then run `J ingest <file>`. The search never runs while an unattended apply batch is open: the guard denies every MCP tool there, so `search_due` waits.
 
 Code holds the source for this run, and the report names it, when the file fails the schema, the status is not a delivered result, or the list is empty. A posting reaches the apply queue only when an apply link is on Greenhouse, Lever or Ashby and the board still lists the job; the rest become "apply yourself" items. Report the router's cost as given.

@@ -2,6 +2,7 @@ import { graph } from './graph.mjs';
 import { updateState, loadState } from './store.mjs';
 import { loadOverlay, activeLessons, ruleValue } from './overlay.mjs';
 import { readJson, stateDir } from './paths.mjs';
+import { isActive, policyFile } from './guard.mjs';
 import path from 'node:path';
 
 const HOUR = 3600000;
@@ -30,7 +31,14 @@ export function unpark(job) {
   job.parked = null;
 }
 
-export function searchDue(state, profile, now) {
+// The guard denies every MCP tool in an unattended batch, the request tool included, so the search waits.
+export function unattendedBatchOpen() {
+  const p = readJson(policyFile(), null);
+  return Boolean(p && p.mode === 'unattended' && isActive());
+}
+
+export function searchDue(state, profile, now, { unattendedOpen = false } = {}) {
+  if (unattendedOpen) return false;
   if (!profile.search || !profile.search.role) return false;
   if (state.held.some((h) => h.reason === 'tenjin_missing')) return false;
   const last = state.routed && state.routed.lastSearchAt ? Date.parse(state.routed.lastSearchAt) : null;
@@ -39,9 +47,9 @@ export function searchDue(state, profile, now) {
   return elapsed >= 26 * HOUR || (elapsed >= 20 * HOUR && new Date(now).getHours() >= (profile.sweepHour ?? graph().sweep.defaultHour));
 }
 
-export function buildWorkList(state, overlay, now = Date.now(), profile = {}) {
+export function buildWorkList(state, overlay, now = Date.now(), profile = {}, opts = {}) {
   const items = [];
-  if (searchDue(state, profile, now)) {
+  if (searchDue(state, profile, now, opts)) {
     const last = state.routed.lastSearchAt;
     const since = last ? new Date(Math.max(Date.parse(last) - 86400000, now - 14 * 86400000)) : new Date(now - 14 * 86400000);
     items.push({ key: 'search', reason: 'search_due', title: 'Daily routed search', company: '', gate: GATES.search_due, query: { role: profile.search.role, place: profile.search.place || '', remote: profile.search.remote === true, since: since.toISOString().slice(0, 10) } });
@@ -117,7 +125,7 @@ export function workList({ now = Date.now(), commit = false } = {}) {
   const overlay = loadOverlay();
   let res;
   const compute = (state) => {
-    const wl = buildWorkList(state, overlay, now, readJson(path.join(stateDir(), 'profile.json'), {}));
+    const wl = buildWorkList(state, overlay, now, readJson(path.join(stateDir(), 'profile.json'), {}), { unattendedOpen: unattendedBatchOpen() });
     const n = notifyLine(state, overlay, now);
     wl.notify = n.line;
     if (commit) state.notified = n.next;

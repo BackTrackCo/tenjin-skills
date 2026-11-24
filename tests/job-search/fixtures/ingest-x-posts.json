@@ -1,7 +1,7 @@
 {
   "need": "x_hiring_posts",
   "query": { "role": "software engineer", "place": "Berlin", "remote": false, "since": "2026-11-16" },
-  "status": "completed",
+  "status": "fulfilled",
   "fullResultPath": "/tmp/example-x.json",
   "posts": [
     { "url": "https://x.example.test/acme/status/1", "author": "acme", "postedAt": "2026-11-22T10:00:00Z", "text": "We are hiring a software engineer in Berlin. Apply at jobs.example.test" }
