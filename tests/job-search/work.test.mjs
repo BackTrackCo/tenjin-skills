@@ -24,7 +24,7 @@ test('the work-list has items, held, inventory, rules, lessons; an empty one exi
 });
 
 test('every item carries its closed reason and gate text', () => {
-  reset([mkJob(), mkJob({ status: 'shortlisted' }), mkJob({ status: 'apply_ready' })]);
+  reset([mkJob(), mkJob({ status: 'shortlisted', needsWriting: true }), mkJob({ status: 'apply_ready' })]);
   const wl = work.workList({ now: NOW });
   const reasons = wl.items.map((i) => i.reason).sort();
   assert.deepEqual(reasons, ['apply_ready', 'new_job', 'prepare_due']);
