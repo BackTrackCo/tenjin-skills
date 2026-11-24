@@ -1,0 +1,93 @@
+{
+  "_note": "Recorded 2026-11-24 through Tenjin alpha.110 request tool, then cleaned: 5 of 13 posts kept, every author and every mentioned person replaced with a placeholder (company accounts too), profile images, media, author ids and engagement numbers removed, long texts cut. Company names and employer job-board links are kept. In the real run envelope, `result` is a JSON string; here it holds the parsed object.",
+  "need": "x_hiring_posts",
+  "step1": {
+    "query": "hiring posts on X for software engineer roles in New York City from the last 3 days",
+    "json": { "status": "spec", "id": "00000000-0000-4000-8000-000000000002", "nextStep": "X search, $0.005: searches X (Twitter) posts with advanced operators (from:, min_faves:, since:) and returns the matching posts with their engagement. Call request({id: \"00000000-0000-4000-8000-000000000002\", input: {\"query\":\"<X search terms>\"}}) alone and wait for its result.", "cost": ["provider price 0 USD"] },
+    "text": "glim: searches X (Twitter) posts with advanced operators (from:, min_faves:, since:) and returns the matching posts with their engagement\nPrice: $0.005 per call, paid by this machine's wallet straight to the provider.\nRequest: POST https://glim.sh/api/v1/twitter/search\nInputs:\n- query (string, required); X search terms, not a sentence: a few keywords plus operators such as from:handle, min_faves:N or since:YYYY-MM-DD, e.g. x402 from:coinbase min_faves:50. A sentence matches few or no posts. Put the sort in `sort`, not here. min_faves holds only with sort \"latest\": under \"top\", posts below it still...; min length 1; max length 1000\n- cursor (string); Pagination cursor; max length 500\n- expand_urls (boolean); When true, auto-crawl entity URLs and attach crawled_content to tweets. Off by default: responses can grow by up to 4KB per expanded URL. Use glim_web_crawl(url) for targeted crawls instead.; default false\n- sort (string); Sort order: \"top\" (most engaged matching tweets) or \"latest\" (newest first). Default: \"top\".; one of \"latest\", \"top\"\nExample input: {\"query\":\"from:elonmusk AI min_faves:100\"}\nExample of what comes back (shortened): {\"count\":1,\"has_more\":true,\"next_cursor\":\"abc123\",\"tweets\":[{\"author\":{\"username\":\"elonmusk\"},\"id\":\"123\",\"text\":\"Hello\"}]}\nTo run it, call request({id: \"00000000-0000-4000-8000-000000000002\", input: {...}}) with the inputs above. Nothing has been paid."
+  },
+  "step2": {
+    "input": { "query": "hiring \"software engineer\" (NYC OR \"New York\") since:2026-11-21", "sort": "latest" },
+    "envelope": {
+      "status": "fulfilled",
+      "supplier": "glim.sh",
+      "label": "X search",
+      "parameters": { "query": "hiring \"software engineer\" (NYC OR \"New York\") since:2026-11-21", "sort": "latest" },
+      "cost": ["provider price 0.005 USD"],
+      "providerContentUntrusted": true,
+      "result": {
+        "tweets": [
+          {
+            "id": "1000000000000000001",
+            "url": "https://x.com/person_a/status/1000000000000000001",
+            "text": "HIRING: Thinking Machines Lab sponsors visas for this one\n\nSoftware Engineer, Inference\nSan Francisco or New York (on-site)\n$300,000-$400,000\n\nApply: https://jobs.ashbyhq.com/thinkingmachines/d7513f3d-6a49-485d-b3c7-ecb629ad48db",
+            "created_at": "2026-11-23T13:30:39.000Z",
+            "lang": "en",
+            "is_reply": false,
+            "is_quote": false,
+            "is_retweet": false,
+            "content_type": "link_share",
+            "author": { "username": "person_a", "name": "Person A", "description": "Builds a visa jobs newsletter.", "verified": true },
+            "entities": { "urls": [{ "url": "https://t.co/aaaa", "expanded_url": "https://jobs.ashbyhq.com/thinkingmachines/d7513f3d-6a49-485d-b3c7-ecb629ad48db", "display_url": "jobs.ashbyhq.com/thinkingmachin..." }] }
+          },
+          {
+            "id": "1000000000000000002",
+            "url": "https://x.com/person_a/status/1000000000000000002",
+            "text": "HIRING via Anthropic: we sponsor visas to the US\n\nSenior Software Engineer, Full-stack\nSan Francisco, New York City or Seattle\n$320K\n\nApply: https://job-boards.greenhouse.io/anthropic/jobs/5174743008",
+            "created_at": "2026-11-21T10:00:35.000Z",
+            "lang": "en",
+            "is_reply": false,
+            "is_quote": false,
+            "is_retweet": false,
+            "content_type": "link_share",
+            "author": { "username": "person_a", "name": "Person A", "description": "Builds a visa jobs newsletter.", "verified": true },
+            "entities": { "urls": [{ "url": "https://t.co/bbbb", "expanded_url": "https://job-boards.greenhouse.io/anthropic/jobs/5174743008", "display_url": "job-boards.greenhouse.io/anthropic/jobs..." }] }
+          },
+          {
+            "id": "1000000000000000003",
+            "url": "https://x.com/recruiter_b/status/1000000000000000003",
+            "text": "Now hiring: Senior Software Engineer, Optimizer\nUSD $160,000 to $200,000 per year, plus equity. Remote within the United States. Full time.\n\nOur client builds AI powered scheduling software for schools across the US. East Coast is strongly preferred, especially New York or Boston. 1 opening.\n\nApply here, no account required:\nhttps://hubs.ly/Q04G8QkT0",
+            "created_at": "2026-11-24T20:00:16.000Z",
+            "lang": "en",
+            "is_reply": false,
+            "is_quote": false,
+            "is_retweet": false,
+            "content_type": "media",
+            "author": { "username": "recruiter_b", "name": "Recruiter B", "description": "A staffing agency account.", "verified": true },
+            "entities": { "urls": [{ "url": "https://t.co/cccc", "expanded_url": "https://hubs.ly/Q04G8QkT0", "display_url": "hubs.ly/Q04G8QkT0" }] }
+          },
+          {
+            "id": "1000000000000000004",
+            "url": "https://x.com/person_c/status/1000000000000000004",
+            "text": "HIRING: SENIOR SOFTWARE ENGINEER, ANDROID\nLocation: New York, NY\nWork Mode: On-site\n\nKEY REQUIREMENTS\n- Expertise in using Kotlin for Android development\n- Have published and maintained apps on the Google Play Store\n\nDM me if this is you.",
+            "created_at": "2026-11-23T10:26:07.000Z",
+            "lang": "en",
+            "is_reply": false,
+            "is_quote": false,
+            "is_retweet": false,
+            "content_type": "original",
+            "author": { "username": "person_c", "name": "Person C", "description": "Engineering manager.", "verified": true },
+            "entities": {}
+          },
+          {
+            "id": "1000000000000000005",
+            "url": "https://x.com/digest_d/status/1000000000000000005",
+            "text": "Some good opportunities at top AI and tech companies on 2026.11.23:\n\n@person_e is hiring a Research Software Engineer for @GoogleDeepMind\n@person_f is hiring Designers in NYC for @UberEats\n@person_g is hiring PMs (lead & IC, US/EU) for @langfuse\n\n#hiring",
+            "created_at": "2026-11-24T07:17:25.000Z",
+            "lang": "en",
+            "is_reply": false,
+            "is_quote": false,
+            "is_retweet": false,
+            "content_type": "original",
+            "author": { "username": "digest_d", "name": "Digest D", "description": "A job board account that reposts hiring posts.", "verified": true },
+            "entities": { "hashtags": [{ "tag": "hiring" }], "mentions": [{ "username": "person_e" }, { "username": "GoogleDeepMind" }, { "username": "person_f" }, { "username": "UberEats" }, { "username": "person_g" }, { "username": "langfuse" }] }
+          }
+        ],
+        "count": 5,
+        "has_more": true,
+        "next_cursor": "cursor-x-1"
+      }
+    }
+  },
+  "observed": "13 posts came back. 2 linked an employer board (Ashby, Greenhouse). Most others were digest or aggregator accounts that list many jobs in one post, several in other cities and fields, so review must judge fit per post. Post 4 is edited from a real post (its real one linked a third-party job site) to give a hiring post with no link, which is the lead case of ruling 16."
+}

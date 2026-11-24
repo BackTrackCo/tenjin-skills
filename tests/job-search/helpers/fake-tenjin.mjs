@@ -17,7 +17,9 @@ rl.on('line', (line) => {
     log({ call: msg.params.arguments });
     if (script.hangOn === i) return;
     const answer = script.answers[i];
-    return process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { content: [{ type: 'text', text: JSON.stringify(answer) }] } })}\n`);
+    const { __text, ...env } = answer;
+    const content = [{ type: 'text', text: JSON.stringify(env) }, ...(__text ? [{ type: 'text', text: __text }] : [])];
+    return process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { content } })}\n`);
   }
 });
 rl.on('close', () => { log({ stdinClosed: true }); process.exit(script.ignoreClose ? 99 : 0); });

@@ -1,0 +1,18 @@
+{
+  "_note": "Recorded 2026-11-24 through Tenjin alpha.110 request tool. The router answered `native` at step 1, so there is no step 2 and nothing was paid. Ids are not in this envelope.",
+  "need": "web_search",
+  "step1": {
+    "query": "web search: site:jobs.ashbyhq.com software engineer New York, 3 results",
+    "json": {
+      "status": "native",
+      "reason": "The host assistant and its own tools are enough for this step.",
+      "nextStep": "Answer with the host assistant and its own tools; no paid capability fits this step.",
+      "reasonCode": "native_sufficient",
+      "stage": "capability",
+      "cost": ["provider price 0 USD"],
+      "providerContentUntrusted": true
+    },
+    "text": "Use your usual tools: The host assistant and its own tools are enough for this step."
+  },
+  "observed": "For a `site:` web search the router chose native (the host's own WebSearch). The plan already says a `native` answer keeps that search a model step."
+}

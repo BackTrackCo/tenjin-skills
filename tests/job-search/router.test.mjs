@@ -11,8 +11,12 @@ const ing = await import('../../skills/job-search/scripts/lib/ingest.mjs');
 const store = await import('../../skills/job-search/scripts/lib/store.mjs');
 const sup = await import('../../skills/job-search/scripts/lib/suppliers/index.mjs');
 const FAKE = path.join(import.meta.dirname, 'helpers', 'fake-tenjin.mjs');
-const J = fixture('router/job-postings.json');
-const need = { kind: 'job_postings', text: 'job postings for software engineer roles in Berlin, posted in the last 7 days', fields: { role: 'software engineer', place: 'Berlin', remote: false, since: null }, query: { role: 'software engineer', place: 'Berlin', remote: false, since: null, variant: null, round: 0 } };
+// The recorded answers (cleaned). In the real run envelope `result` is a JSON string; the fixtures hold it parsed.
+const FX = Object.fromEntries(['job-postings', 'x-posts', 'careers-page', 'people-search', 'web-search'].map((n) => [n, fixture(`router/${n}.json`)]));
+const spec = (name) => ({ ...FX[name].step1.json, __text: FX[name].step1.text });
+const run = (name, key = 'step2') => ({ ...FX[name][key].envelope, result: JSON.stringify(FX[name][key].envelope.result) });
+const J = { spec: spec('job-postings'), fulfilled: run('job-postings') };
+const need = { kind: 'job_postings', text: FX['job-postings'].step1.query, fields: { role: 'software engineer', place: 'New York City', remote: false, since: null, days: 3 }, query: { role: 'software engineer', place: 'New York City', remote: false, since: null, variant: null, round: 0 } };
 
 // A `tenjin` on PATH that is the fake MCP server. Nothing here calls the real Tenjin.
 function fake(script) {
@@ -34,32 +38,32 @@ test('the need goes as {query} from text, then {id, input}; a fulfilled envelope
   assert.equal(r.cost, 'provider price 0.003 USD');
   const calls = f.log().filter((l) => l.call).map((l) => l.call);
   assert.deepEqual(Object.keys(calls[0]), ['query']);
-  assert.match(calls[0].query, /^job postings for software engineer roles in Berlin/);
+  assert.equal(calls[0].query, 'job postings for software engineer roles in New York City, posted in the last 3 days');
   assert.doesNotMatch(calls[0].query, /openwebninja|jsearch/i, 'the need names no seller');
   assert.deepEqual(Object.keys(calls[1]).sort(), ['id', 'input']);
   assert.equal(calls[1].id, J.spec.id, 'the offer id is read from the top level of the spec answer');
-  assert.equal(calls[1].input.query, 'software engineer in Berlin');
+  assert.deepEqual(calls[1].input, FX['job-postings'].step2.input, 'the mapper makes the input the recorded run used');
   assert.equal(r.ingest.need, 'job_postings');
   assert.equal(r.ingest.status, 'fulfilled');
   assert.ok(fs.existsSync(r.ingest.fullResultPath), 'result saved to a file and passed as fullResultPath');
-  assert.equal(JSON.parse(fs.readFileSync(r.ingest.fullResultPath, 'utf8')).data.jobs.length, 2);
-  assert.equal(r.ingest.postings.length, 2);
-  assert.deepEqual(r.ingest.postings[0].applyLinks.map((l) => l.publisher), ['LinkedIn', 'Acme careers']);
-  assert.equal(r.ingest.postings[0].salary.min, 90000);
-  assert.equal(r.ingest.postings[1].remote, true);
+  assert.equal(JSON.parse(fs.readFileSync(r.ingest.fullResultPath, 'utf8')).data.jobs.length, 3);
+  assert.equal(r.ingest.postings.length, 3);
+  assert.deepEqual(r.ingest.postings.map((p) => p.employer), ['Rippling', 'Robinhood', 'NSI Mechanical and Engineering']);
+  assert.deepEqual(r.ingest.postings[0].applyLinks.map((l) => l.publisher), ['Indeed']);
+  assert.equal(r.ingest.postings[0].salary.min, 135000);
+  assert.equal(r.ingest.postings[0].salary.period, 'year');
 });
 
-test('the adapter output passes the ingest schema and reaches the apply path', async () => {
+test('the adapter output passes the ingest schema; platform-only postings become jobs without an employer posting', async () => {
   const f = fake({ answers: [J.spec, J.fulfilled] });
   const [r] = await router.runRound([need], { client: client(f) });
   store.updateState((s) => { Object.assign(s, store.emptyState()); });
-  const fetch = async (url) => (url.includes('/boards/acme/jobs')
-    ? { ok: true, status: 200, json: async () => ({ jobs: [{ id: 77, title: 'Software Engineer', company_name: 'Acme', location: { name: 'Berlin' }, first_published: '2026-11-20T00:00:00Z', content: '' }] }) }
-    : { ok: false, status: 404, json: async () => ({}) });
-  const out = await ing.ingest({ obj: r.ingest, state: store.loadState(), profile: { places: ['Berlin'], remote: true, includeOld: true }, overlay: { rules: [], lessons: [] }, fetch, now: Date.parse('2026-11-23T10:00:00Z') });
+  const fetch = async () => ({ ok: false, status: 404, json: async () => ({}) });
+  const out = await ing.ingest({ obj: r.ingest, state: store.loadState(), profile: { places: ['New York'], remote: true, includeOld: true }, overlay: { rules: [], lessons: [] }, fetch, now: Date.parse('2026-11-24T20:00:00Z') });
   assert.equal(out.held.length, 0);
+  assert.equal(out.added, 3);
   const jobs = Object.values(store.loadState().jobs);
-  assert.ok(jobs.some((j) => j.employerPosting && j.employerPosting.url === 'https://boards.greenhouse.io/acme/jobs/77' && j.employerPosting.confidence === 'exact'));
+  assert.ok(jobs.every((j) => j.employerPosting === null && j.warnings.includes('not confirmed open')), 'indeed, linkedin and ziprecruiter results need the employer-posting steps');
 });
 
 test('only fulfilled delivers: every other status holds that search with its reason, and nothing is sent twice', async () => {
@@ -71,10 +75,10 @@ test('only fulfilled delivers: every other status holds that search with its rea
     assert.match(r.reason, new RegExp(status));
     assert.equal(f.log().filter((l) => l.call).length, 2, `${status}: the run was sent once, never retried`);
   }
-  const spec = fake({ answers: [{ status: 'needs_approval', nextStep: 'ask the person' }] });
-  const [r] = await router.runRound([need], { client: client(spec) });
+  const specf = fake({ answers: [{ status: 'needs_approval', nextStep: 'ask the person' }] });
+  const [r] = await router.runRound([need], { client: client(specf) });
   assert.equal(r.status, 'needs_approval');
-  assert.equal(spec.log().filter((l) => l.call).length, 1, 'a refusal at the first step sends nothing more');
+  assert.equal(specf.log().filter((l) => l.call).length, 1, 'a refusal at the first step sends nothing more');
 });
 
 test('an offer id only at the top level counts: a spec with offers[] or offer.id is not read, and a spec with no known supplier host, or an envelope from another supplier, holds only that search', async () => {
@@ -98,7 +102,10 @@ test('an offer id only at the top level counts: a spec with offers[] or offer.id
 test('the supplier is picked by the host in the spec text, and nowhere else', () => {
   assert.equal(sup.pickSupplier('Request: GET https://x402.openwebninja.com/jsearch/search-v2', 'job_postings').host, 'x402.openwebninja.com');
   assert.equal(sup.pickSupplier('Supplier: other.test', 'job_postings'), null);
-  assert.equal(sup.pickSupplier('Request: GET https://x402.openwebninja.com/jsearch/search-v2', 'x_hiring_posts'), null, 'no adapter for that need yet');
+  assert.equal(sup.pickSupplier('Request: GET https://x402.openwebninja.com/jsearch/search-v2', 'x_hiring_posts'), null, 'a supplier is picked for its own need only');
+  assert.equal(sup.pickSupplier(spec('x-posts').nextStep + FX['x-posts'].step1.text, 'x_hiring_posts').host, 'glim.sh');
+  assert.equal(sup.pickSupplier(FX['careers-page'].step1.text, 'careers_page').host, 'signal.halowerk.com');
+  assert.equal(sup.pickSupplier(FX['people-search'].step1.text, 'people_search').host, 'x402.orthogonal.com');
 });
 
 test('a timed-out run is not sent again; the process is stopped and no server stays running', async () => {

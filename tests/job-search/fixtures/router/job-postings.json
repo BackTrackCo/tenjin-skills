@@ -1,21 +1,109 @@
 {
- "_note": "Hand-built to the envelope shape the operator's own live call showed (spec: {status, id, nextStep}; run: {status, supplier, label, parameters, cost[], result as a JSON string, providerContentUntrusted}); not a recorded response.",
- "spec": {
-  "status": "spec",
-  "id": "00000000-0000-4000-8000-000000000001",
-  "nextStep": "Request: GET https://x402.openwebninja.com/jsearch/search-v2 . Inputs: query, remote_jobs_only, date_posted. Returns data.jobs[]. Then call request with {id, input}."
- },
- "fulfilled": {
-  "status": "fulfilled",
-  "supplier": "x402.openwebninja.com",
-  "label": "job search",
-  "parameters": {
-   "query": "software engineer in Berlin"
+  "_note": "Recorded 2026-11-24 through Tenjin alpha.110 request tool, then cleaned: 3 of 10 jobs kept, descriptions cut, long ids shortened, logos and Google links removed. In the real run envelope, `result` is a JSON string; here `result` holds the parsed object, so a test must JSON.stringify it to replay the real shape.",
+  "need": "job_postings",
+  "step1": {
+    "query": "job postings for software engineer roles in New York City, posted in the last 3 days",
+    "json": { "status": "spec", "id": "00000000-0000-4000-8000-000000000001", "nextStep": "Call request({id: \"00000000-0000-4000-8000-000000000001\", input: {...}}) with the inputs above.", "cost": ["provider price 0 USD"] },
+    "text": "OpenWeb Ninja (JSearch job search): Job listings for a role and a place, gathered from LinkedIn, Indeed, Glassdoor, ZipRecruiter and employers' own boards, with posting dates and where to apply. Not for one employer's openings, which its own job board lists.\nPrice: $0.003 per call, paid by this machine's wallet straight to the provider.\nRequest: GET https://x402.openwebninja.com/jsearch/search-v2\nInputs:\n- query (string, required); The role, the word jobs and the place, e.g. \"developer jobs in chicago\"\n- country (string); Two-letter country code of the job market; outside the US, set both country and language and include the location in query; default \"us\"\n- language (string); Language of the job search, e.g. de for Germany; outside the US, set it together with country and include the location in query\n- date_posted (string); one of \"all\", \"today\", \"3days\", \"week\", \"month\"; default \"all\"\n- work_from_home (boolean); default false\n- employment_types (string); one of \"FULLTIME\", \"CONTRACTOR\", \"PARTTIME\", \"INTERN\"\n- job_requirements (string); one of \"under_3_years_experience\", \"more_than_3_years_experience\", \"no_experience\", \"no_degree\"\n- radius (number)\n- num_pages (integer); default 1\n- cursor (string)\n- exclude_job_publishers (string)\n- fields (string)\nExample input: {\"query\":\"developer jobs in chicago\"}\nReturns: JSON {status, parameters, data:{jobs[]}}: postings with title, employer, publisher, location, remote flag, posted date, salary when shown, description and apply links\nTo run it, call request({id: \"00000000-0000-4000-8000-000000000001\", input: {...}}) with the inputs above. Nothing has been paid."
   },
-  "cost": [
-   "provider price 0.003 USD"
-  ],
-  "providerContentUntrusted": true,
-  "result": "{\"data\": {\"jobs\": [{\"job_title\": \"Software Engineer\", \"employer_name\": \"Acme, Inc.\", \"employer_website\": \"https://www.acme.com\", \"job_publisher\": \"LinkedIn\", \"job_apply_link\": \"https://www.linkedin.com/jobs/view/1\", \"apply_options\": [{\"apply_link\": \"https://www.linkedin.com/jobs/view/1\", \"is_direct\": false, \"publisher\": \"LinkedIn\"}, {\"apply_link\": \"https://boards.greenhouse.io/acme/jobs/77\", \"is_direct\": true, \"publisher\": \"Acme careers\"}], \"job_is_remote\": false, \"job_posted_at_datetime_utc\": \"2026-11-20T09:00:00Z\", \"job_city\": \"Berlin\", \"job_state\": \"\", \"job_country\": \"DE\", \"job_employment_type\": \"FULLTIME\", \"job_min_salary\": 90000, \"job_max_salary\": 120000, \"job_salary_currency\": \"EUR\", \"job_salary_period\": \"YEAR\", \"job_description\": \"Build things in Berlin.\"}, {\"job_title\": \"Backend Engineer\", \"employer_name\": \"Globex\", \"job_publisher\": \"Indeed\", \"job_apply_link\": \"https://de.indeed.com/viewjob?jk=9\", \"apply_options\": [], \"job_is_remote\": true, \"job_posted_at_datetime_utc\": \"2026-11-21T09:00:00Z\", \"job_city\": \"\", \"job_state\": \"\", \"job_country\": \"DE\", \"job_description\": \"Services work.\"}]}}"
- }
+  "step2": {
+    "input": { "query": "software engineer jobs in new york city", "date_posted": "3days" },
+    "envelope": {
+      "status": "fulfilled",
+      "supplier": "x402.openwebninja.com",
+      "label": "JSearch job search",
+      "parameters": { "query": "software engineer jobs in new york city", "date_posted": "3days" },
+      "cost": ["provider price 0.003 USD"],
+      "providerContentUntrusted": true,
+      "result": {
+        "status": "OK",
+        "request_id": "00000000-0000-4000-8000-0000000000aa",
+        "parameters": { "query": "software engineer jobs in new york city", "num_pages": 1, "date_posted": "3days", "country": "us", "language": "en" },
+        "data": {
+          "jobs": [
+            {
+              "job_id": "job-1",
+              "job_title": "Software Engineer II, Backend Full Stack - Emerging Products",
+              "employer_name": "Rippling",
+              "employer_website": null,
+              "job_publisher": "Indeed",
+              "job_employment_type": "Full-time",
+              "job_employment_types": ["FULLTIME"],
+              "job_apply_link": "https://www.indeed.com/viewjob?jk=49b461b82c2e70ae",
+              "job_apply_is_direct": false,
+              "apply_options": [{ "apply_link": "https://www.indeed.com/viewjob?jk=49b461b82c2e70ae", "is_direct": false, "publisher": "Indeed" }],
+              "job_description": "About Rippling. Rippling gives businesses one place to run HR, IT, and Finance. As a Senior Backend Engineer, you will design and build the services, APIs, and platform primitives that power complex workflows. 2+ years of professional experience with a focus on full-stack development. The pay range for this role is: 135,000 - 225,000 USD per year (US Tier 1).",
+              "job_is_remote": false,
+              "job_posted_at": "4 hours ago",
+              "job_posted_at_timestamp": 1795543200,
+              "job_posted_at_datetime_utc": "2026-11-24T18:00:00.000Z",
+              "job_location": "New York, NY",
+              "job_city": "New York",
+              "job_state": "New York",
+              "job_country": "US",
+              "job_salary": null,
+              "job_salary_string": "135K-225K a year",
+              "job_min_salary": 135000,
+              "job_max_salary": 225000,
+              "job_salary_period": "YEAR"
+            },
+            {
+              "job_id": "job-2",
+              "job_title": "Senior Full Stack Engineer, Credit Cards & Banking",
+              "employer_name": "Robinhood",
+              "employer_website": null,
+              "job_publisher": "LinkedIn",
+              "job_employment_type": "Full-time",
+              "job_employment_types": ["FULLTIME"],
+              "job_apply_link": "https://www.linkedin.com/jobs/view/senior-full-stack-engineer-credit-cards-banking-at-robinhood-4492668658",
+              "job_apply_is_direct": false,
+              "apply_options": [{ "apply_link": "https://www.linkedin.com/jobs/view/senior-full-stack-engineer-credit-cards-banking-at-robinhood-4492668658", "is_direct": false, "publisher": "LinkedIn" }],
+              "job_description": "Join us in building the future of finance. As a Senior Full Stack Engineer on Credit Card & Banking, you will lead high-leverage projects across our mobile app, backend services, and financial partner integrations. 6+ years of professional software engineering experience. Zone 1 (Menlo Park, CA; New York, NY): $196,000 to $230,000 USD.",
+              "job_is_remote": false,
+              "job_posted_at": "18 hours ago",
+              "job_posted_at_timestamp": 1795492800,
+              "job_posted_at_datetime_utc": "2026-11-24T04:00:00.000Z",
+              "job_location": "New York, NY",
+              "job_city": "New York",
+              "job_state": "New York",
+              "job_country": "US",
+              "job_salary": null,
+              "job_salary_string": null,
+              "job_min_salary": null,
+              "job_max_salary": null,
+              "job_salary_period": null
+            },
+            {
+              "job_id": "job-3",
+              "job_title": "Software Engineer 100 Remote",
+              "employer_name": "NSI Mechanical and Engineering",
+              "employer_website": null,
+              "job_publisher": "ZipRecruiter",
+              "job_employment_type": "Full-time",
+              "job_employment_types": ["FULLTIME"],
+              "job_apply_link": "https://www.ziprecruiter.com/c/nsi-mechanical-and-engineering/Job/Software-Engineer-100-Remote/-in-New-York,NY?jid=ac71438c5a15fe49",
+              "job_apply_is_direct": false,
+              "apply_options": [{ "apply_link": "https://www.ziprecruiter.com/c/nsi-mechanical-and-engineering/Job/Software-Engineer-100-Remote/-in-New-York,NY?jid=ac71438c5a15fe49", "is_direct": false, "publisher": "ZipRecruiter" }],
+              "job_description": "Software Engineer. 100% Remote. New York City NY. Salary 150,000. Build the software behind cancer research. 1-4 years of software engineering experience building reliable, scalable systems.",
+              "job_is_remote": true,
+              "job_posted_at": "3 days ago",
+              "job_posted_at_timestamp": 1795219200,
+              "job_posted_at_datetime_utc": "2026-11-21T00:00:00.000Z",
+              "job_location": "Anywhere",
+              "job_city": null,
+              "job_state": null,
+              "job_country": null,
+              "job_salary": null,
+              "job_salary_string": "149K-150K a year",
+              "job_min_salary": 149000,
+              "job_max_salary": 150000,
+              "job_salary_period": "YEAR"
+            }
+          ],
+          "cursor": "cursor-1"
+        }
+      }
+    }
+  },
+  "observed": "All 10 jobs in the real response had apply links on aggregators (Indeed, LinkedIn, ZipRecruiter, Talent.com, Hiring Cafe, JobLeads, Trabajo.org, Yoh), none on Greenhouse, Lever or Ashby."
 }

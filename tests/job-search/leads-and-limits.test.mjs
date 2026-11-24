@@ -184,26 +184,3 @@ test('a lead joins a job when employer and role later match exactly one job, and
   }
   assert.equal(runJobs(home, ['leads', 'mark', 'https://x.com/ada_dev/status/111', 'later']).code, 2);
 });
-
-// ---- the routed round in code ---------------------------------------------------------------
-test('a routed round: the needs with an adapter run in code, the result is ingested, held searches are named, and the rounds follow the same stop rule', async () => {
-  reset();
-  const J = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'fixtures', 'router', 'job-postings.json'), 'utf8'));
-  const calls = [];
-  const client = { timeouts: router.TIMEOUTS, start: async () => {}, close: async () => {}, request: async (args) => { calls.push(args); return args.query ? J.spec : J.fulfilled; } };
-  const prof = { places: ['Berlin'], remote: true, includeOld: true, search: { role: 'software engineer', place: 'Berlin', variants: ['backend engineer'] } };
-  const needs = routed.roundNeeds(prof, store.loadState(), NOW, 0);
-  assert.deepEqual(needs.map((n) => n.kind), ['job_postings'], 'only the needs with an adapter run in code');
-  assert.match(needs[0].text, /^job postings for software engineer roles in Berlin, posted in the last 14 days$/);
-  assert.equal(routed.allNeedsCovered(), false, 'the watcher keeps the model step until every need has an adapter');
-  const fetch = async () => ({ ok: false, status: 404, json: async () => ({}) });
-  const log = await routed.routedRounds({ profile: prof, fetch, client, now: NOW });
-  assert.equal(log[0].ok, true);
-  const s = store.loadState();
-  assert.equal(s.routed.lastCost, 'provider price 0.003 USD');
-  assert.ok(Object.keys(s.jobs).length >= 1);
-  assert.ok(calls.some((c) => c.query) && calls.some((c) => c.id === J.spec.id));
-  assert.ok(log.length >= 1 && log.length <= 2, 'round 0 and at most the one variant');
-  assert.equal(routed.needText('job_postings', { role: 'a', variant: 'b', place: '', days: 3 }), 'job postings for b roles in any place, posted in the last 3 days');
-  assert.equal(ov.loadOverlay().rules.length, 0, 'the skill adds no money rule for searches');
-});

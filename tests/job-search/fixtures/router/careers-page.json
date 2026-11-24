@@ -1,0 +1,54 @@
+{
+  "_note": "Recorded 2026-11-24 through Tenjin alpha.110 request tool, then cleaned: the payer wallet address, the payment block and the settlement hash are removed, and the offer id is a placeholder. In the real run envelope, `result` is a JSON string; here it holds the parsed object.",
+  "need": "careers_page",
+  "step1": {
+    "query": "read the web page https://www.anthropic.com/careers and return the links on it",
+    "json": { "status": "spec", "id": "00000000-0000-4000-8000-000000000003", "nextStep": "Call request({id: \"00000000-0000-4000-8000-000000000003\", input: {...}}) with the inputs above.", "cost": ["provider price 0 USD"] },
+    "text": "signal.halowerk.com: Find a company's careers page from its website, check that it answers, and count open positions from JobPosting markup, the public board API of its ATS or job links. Scores the links of the start page by path (karriere, jobs, stellen, stellenangebote, careers, join-us, ausbildung ...), link text and l\nPrice: $0.005 per call, paid by this machine's wallet straight to the provider.\nRequest: POST https://signal.halowerk.com/v1/careers-page-detect\nInputs:\n- base_url (string); URL the HTML was loaded from (required with html).; format uri\n- html (string); Already loaded HTML of the page. Nothing is fetched in this mode.\n- url (string); Company domain or page URL (https:// is added when missing). Public pages only; robots.txt is respected; at most 5 page\nTo run it, call request({id: \"00000000-0000-4000-8000-000000000003\", input: {...}}) with the inputs above. Nothing has been paid."
+  },
+  "step2_rejected": {
+    "_note": "First run with a bare domain. The provider refused it before any payment, although the spec says https:// is added. The mapper must send an absolute https URL.",
+    "input": { "url": "anthropic.com" },
+    "envelope": {
+      "status": "failed",
+      "reason": "signal.halowerk.com rejected this input before any payment (HTTP 400): see providerError. Fix the input and call again with the same id.",
+      "nextStep": "Fix the input and call again with the same id.",
+      "cost": ["provider price 0 USD"],
+      "providerStatus": 400,
+      "providerError": "{\"error\":\"invalid_url\",\"message\":\"Provide an absolute HTTP or HTTPS URL.\",\"charged\":false,\"payment_accepted\":false}",
+      "request": { "method": "POST", "url": "https://signal.halowerk.com/v1/careers-page-detect" },
+      "parameters": { "url": "anthropic.com" },
+      "providerContentUntrusted": true
+    }
+  },
+  "step2": {
+    "input": { "url": "https://www.anthropic.com" },
+    "envelope": {
+      "status": "fulfilled",
+      "supplier": "signal.halowerk.com",
+      "parameters": { "url": "https://www.anthropic.com" },
+      "cost": ["provider price 0.005 USD"],
+      "providerContentUntrusted": true,
+      "result": {
+        "status": "success",
+        "service": "careers-page-detect",
+        "result": {
+          "found": true,
+          "careers_page": { "url": "https://www.anthropic.com/careers/jobs", "found_via": "standard_path", "reason": "/jobs", "link_text": null, "hosted_on": "same_host", "ats": null },
+          "reachability": { "checked": true, "ok": true, "status": 200, "final_url": "https://www.anthropic.com/careers/jobs", "redirects": 1 },
+          "open_positions": { "count": 631, "method": "ats_api", "vendor": "greenhouse", "board": "anthropic", "complete": true },
+          "candidates": [],
+          "mode": "fetched",
+          "fetches": 4
+        },
+        "limitations": [
+          "Careers pages that are only reachable through JavaScript navigation or cookie walls may not be found.",
+          "A count from job links is an estimate; counts from markup or a board API reflect what the employer currently publishes."
+        ],
+        "meta": { "duration_ms": 3475, "cache": "miss" },
+        "charged": true
+      }
+    }
+  },
+  "observed": "The router did not pick a page read. It picked a careers-page finder that takes a company URL and returns the board vendor and token (`open_positions.vendor`, `open_positions.board`). So the careers-page lookup can be one step in code: company domain, then this result, then the existing board probe on `<vendor>:<board>`. The envelope has no `label` field for this supplier, so code must not require `label`."
+}

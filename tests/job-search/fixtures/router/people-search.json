@@ -1,0 +1,26 @@
+{
+  "_note": "Recorded 2026-11-24 through Tenjin alpha.110 request tool, then cleaned: the settlement hash is removed and the offer id is a placeholder. The run came back fulfilled with no people, so `step2_non_empty_from_spec` is hand-built from the spec's own description of the return shape and is NOT recorded. Confirm its field names with one recorded non-empty call before relying on them.",
+  "need": "people_search",
+  "step1": {
+    "query": "people search: engineering managers at Anthropic in New York, 3 people",
+    "json": { "status": "spec", "id": "00000000-0000-4000-8000-000000000004", "nextStep": "Call request({id: \"00000000-0000-4000-8000-000000000004\", input: {...}}) with the inputs above.", "cost": ["provider price 0 USD"] },
+    "text": "Orthogonal (Icypeas lead database): Find people at a company or in a segment. query takes filters such as currentJobTitle, currentCompanyWebsite, currentCompanyName, location, school or skills, each {include: [...]}. Returns names, headlines, current role and LinkedIn URLs; no emails or phones.\nPrice: $0.01 per call, paid by this machine's wallet straight to the provider.\nRequest: POST https://x402.orthogonal.com/icypeas/api/find-people\nInputs:\n- query (object {currentJobTitle, currentCompanyWebsite, currentCompanyName, pastJobTitle, pastCompanyName, firstname, lastname, locatio...}, required); One or more filters, each {\"include\": [...], \"exclude\": [...]}.\n- pagination (object {size, token})\nExample input: {\"query\":{\"currentCompanyWebsite\":{\"include\":[\"stripe.com\"]},\"currentJobTitle\":{\"include\":[\"CTO\"]}},\"pagination\":{\"size\":5}}\nReturns: JSON {total, success, leads[]}: per person first and last name, headline, LinkedIn profileUrl, current job title and company; no emails\nTo run it, call request({id: \"00000000-0000-4000-8000-000000000004\", input: {...}}) with the inputs above. Nothing has been paid."
+  },
+  "step2": {
+    "input": { "query": { "currentCompanyWebsite": { "include": ["anthropic.com"] }, "currentJobTitle": { "include": ["Engineering Manager"] }, "location": { "include": ["New York"] } }, "pagination": { "size": 3 } },
+    "envelope": {
+      "status": "fulfilled",
+      "supplier": "x402.orthogonal.com",
+      "label": "Icypeas lead database",
+      "parameters": { "query": { "currentCompanyWebsite": { "include": ["anthropic.com"] }, "currentJobTitle": { "include": ["Engineering Manager"] }, "location": { "include": ["New York"] } }, "pagination": { "size": 3 } },
+      "cost": ["provider price 0.01 USD"],
+      "providerContentUntrusted": true,
+      "result": { "success": true, "leads": [], "total": 0 }
+    }
+  },
+  "step2_non_empty_from_spec": {
+    "_note": "HAND-BUILT from the spec text, not recorded. Field names inside each lead are a guess from 'first and last name, headline, LinkedIn profileUrl, current job title and company'.",
+    "result": { "success": true, "total": 1, "leads": [{ "firstname": "Person", "lastname": "H", "headline": "Engineering Manager", "profileUrl": "https://www.linkedin.com/in/person-h", "currentJobTitle": "Engineering Manager", "currentCompanyName": "Example Co" }] }
+  },
+  "observed": "Filters by company website, title and location gave zero people. A real run may need a looser filter (title and company only) and must handle `total: 0` as a normal empty answer, not a failure."
+}
