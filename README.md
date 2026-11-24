@@ -76,11 +76,11 @@ npx skills add BackTrackCo/tenjin-skills@job-search-v0.1.0 \
   --skill job-search --skill writing -a claude-code -g
 ```
 
-Then run `/job-search` in Claude Code. The skill checks for Tenjin and offers to set it up if it is missing. The install (the `skills` installer) needs Node 22.20 or later, and the skill itself runs on Node 20 or later.
+Then run `/job-search` in Claude Code. It asks for your resume path, then in one question: how applications go out (you approve each, or auto), how often to search, how many positions to make ready per period, and Remote Control. The free search and the first report follow in the same session. Tenjin is never required to start; it comes up as a recommendation where it would do better, and you decide. The install (the `skills` installer) needs Node 22.20 or later, and the skill itself runs on Node 20 or later.
 
 ### What it does
 
-- **Watched companies, free.** You paste a company's careers link (Greenhouse, Lever or Ashby). Code reads the board from it and checks that company's jobs every sweep, in code, with no model tokens and no limit on how many companies you watch.
+- **Watched companies, free.** There is no watch-list question: a company's board joins the list when one of its jobs passes review with a confirmed employer posting, and drops off after 90 days with no job in your role. You can also paste a careers link or remove a company. Code reads each board every sweep, with no model tokens and no limit on the list.
 - **Daily search.** Each round runs free web searches of the three board hosts and X (also without Tenjin), then, with Tenjin, the router's job-posting and X searches; the next round uses a new role word (a synonym or a level) and stops when it finds nothing new. Hacker News "Who is hiring?" is read through its Algolia search API. Older postings stay only when their board confirms they are open.
 - **Daily search, through Tenjin.** A Haiku subagent asks Tenjin's router for job postings that match your role, place and the days since the last search, and for hiring posts on X. The skill names no seller; the router picks, prices and applies your spend limits. Code checks the result's shape, removes duplicates, and sends a posting to the apply queue only when its apply link is on Greenhouse, Lever or Ashby and the board still lists it. Every other posting comes back as an "apply yourself" item with its link. Without Tenjin, the watched boards still run and the report says the search did not run. Contacts also run only when you ask.
 - **Review.** A Haiku subagent checks that the work matches the title, adds warnings, and scores fit.
@@ -88,7 +88,7 @@ Then run `/job-search` in Claude Code. The skill checks for Tenjin and offers to
 - **Jobs found on platforms.** A job found on LinkedIn, Indeed, Glassdoor, ZipRecruiter or a Y Combinator site is never opened, applied to or fetched, because their terms ban automated use. The skill finds the employer's own posting instead: from an apply link, from a board that code confirms is the employer's and matches the job, or from the employer's careers page. If it cannot, the report says why and gives you the link. Hacker News "Who is hiring?" posts and YC job posts come in through Hacker News's official API only. Other hiring systems (Workday and the like) are reported as "apply on the employer's site"; the skill never makes an account.
 - **Fill only.** Choose fill-only for a job, or with a `fill_only` rule for every job or named companies: the form is filled and read back, nothing is submitted, the tab stays open, and you get one notification. You check it, press submit, and say so.
 - **Apply.** A Haiku subagent drives your real Chrome through Claude in Chrome, one application at a time, only on Greenhouse, Lever and Ashby, only from the sheet you saw. Attended is the default: nothing is submitted without your yes for that job and that sheet. Unattended is opt-in, with your own rules, a recorded consent and a dry run first. New writing in an unattended submit needs its own separate consent: without it, unattended runs only upload your resume and reuse answers you gave or approved before, and anything new waits for your yes.
-- **Guard.** Setup can add one PreToolUse hook to `~/.claude/settings.json`, on your yes, that checks browser calls while an apply batch is open. It runs on your computer and sends nothing. `jobs.mjs guard uninstall` removes only that hook.
+- **Safety, with no hook.** Job Search edits none of your Claude Code settings. In code: a job is handed out only in an open batch, only as the employer's own posting, and the commands that change what a submit may do (rules, consents, the profile, answers, writing approval) are refused while a batch is open. The rest is a rule in the browser subagent's task, because nothing in code sees its clicks. Every consent change and writing approval shows in your next report and in a notification.
 - **Rules and lessons.** Your rules keep your own words and date. The skill adds lessons only about its own work, and they only make it more careful and expire.
 - **Notifications.** One line, under 200 characters, when something waits for you. With Remote Control on, it reaches your phone.
 - **No default limits.** There is no application cap or usage budget unless you set one as a rule, for example "at most 5 a day".
@@ -96,10 +96,6 @@ Then run `/job-search` in Claude Code. The skill checks for Tenjin and offers to
 ### Where your data goes
 
 Your resume, profile, rules, saved answers and application records stay in `~/.tenjin-skills/` on your computer. Searches send only search terms (your role and place), through Tenjin. To write, the skill gives your resume, the job text, your answers and your writing rules to a Claude Opus subagent, so they go to your Claude model provider, as all Claude Code work does. Each application sends what the form asks for to that employer. With Remote Control on, the session transcript is stored on Anthropic's servers to sync your devices.
-
-### DeepSeek subagents
-
-Until Tenjin's DeepSeek workers can use Claude in Chrome, Job Search needs Tenjin's DeepSeek subagents off, because such a worker has no Chrome tools. Setup reads the setting and asks before it runs `tenjin config subagents off`; it changes no other Tenjin setting.
 
 ### Credit
 
