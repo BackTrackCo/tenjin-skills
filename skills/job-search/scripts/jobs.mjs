@@ -244,13 +244,20 @@ const commands = {
     const bin = findTenjin();
     const ds = bin ? readSubagents({ bin }) : { ok: true, enabled: false };
     const state = loadState();
+    guard.touchBatch();
     const res = applyNext({ state, profile: readProfile(), overlay: loadOverlay(), mode, guard: guard.selftest(), deepseek: { enabled: ds.ok ? ds.enabled : null }, writingRulesText: readWritingRules() });
     updateState((s) => {
       s.held = s.held.filter((h) => !['deepseek_on', 'guard_missing'].includes(h.reason));
       if (res.refused === 'deepseek_on' || res.refused === 'guard_missing') s.held.push({ reason: res.refused, detail: mode });
       for (const q of res.queue) if (s.jobs[q.key] && !['sheet_not_checked', 'no_recorded_yes'].includes(q.reason)) park(s.jobs[q.key], [q.reason]);
     });
-    return out(res, res.handout ? 0 : 4);
+    // An unattended round ends in code: nothing left to submit (empty, held, parked or refused) closes the batch.
+    let batchClosed = false;
+    if (mode === 'unattended' && !res.handout && guard.batchMode() === 'unattended') {
+      guard.closeBatch();
+      batchClosed = true;
+    }
+    return out({ ...res, batchClosed }, res.handout ? 0 : 4);
   },
 
   async approve([key]) {
@@ -309,7 +316,8 @@ const commands = {
 
   async stop([key], flags) {
     const kind = flags.kind || 'unknown_field';
-    return out(updateState((s) => {
+    let closed = false;
+    const r = updateState((s) => {
       const job = s.jobs[key];
       if (!job) throw new Error(`unknown job: ${key}`);
       s.stops.push({ key, kind, at: new Date().toISOString(), host: job.ats, company: job.company });
@@ -318,8 +326,14 @@ const commands = {
         if (kind === 'injection_suspected') job.warnings = [...new Set([...(job.warnings || []), 'injection_suspected'])];
         park(job, [kind]);
       }
+      // a stop that ends the round also closes an unattended batch, in code
+      if (['captcha', 'chrome_disconnected'].includes(kind) && guard.batchMode() === 'unattended') {
+        guard.closeBatch();
+        closed = true;
+      }
       return { parked: kind };
-    }));
+    });
+    return out({ ...r, batchClosed: closed });
   },
   async park([key, ...reasons]) {
     return out(updateState((s) => ({ changed: park(s.jobs[key], reasons) })));

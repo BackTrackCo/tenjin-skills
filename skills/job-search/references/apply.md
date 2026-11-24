@@ -18,7 +18,7 @@ If the subagent has no Chrome tools or fails, hold the job (`J ops` transition `
 After a submit, `J ops` transition `submitted`; record the URL, filled fields and confirmation text. Say "submitted"; say "confirmed" only when the page or a forwarded email confirms.
 
 ## Stops
-A bot check or unknown field: `J stop <key> --kind ...`. Chrome gone: `J stop <key> --kind chrome_disconnected` and tell the person to reconnect with `/chrome`. Then `J batch close` (an unattended batch is closed by the person; the guard denies the model closing it).
+A bot check or unknown field: `J stop <key> --kind ...`. Chrome gone: `J stop <key> --kind chrome_disconnected` and tell the person to reconnect with `/chrome`. Then `J batch close`. An unattended batch also closes in code when `apply next` finds nothing left to submit, or on a captcha or `chrome_disconnected` stop; a batch with no activity for two hours is closed by the next `J work`.
 
 ## Unattended
 New writing needs the writing consent, which is separate from the unattended one. Without it, `apply next` queues the job as `writing_needs_yes` (one notification, no submit): show the draft, and on the person's yes `J writing approve <key>` (add `--edits file.json` for edited text); the fields become earlier answers and the job returns to the queue. Optional writing fields follow the recorded choice: `skip` leaves them empty (`handout.skipFields`), `wait` holds the job. A changed writing rule makes the writing consent stale.

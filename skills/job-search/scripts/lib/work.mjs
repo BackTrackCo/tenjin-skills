@@ -2,7 +2,7 @@ import { graph } from './graph.mjs';
 import { updateState, loadState } from './store.mjs';
 import { loadOverlay, activeLessons, ruleValue } from './overlay.mjs';
 import { readJson, stateDir } from './paths.mjs';
-import { isActive, policyFile } from './guard.mjs';
+import { cleanupStale, isActive, policyFile } from './guard.mjs';
 import path from 'node:path';
 
 const HOUR = 3600000;
@@ -122,6 +122,7 @@ export function notifyLine(state, overlay, now = Date.now()) {
 
 // The work-list command. With commit, the notify line is marked as sent (at most once).
 export function workList({ now = Date.now(), commit = false } = {}) {
+  const staleBatchClosed = cleanupStale(now);
   const overlay = loadOverlay();
   let res;
   const compute = (state) => {
@@ -133,5 +134,6 @@ export function workList({ now = Date.now(), commit = false } = {}) {
   };
   res = commit ? updateState(compute) : compute(loadState());
   res.exit = res.items.length ? 0 : 3;
+  if (staleBatchClosed) res.staleBatchClosed = true;
   return res;
 }

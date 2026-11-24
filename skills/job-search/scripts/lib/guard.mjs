@@ -33,8 +33,41 @@ export function openBatch({ mode = 'attended', uploadPath, hosts } = {}) {
 export function closeBatch() {
   for (const f of [activeFile(), policyFile(), probeFile()]) try { fs.unlinkSync(f); } catch {}
 }
-export function isActive() {
+// A batch that saw no tool call for two hours is abandoned. One application takes minutes, a round of 20 about
+// two hours of work in total, and every hook call and every `apply next` refreshes the marker, so only a batch
+// with no activity at all goes stale. The limit keeps a forgotten batch from blocking the daily search, consent
+// and setup for ever. The hook itself keeps enforcing until `work` cleans the batch up.
+export const STALE_MS = 2 * 60 * 60 * 1000;
+export function batchExists() {
   return fs.existsSync(activeFile());
+}
+export function isStale(now = Date.now()) {
+  try {
+    return now - fs.statSync(activeFile()).mtimeMs >= STALE_MS;
+  } catch {
+    return false;
+  }
+}
+export function isActive(now = Date.now()) {
+  return batchExists() && !isStale(now);
+}
+export function touchBatch(now = Date.now()) {
+  try {
+    const t = new Date(now);
+    fs.utimesSync(activeFile(), t, t);
+  } catch {}
+}
+// Called by `work`: a stale batch is closed in code.
+export function cleanupStale(now = Date.now()) {
+  if (batchExists() && isStale(now)) {
+    closeBatch();
+    return true;
+  }
+  return false;
+}
+export function batchMode() {
+  const p = readJson(policyFile(), null);
+  return p && p.mode;
 }
 
 // ---- decision (pure) --------------------------------------------------
@@ -114,7 +147,6 @@ export function decide(payload, policy) {
     if (/jobs\.mjs\s+guard\s+probe\s+[0-9a-f]+/.test(cmd) && cmd.startsWith(prefix)) return { decision: 'allow', probe: /guard\s+probe\s+([0-9a-f]+)/.exec(cmd)[1] };
     const blocked = BATCH_DENIED.find(([re]) => re.test(cmd));
     if (blocked) return deny(blocked[1]);
-    if (unattended && /\bbatch\s+close\b/.test(cmd)) return deny('only the person closes an unattended batch');
     if (cmd.startsWith(prefix)) {
       if (touchesProtected(cmd.slice(prefix.length), policy)) return deny('writes to the skill, state, guard and settings folders are denied');
       if (unattended && /[;&|`\n]|\$\(/.test(cmd.slice(prefix.length))) return deny('no chained shell in an unattended batch');
@@ -140,7 +172,8 @@ export function decide(payload, policy) {
 
 // ---- the hook entry point (stdin text in, JSON out) -------------------
 export function hookMain(stdinText) {
-  if (!isActive()) return null;
+  if (!batchExists()) return null;
+  touchBatch();
   let payload;
   try {
     payload = JSON.parse(stdinText);
@@ -153,6 +186,8 @@ export function hookMain(stdinText) {
   } catch {
     policy = 'bad';
   }
+  // A broken policy denies everything, but never the one command that closes the batch: no dead end.
+  if (policy === 'bad' && payload.tool_name === 'Bash' && /jobs\.mjs"?\s+batch\s+close\s*$/.test(String((payload.tool_input || {}).command || ''))) return null;
   const d = decide(payload, policy === 'bad' ? null : policy);
   if (d.probe && policy && d.probe === policy.nonce) {
     writeJsonAtomic(probeFile(), { nonce: d.probe, session_id: payload.session_id || null, at: new Date().toISOString() });

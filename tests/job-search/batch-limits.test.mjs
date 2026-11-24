@@ -62,7 +62,7 @@ test('the guard still allows what a batch needs, and the person-side tightening'
   for (const c of ['work', 'apply next --unattended', 'sheet check k1', 'sheet readback k1 --read f', 'stop k1 --kind captcha', 'dryrun record k1 {}', 'consent revoke writing', 'consent revoke unattended', 'guard probe abc123', 'ingest f.json']) {
     assert.equal(g.decide({ tool_name: 'Bash', tool_input: { command: J(c) } }, p).decision, 'allow', c);
   }
-  assert.equal(g.decide({ tool_name: 'Bash', tool_input: { command: J('batch close') } }, p).decision, 'deny', 'only the person closes an unattended batch');
+  assert.equal(g.decide({ tool_name: 'Bash', tool_input: { command: J('batch close') } }, p).decision, 'allow', 'batch close works in an unattended batch');
   g.closeBatch();
   const a = g.openBatch({ mode: 'attended', uploadPath: profile.resumePath });
   assert.equal(g.decide({ tool_name: 'Bash', tool_input: { command: J('batch close') } }, a).decision, 'allow');
