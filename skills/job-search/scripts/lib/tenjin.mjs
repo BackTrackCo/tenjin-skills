@@ -49,27 +49,29 @@ export function checkTenjin({ run = defaultRun, bin = findTenjin() } = {}) {
   return { status: compareVersions(version, TESTED_VERSION) < 0 ? 'outdated' : 'present', version, tested: TESTED_VERSION, bin };
 }
 
-// ---- DeepSeek subagents: read-only check, then off only on a yes ----------
-export function readSubagents({ run = defaultRun, bin }) {
-  const r = run(bin, ['config', 'subagents', '--json']);
+// ---- the hint state: missing, outdated, unfunded or ready ----------------------
+// From `tenjin --version` and the read-only `tenjin balance --json`. Alpha.35 and later print the same envelope,
+// {schemaVersion, command, ok, data: {balance: {atomic, usd}, ...}} (checked in the alpha.35 source and on a later
+// build); a bare dollar string or number in `usd` is read too. Nothing here changes a Tenjin setting.
+export function readBalance({ run = defaultRun, bin }) {
+  const r = run(bin, ['balance', '--json']);
   try {
     const j = JSON.parse(r.stdout);
-    if (j.ok === true && j.data && typeof j.data.enabled === 'boolean') return { ok: true, enabled: j.data.enabled };
+    const b = j && j.data && j.data.balance;
+    if (j.ok === true && b) {
+      if (b.atomic !== undefined) return { ok: true, atomic: BigInt(String(b.atomic)) };
+      const usd = parseFloat(String(b.usd).replace(/[^0-9.]/g, ''));
+      if (Number.isFinite(usd)) return { ok: true, atomic: BigInt(Math.round(usd * 1e6)) };
+    }
   } catch {}
-  return { ok: false, enabled: null, detail: 'could not read tenjin config subagents --json' };
+  return { ok: false, atomic: null };
 }
 
-export const DEEPSEEK_WHY = 'A DeepSeek worker has no Claude in Chrome tools, so every application would stop. Until Tenjin\'s DeepSeek workers can use Claude in Chrome, v0 needs DeepSeek subagents off.';
-
-// yes: true runs `tenjin config subagents off`. Nothing else is ever changed.
-export function deepseekStep({ run = defaultRun, bin, yes = false, keep = false }) {
-  if (!bin) return { state: 'no_tenjin', enabled: false };
-  const before = readSubagents({ run, bin });
-  if (!before.ok) return { state: 'unreadable', enabled: null, detail: before.detail };
-  if (!before.enabled) return { state: 'off', enabled: false };
-  if (keep) return { state: 'on_kept', enabled: true, why: DEEPSEEK_WHY };
-  if (!yes) return { state: 'on_ask', enabled: true, why: DEEPSEEK_WHY };
-  const r = run(bin, ['config', 'subagents', 'off']);
-  const after = readSubagents({ run, bin });
-  return { state: after.ok && after.enabled === false ? 'turned_off' : 'off_failed', enabled: after.enabled, code: r.code };
+export function hintState({ run = defaultRun, bin = findTenjin() } = {}) {
+  const t = checkTenjin({ run, bin });
+  if (t.status === 'missing') return { status: 'missing', tested: TESTED_VERSION };
+  if (t.status === 'outdated') return { status: 'outdated', version: t.version, tested: TESTED_VERSION };
+  const b = readBalance({ run, bin: t.bin });
+  // An unreadable balance is not "unfunded": the router answers for itself, so it counts as ready.
+  return { status: b.ok && b.atomic === 0n ? 'unfunded' : 'ready', version: t.version, tested: TESTED_VERSION };
 }

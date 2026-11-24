@@ -5,6 +5,7 @@ import { isYc } from './platforms.mjs';
 import { ensureDir, readJson, stateDir, writeJsonAtomic } from './paths.mjs';
 
 export const SCHEMA_VERSION = 1;
+const CHANNELS = ['x', 'linkedin', 'email', 'other'];
 
 export function emptyState() {
   return {
@@ -26,6 +27,13 @@ export function emptyState() {
     rounds: [],
     queryYield: {},
     stops: [],
+    found: [],
+    removedBoards: [],
+    handouts: [],
+    consentLog: [],
+    batch: null,
+    tenjin: { status: null, version: null, checkedAt: null, askedHolder: null, declinedAt: null },
+    start: null,
     contactsRequested: [],
     applyYourself: [],
     posts: [],
@@ -137,6 +145,7 @@ export function applyOp(state, op) {
       if (!g.statuses.includes(op.to) || !allowed.includes(op.to)) throw new Error(`illegal transition ${job.status} -> ${op.to}`);
       job.status = op.to;
       job.statusAt = op.at || new Date().toISOString();
+      if (op.to === 'reviewed') addFoundBoard(state, job, job.statusAt);
       if (op.to === 'skipped') job.skipReason = String(op.reason || 'no reason given').slice(0, 160);
       if (op.to === 'submitted') {
         state.applications.push({ key: job.key, companyKey: companyTitleKey(job), at: job.statusAt });
@@ -151,8 +160,23 @@ export function applyOp(state, op) {
       if (!String(op.how || '').trim()) throw new Error('a contact needs how to reach them');
       if (!String(op.cares || '').trim()) throw new Error('a contact needs one thing they care about');
       if (op.basis === 'likely' && op.notConfirmed !== true) throw new Error('a likely person is shown only when marked not confirmed');
-      (state.contacts[op.key] ||= []).push({ name: op.name, title: op.title, sourceUrl: op.sourceUrl, how: op.how, cares: op.cares, notConfirmed: op.notConfirmed === true });
+      if (op.channel !== undefined && !CHANNELS.includes(op.channel)) throw new Error(`a contact's channel is one of ${CHANNELS.join(', ')}`);
+      (state.contacts[op.key] ||= []).push({ name: op.name, title: op.title, sourceUrl: op.sourceUrl, how: op.how, cares: op.cares, channel: op.channel || null, notConfirmed: op.notConfirmed === true });
       break;
+    case 'intro': {
+      // An example intro for a contact who can be messaged. A draft, never sent. It fits its channel.
+      const c = (state.contacts[op.key] || []).find((x) => x.name === op.name);
+      if (!c) throw new Error('no such contact');
+      if (!c.channel) throw new Error('a contact with no channel gets no intro');
+      const text = String(op.text || '').trim();
+      if (!text) throw new Error('an intro needs text');
+      if (c.channel === 'email') {
+        if (!String(op.subject || '').trim()) throw new Error('an email intro needs a subject line');
+        if (text.split(/\s+/).length > 120) throw new Error('an email intro is about 120 words at most');
+      } else if (text.length > 300) throw new Error('an X or LinkedIn intro is under 300 characters');
+      c.intro = { channel: c.channel, subject: c.channel === 'email' ? String(op.subject) : null, text, writtenAt: op.at || new Date().toISOString(), sources: [c.sourceUrl] };
+      break;
+    }
     case 'draft':
       job.drafts = { ...(job.drafts || {}), [op.field]: String(op.text) };
       break;
@@ -166,6 +190,18 @@ export function applyOp(state, op) {
       break;
     }
   }
+}
+
+// A board joins the watch list when one of its jobs passes review with an exact or confirmed employer posting.
+// A removed company is never added again; a pasted board is already on the list.
+export function addFoundBoard(state, job, at) {
+  const ep = job.employerPosting;
+  if (!ep || !['exact', 'confirmed'].includes(ep.confidence)) return;
+  const board = `${ep.system}:${ep.token}`;
+  state.found ||= [];
+  if (state.found.some((b) => b.board === board)) return;
+  if ((state.removedBoards || []).some((r) => r === board || String(r).toLowerCase() === String(job.company).toLowerCase())) return;
+  state.found.push({ board, ats: ep.system, token: ep.token, region: 'us', name: job.company, source: 'found', job: job.key, date: at, lastRoleJobAt: at });
 }
 
 export function normLabel(s) {

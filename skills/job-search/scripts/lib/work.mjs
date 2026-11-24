@@ -2,7 +2,9 @@ import { graph } from './graph.mjs';
 import { updateState, loadState } from './store.mjs';
 import { loadOverlay, activeLessons, ruleValue } from './overlay.mjs';
 import { readJson, stateDir } from './paths.mjs';
-import { cleanupStale, isActive, policyFile } from './guard.mjs';
+import { frequencyOf, periodStart, searchIsDue } from './schedule.mjs';
+import { periodLimit } from './apply.mjs';
+import { cleanupStale, isActive, batchMode } from './batch.mjs';
 import path from 'node:path';
 
 export const POST_BATCH = 25;
@@ -21,7 +23,7 @@ const GATES = {
   apply_ready: 'Attended: show the sheet, wait for a yes. Never submit without it.',
   follow_up_due: 'Ask the person for the status. Do not contact the employer.',
 };
-const PERSON_HELD = ['guard_missing', 'chrome_disconnected', 'deepseek_on', 'update_waiting', 'update_failed', 'tenjin_missing', 'stopped'];
+const PERSON_HELD = ['chrome_disconnected', 'no_chrome_tools', 'update_waiting', 'update_failed', 'stopped'];
 
 export function park(job, reasons) {
   const key = `${job.key}@${job.hash}`;
@@ -36,8 +38,7 @@ export function unpark(job) {
 
 // The guard denies every MCP tool in an unattended batch, the request tool included, so the search waits.
 export function unattendedBatchOpen() {
-  const p = readJson(policyFile(), null);
-  return Boolean(p && p.mode === 'unattended' && isActive());
+  return isActive() && batchMode() === 'unattended';
 }
 
 // The daily search is rounds: one query per need for one role-word variant (round 0 is the role itself, round N is
@@ -50,9 +51,7 @@ export function searchRound(state, profile, now) {
   if (!profile.search || !profile.search.role) return null;
   if (state.search && state.search.session && !state.search.session.finished) return state.search.session.round;
   const last = state.routed && state.routed.lastSearchAt ? Date.parse(state.routed.lastSearchAt) : null;
-  if (last === null) return 0;
-  const elapsed = now - last;
-  return elapsed >= 26 * HOUR || (elapsed >= 20 * HOUR && new Date(now).getHours() >= (profile.sweepHour ?? graph().sweep.defaultHour)) ? 0 : null;
+  return searchIsDue({ lastAt: last, now, frequency: frequencyOf(profile), hour: profile.sweepHour ?? graph().sweep.defaultHour }) ? 0 : null;
 }
 export function searchDue(state, profile, now, { unattendedOpen = false } = {}) {
   return !unattendedOpen && searchRound(state, profile, now) !== null;
@@ -75,13 +74,34 @@ export function advanceSearch(state, profile) {
   return { done: false, round: sess.round, variant: variantFor(profile, sess.round) };
 }
 
+// Where Tenjin would do better, and what it adds there. Code decides when; the model never does.
+export const HINT_LINES = {
+  daily_search: 'With Tenjin I can also run the router\'s job-posting search and a live X search, on top of the free searches.',
+  employer_posting: 'With Tenjin I can look up this employer\'s careers page through the router.',
+  contacts: 'With Tenjin I can run the router\'s people search for jobs where the free ways found nobody.',
+  outdated: 'Tenjin is out of date; after the update the CLI names, the routed search runs again.',
+};
+export function tenjinHint(state, moment) {
+  const t = state.tenjin || {};
+  if (!t.status || t.status === 'ready') return null;
+  const line = t.status === 'outdated' && moment === 'daily_search' ? HINT_LINES.outdated : HINT_LINES[moment];
+  return line ? { moment, status: t.status, line } : null;
+}
+// At most one ask per session, and none after a recorded no in this session. An unattended run only mentions.
+export function tenjinAsk(state, { unattended = false } = {}) {
+  const t = state.tenjin || {};
+  if (!t.status || t.status === 'ready' || unattended) return false;
+  const holder = state.lease ? state.lease.holder : 'none';
+  return t.askedHolder !== holder;
+}
+
 export function buildWorkList(state, overlay, now = Date.now(), profile = {}, opts = {}) {
   const items = [];
   if (searchDue(state, profile, now, opts)) {
     const round = searchRound(state, profile, now);
     const last = state.routed.lastSearchAt;
     const since = last ? new Date(Math.max(Date.parse(last) - 86400000, now - 14 * 86400000)) : new Date(now - 14 * 86400000);
-    items.push({ key: 'search', reason: 'search_due', title: 'Daily routed search', company: '', gate: GATES.search_due, query: { role: profile.search.role, place: profile.search.place || '', remote: profile.search.remote === true, since: since.toISOString().slice(0, 10), variant: variantFor(profile, round), round }, routed: !state.held.some((h) => h.reason === 'tenjin_missing') });
+    items.push({ key: 'search', reason: 'search_due', title: 'Daily routed search', company: '', gate: GATES.search_due, hint: tenjinHint(state, 'daily_search'), askTenjin: tenjinAsk(state, { unattended: opts.unattended === true }), query: { role: profile.search.role, place: profile.search.place || '', remote: profile.search.remote === true, since: since.toISOString().slice(0, 10), variant: variantFor(profile, round), round }, routed: !state.held.some((h) => h.reason === 'tenjin_missing') && !['missing', 'outdated', 'unfunded'].includes((state.tenjin || {}).status) });
   }
   // One Haiku subagent takes a batch of hiring posts and writes one ingest file. 25 posts is about 6,000 tokens of
   // input, the size of one review round, and keeps one bad batch from costing the rest.
@@ -115,7 +135,28 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
     if (['reviewed', 'shortlisted', 'prepared', 'apply_ready'].includes(j.status) && now - Date.parse(j.verifiedAt) > graph().unattendedWindow.verifiedHours * HOUR) add(j, 'reverify_due');
   }
   for (const key of state.contactsRequested || []) if (state.jobs[key] && !(state.contacts[key] || []).length) add(state.jobs[key], 'contacts_requested');
+  for (const i of items) {
+    if (i.reason === 'employer_page') i.hint = tenjinHint(state, 'employer_posting');
+    if (i.reason === 'contacts_requested') i.hint = tenjinHint(state, 'contacts');
+  }
+  // Positions per period (attended): the sheets brought for the person's yes. A sheet already brought stays; new ones
+  // come best fit first until the period's count is reached. The rest stay ranked for the next period, none dropped.
+  const limit = periodLimit(overlay);
+  const bring = [];
+  let heldForPeriod = 0;
+  if (limit !== null) {
+    const start = periodStart(now, frequencyOf(profile));
+    const brought = Object.values(state.jobs).filter((j) => j.broughtAt && Date.parse(j.broughtAt) >= start).length;
+    let room = Math.max(0, limit - brought);
+    const fresh = items.filter((i) => i.reason === 'apply_ready' && !state.jobs[i.key].broughtAt).sort((a, b) => (state.jobs[b.key].fit ?? -1) - (state.jobs[a.key].fit ?? -1));
+    const allowed = new Set(fresh.slice(0, room).map((i) => i.key));
+    for (const i of fresh) if (!allowed.has(i.key)) heldForPeriod++;
+    for (let k = items.length - 1; k >= 0; k--) if (items[k].reason === 'apply_ready' && !state.jobs[items[k].key].broughtAt && !allowed.has(items[k].key)) items.splice(k, 1);
+    bring.push(...allowed);
+  } else bring.push(...items.filter((i) => i.reason === 'apply_ready' && !state.jobs[i.key].broughtAt).map((i) => i.key));
   return {
+    bring,
+    heldForPeriod,
     items,
     held: state.held,
     inventory,
@@ -134,6 +175,8 @@ export function waitingSet(state) {
     else if (j.status === 'apply_ready' && !state.approvals[j.key] && j.employerPosting) w[`yes:${j.key}`] = `${j.hash}|${j.company}`;
   }
   for (const h of state.held) if (PERSON_HELD.includes(h.reason)) w[`held:${h.reason}:${h.detail || ''}`] = h.reason;
+  // Every consent change and writing approval is visible: one notification, and a line in the next report.
+  for (const c of state.consentLog || []) if (!c.acked) w[`consent:${c.at}`] = c.what;
   return w;
 }
 
@@ -153,13 +196,15 @@ export function notifyLine(state, overlay, now = Date.now()) {
   const filled = fresh.filter((k) => k.startsWith('fill:')).length;
   const stops = fresh.filter((k) => k.startsWith('park:'));
   const held = fresh.filter((k) => k.startsWith('held:')).map((k) => k.split(':')[1]);
+  const consents = fresh.filter((k) => k.startsWith('consent:'));
   const parts = [];
   if (filled) parts.push(`${filled} filled, waiting for your submit (fill ready)`);
   if (yes) parts.push(`${yes} application${yes > 1 ? 's' : ''} wait for your yes`);
   if (stops.length) {
     const j = state.jobs[stops[0].slice(5)];
-    parts.push(`${stops.length} stop${stops.length > 1 ? 's' : ''} need you${stops.length === 1 && j ? ` at ${j.company}` : ''} (${j && j.parked ? j.parked.reasons[0].replace(/_/g, ' ') : 'parked'})`);
+    parts.push(`${stops.length} stop${stops.length > 1 ? 's' : ''} need you${stops.length === 1 && j ? ` at ${j.company}` : ''} (${j && j.parked ? (j.parked.reasons[0] === 'needs_facts' && (j.missingFacts || []).length ? `needs facts: ${j.missingFacts.map((f) => f.replace(/_/g, ' ')).join(', ')}` : j.parked.reasons[0].replace(/_/g, ' ')) : 'parked'})`);
   }
+  if (consents.length) parts.push(`consent changed: ${[...new Set(consents.map((k) => w[k]))].join('; ')}`);
   if (held.length) parts.push(`needs you: ${[...new Set(held)].join(', ').replace(/_/g, ' ')}`);
   let line = parts.join(', ').replace(/[*_`#\[\]]/g, '');
   if (line.length > 190) line = line.slice(0, 187) + '...';
@@ -167,15 +212,18 @@ export function notifyLine(state, overlay, now = Date.now()) {
 }
 
 // The work-list command. With commit, the notify line is marked as sent (at most once).
-export function workList({ now = Date.now(), commit = false } = {}) {
+export function workList({ now = Date.now(), commit = false, unattended = false } = {}) {
   const staleBatchClosed = cleanupStale(now);
   const overlay = loadOverlay();
   let res;
   const compute = (state) => {
-    const wl = buildWorkList(state, overlay, now, readJson(path.join(stateDir(), 'profile.json'), {}), { unattendedOpen: unattendedBatchOpen() });
+    const wl = buildWorkList(state, overlay, now, readJson(path.join(stateDir(), 'profile.json'), {}), { unattendedOpen: unattendedBatchOpen(), unattended });
     const n = notifyLine(state, overlay, now);
     wl.notify = n.line;
-    if (commit) state.notified = n.next;
+    if (commit) {
+      state.notified = n.next;
+      for (const k of wl.bring) state.jobs[k].broughtAt = new Date(now).toISOString(); // brought for the person's yes
+    }
     return wl;
   };
   res = commit ? updateState(compute) : compute(loadState());

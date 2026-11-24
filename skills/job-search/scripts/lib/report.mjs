@@ -1,4 +1,4 @@
-import { notifyLine } from './work.mjs';
+import { notifyLine, tenjinHint } from './work.mjs';
 
 export const REASONS = {
   no_apply_link: 'no apply link in the posting',
@@ -12,13 +12,21 @@ export const REASONS = {
 };
 
 // The report is rendered from state and the overlay, never written by the model.
-export function renderReport(state, overlay, { since = null, now = Date.now() } = {}) {
+export function renderReport(state, overlay, { since = null, now = Date.now(), profile = null } = {}) {
   const jobs = Object.values(state.jobs);
   const fresh = jobs.filter((j) => j.status === 'new' || j.status === 'reviewed').filter((j) => !since || Date.parse(j.firstSeen) >= Date.parse(since));
   fresh.sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1));
   const L = [];
   L.push(`# Job Search report, ${new Date(now).toISOString().slice(0, 10)}`);
   L.push('');
+  // What was searched, and where it came from, so a wrong reading of the resume is seen at once.
+  if (profile && profile.search && profile.search.role) {
+    const sr = profile.search;
+    const src = (k) => (sr.sources && sr.sources[k]) || 'person';
+    const words = (sr.roleWords || []).length ? ` (${sr.roleWords.join(', ')})` : '';
+    const place = sr.place ? ` in ${sr.place}${sr.remote ? ' and remote' : ''}` : sr.remote ? ', remote' : '';
+    L.push(`Searched for ${sr.role}${words}${place}, from ${src('role') === 'resume' ? 'your resume' : 'what you told me'}; tell me to change it.`, '');
+  }
   L.push(`## New jobs (${fresh.length})`);
   for (const j of fresh.slice(0, 20)) L.push(`- ${j.fit ?? '?'} | ${j.title}, ${j.company}, ${[j.city, j.region].filter(Boolean).join(', ') || (j.remote ? 'remote' : '')}${j.salary ? ` | pay: ${j.salary}` : ''}${j.fitLine ? ` | ${j.fitLine}` : ''}${(j.warnings || []).length ? ` | warnings: ${j.warnings.join('; ')}` : ''} | ${j.url}`);
   if (fresh.length > 20) L.push(`- and ${fresh.length - 20} more`);
@@ -78,6 +86,27 @@ export function renderReport(state, overlay, { since = null, now = Date.now() } 
     L.push('', '## Waiting on you');
     for (const j of stuck) L.push(`- ${j.company}, ${j.title}: ${j.parked ? j.parked.reasons.join(', ') : 'needs your yes'}`);
   }
+  const consent = (state.consentLog || []).filter((c) => !c.acked);
+  if (consent.length) {
+    L.push('', '## Consent changes (check that each one was yours)');
+    for (const c of consent) L.push(`- ${c.at.slice(0, 16).replace('T', ' ')}: ${c.what}. Say so if this was not you; \`consent revoke\` undoes it.`);
+  }
+  if ((state.dropLines || []).length) L.push('', ...state.dropLines.map((d) => d));
+  const hints = ['employer_posting'].map((m) => tenjinHint(state, m)).filter(Boolean);
+  const stuckNoPosting = jobs.filter((j) => !j.employerPosting && j.unresolved && !['skipped', 'closed'].includes(j.status)).length;
+  if (hints.length && stuckNoPosting) L.push('', hints[0].line);
+  const withContacts = jobs.filter((j) => (state.contacts[j.key] || []).length);
+  if (withContacts.length) {
+    L.push('', '## Contacts');
+    for (const j of withContacts) {
+      L.push(`- ${j.title}, ${j.company}`);
+      for (const c of state.contacts[j.key]) {
+        L.push(`  - ${c.name}${c.title ? `, ${c.title}` : ''}${c.notConfirmed ? ' (not confirmed)' : ''}: ${c.how}. Cares about: ${c.cares}. ${c.sourceUrl}`);
+        if (c.intro) L.push(`    Example intro via ${c.intro.channel}${c.intro.subject ? ` (subject: ${c.intro.subject})` : ''}, a draft you send yourself: ${c.intro.text.replace(/\n/g, ' ')}`);
+      }
+    }
+  }
+  if ((state.found || []).length && !state.watchTipShown) L.push('', 'Tip: you can paste a company\'s careers link and I will watch it directly.');
   L.push('', 'Want contacts (a hiring manager, team lead or founder) for some of these? Say for how many jobs; 5 if you do not say. Messages are drafts; you send them.');
   return L.join('\n');
 }

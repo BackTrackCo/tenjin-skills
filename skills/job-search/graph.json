@@ -123,7 +123,8 @@
     "contact",
     "draft",
     "approve",
-    "signal"
+    "signal",
+    "intro"
   ],
   "workReasons": [
     "search_due",
@@ -142,11 +143,10 @@
     "source_empty",
     "tenjin_missing",
     "chrome_disconnected",
+    "no_chrome_tools",
     "stopped",
     "update_waiting",
-    "update_failed",
-    "guard_missing",
-    "deepseek_on"
+    "update_failed"
   ],
   "ruleEffects": [
     "exclude_company",
@@ -156,7 +156,7 @@
     "place",
     "remote",
     "employment_type",
-    "daily_max",
+    "period_max",
     "contact_count",
     "notify_quiet_hours",
     "notify_off",

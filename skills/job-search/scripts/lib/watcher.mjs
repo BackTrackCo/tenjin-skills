@@ -8,6 +8,7 @@ import { loadState, updateState } from './store.mjs';
 import { loadOverlay } from './overlay.mjs';
 import { persist, runSweep, sweepDue } from './sweep.mjs';
 import { workList } from './work.mjs';
+import { frequencyOf } from './schedule.mjs';
 import { hnDue, runHn } from './hn.mjs';
 
 const DAY = 86400000;
@@ -29,7 +30,7 @@ export async function tick(ctx) {
   if (startHash && startHash !== watcherCodeHash()) return { lines: [`re-armed: the watcher code changed, run the Monitor command from jobs.mjs arm again`], stop: true };
   const profile = readProfile();
   const state = loadState();
-  if ((profile.watch || []).length && sweepDue(state, now, { hour: profile.sweepHour, firstTick })) {
+  if ((profile.watch || []).length && sweepDue(state, now, { hour: profile.sweepHour, firstTick, frequency: frequencyOf(profile) })) {
     const payload = await runSweep({ state, profile, overlay: loadOverlay(), fetch: fetchImpl, now });
     persist(payload);
   }

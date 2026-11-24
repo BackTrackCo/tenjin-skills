@@ -23,6 +23,7 @@ function mutate(fn) {
 export function addRule({ effect, value = null, words, date }) {
   if (!graph().ruleEffects.includes(effect)) throw new Error(`rule effect not in the vocabulary: ${effect}`);
   if (!words || !String(words).trim()) throw new Error('a rule keeps the words the person said');
+  if (effect === 'period_max' && !(value === 'none' || (Number.isInteger(Number(value)) && Number(value) > 0))) throw new Error('period_max is a whole number of positions, or "none" for no limit');
   return mutate((o) => {
     const rule = { id: `r${Date.now().toString(36)}${o.rules.length}`, effect, value, words: String(words), date: date || new Date().toISOString().slice(0, 10) };
     o.rules.push(rule);
@@ -136,6 +137,7 @@ export function canonical(v) {
 }
 // The hash an unattended consent is bound to: the person's confirmed settings and rules.
 export function rulesHash(profile, overlay) {
-  const rules = (overlay.rules || []).filter((r) => r.effect !== 'note').map((r) => [r.effect, r.value]).sort();
+  // Limits and notifications only tighten what a submit may do, so they do not change the hash the consent is bound to.
+  const rules = (overlay.rules || []).filter((r) => !['note', 'period_max', 'notify_quiet_hours', 'notify_off', 'contact_count', 'fill_only'].includes(r.effect)).map((r) => [r.effect, r.value]).sort();
   return crypto.createHash('sha256').update(canonical({ unattended: profile.unattended || null, rules })).digest('hex');
 }

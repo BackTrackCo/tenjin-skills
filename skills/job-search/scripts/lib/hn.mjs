@@ -2,13 +2,13 @@ import { guardedFetch } from './net.mjs';
 import { HN_API_HOST } from './platforms.mjs';
 import { updateState } from './store.mjs';
 import { roleWords } from './verify.mjs';
+import { INTERVAL_MS, frequencyOf } from './schedule.mjs';
 
 // Hacker News through its official APIs only, never news.ycombinator.com (the YC Terms of Use ban automated access to the site):
 //  - the hiring thread's comments through the HN Search API by Algolia, one query per role word, new comments only;
 //  - job stories through the Firebase API, new ids only, saved as the read goes.
 const FIREBASE = `https://${HN_API_HOST}/v0`;
 const ALGOLIA = 'https://hn.algolia.com/api/v1';
-const DAY = 86400000;
 export const SAVE_EVERY = 20;
 export const DEFAULT_BUDGET_MS = 90_000; // for the job-story reads only, under Claude Code's 2-minute Bash default
 
@@ -126,4 +126,4 @@ export async function runHn({ fetch, profile, state, budgetMs, sleep, clock, now
   return { thread: t.thread, fetched, kept, remaining: r.remaining, done: r.remaining === 0 };
 }
 
-export const hnDue = (state, profile, now) => Boolean(profile.search && profile.search.role && profile.hn !== false && (!state.hn || !state.hn.lastAt || (state.hn.remaining || 0) > 0 || now - Date.parse(state.hn.lastAt) >= DAY - 4 * 3600000));
+export const hnDue = (state, profile, now) => Boolean(profile.search && profile.search.role && profile.hn !== false && (!state.hn || !state.hn.lastAt || (state.hn.remaining || 0) > 0 || now - Date.parse(state.hn.lastAt) >= INTERVAL_MS[frequencyOf(profile)] - 4 * 3600000));

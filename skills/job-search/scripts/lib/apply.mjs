@@ -1,6 +1,7 @@
 import { graph } from './graph.mjs';
 import { duplicateWithin, sha } from './dedupe.mjs';
 import { isFillOnly } from './fillonly.mjs';
+import { frequencyOf, periodStart } from './schedule.mjs';
 import { isNeverAutomated } from './platforms.mjs';
 import { activeLessons, canonical, maxPay, rulesHash, ruleValue } from './overlay.mjs';
 
@@ -9,6 +10,13 @@ export const WRITING_SCOPE = 'application_free_text';
 const HOUR = 3600000;
 
 // ---- unattended consent -------------------------------------------------
+// The positions rule: a number, or no limit. The person's words and date are kept with the rule.
+export function periodLimit(overlay) {
+  const v = ruleValue(overlay, 'period_max');
+  if (v === undefined || v === 'none' || v === null) return null;
+  return Number(v);
+}
+
 export function unattendedProblems(profile) {
   const u = profile.unattended;
   const p = [];
@@ -92,26 +100,27 @@ export function unattendedRuleFailure(job, profile, overlay, now = Date.now()) {
 }
 
 // ---- apply next -----------------------------------------------------------
-// Pure. ctx: {state, profile, overlay, mode, now, guard:{ok}, deepseek:{enabled}}.
+// Pure. ctx: {state, profile, overlay, mode, now, batchOpen}. A job is handed out only in an open batch.
 // Returns {handout} or {refused} plus the jobs that must wait, each with its reason.
 export function applyNext(ctx) {
-  const { state, profile, overlay, mode = 'attended', now = Date.now(), guard, deepseek, writingRulesText = '' } = ctx;
+  const { state, profile, overlay, mode = 'attended', now = Date.now(), batchOpen, writingRulesText = '' } = ctx;
   const writingOk = writingConsentCurrent(state, writingRulesText);
   const queue = [];
   const out = (o) => ({ handout: null, refused: null, queue, ...o });
-  if (!guard || !guard.ok) return out({ refused: 'guard_missing', detail: guard && guard.reasons });
-  if (deepseek && deepseek.enabled !== false) return out({ refused: 'deepseek_on' });
+  if (!batchOpen) return out({ refused: 'no_batch' });
   let dry = false;
   if (mode === 'unattended') {
     const cs = consentStatus(state, profile, overlay);
     if (!cs.ok) return out({ refused: cs.reason });
     dry = !dryRunDone(state, profile, overlay);
   }
-  const dailyMax = ruleValue(overlay, 'daily_max');
-  if (dailyMax !== undefined) {
-    const today = new Date(now).toDateString();
-    const done = state.applications.filter((a) => new Date(a.at).toDateString() === today).length;
-    if (done >= Number(dailyMax)) return out({ refused: 'daily_max' });
+  // Positions per period: how many applications an unattended run makes in one period. The rest stay ranked in the
+  // queue for the next period and none is dropped. No rule, or "none", means no limit.
+  const limit = periodLimit(overlay);
+  if (mode === 'unattended' && limit !== null) {
+    const start = periodStart(now, frequencyOf(profile));
+    const done = (state.handouts || []).filter((h) => h.counted && Date.parse(h.at) >= start).length;
+    if (done >= limit) return out({ refused: 'period_max', limit, done });
   }
   const hostLast = new Set(activeLessons(overlay, now).filter((l) => l.effect === 'host_last').map((l) => l.subject));
   const cands = Object.values(state.jobs)
@@ -138,6 +147,7 @@ export function jobFailure({ job, state, profile, overlay, mode, now, writingOk 
   if (isNeverAutomated(ep.url)) return 'platform_url';
   if (!graph().hosts.includes(ep.system) || !(graph().applyHostNames[ep.system] || []).includes(new URL(ep.url).hostname)) return 'host_not_allowed';
   if (job.parked) return 'parked';
+  if (job.noChromeTools) return 'no_chrome_tools';
   if (!job.verifiedAt || now - Date.parse(job.verifiedAt) > graph().unattendedWindow.verifiedHours * HOUR) return 'not_verified_recently';
   if (!job.sheet || !job.sheet.passed) return 'sheet_not_checked';
   if (job.sheet.eeoMissing || !profile.eeo) return 'eeo_missing';

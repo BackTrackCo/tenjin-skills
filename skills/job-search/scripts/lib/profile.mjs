@@ -10,6 +10,8 @@ export function validateProfile(p) {
   const has = (k) => p[k] !== undefined;
   if (has('places')) need(strList(p.places), 'places must be a list of strings, for example ["San Francisco"]');
   for (const k of ['remote', 'includeOld', 'updates', 'hn']) if (has(k)) need(typeof p[k] === 'boolean', `${k} must be true or false`);
+  if (has('frequency')) need(['daily', 'twice_daily', 'weekly'].includes(p.frequency), 'frequency must be daily, twice_daily or weekly');
+  if (has('applyMode')) need(['attended', 'auto_no_new', 'auto_write'].includes(p.applyMode), 'applyMode must be attended, auto_no_new or auto_write');
   if (has('windowDays')) need(num(p.windowDays) && p.windowDays > 0, 'windowDays must be a positive number');
   if (has('sweepHour')) need(Number.isInteger(p.sweepHour) && p.sweepHour >= 0 && p.sweepHour <= 23, 'sweepHour must be a whole number from 0 to 23');
   for (const k of ['resumePath', 'resumeText']) if (has(k)) need(isStr(p[k]), `${k} must be text`);
@@ -23,6 +25,7 @@ export function validateProfile(p) {
       if (s.place !== undefined) need(isStr(s.place), 'search.place must be text');
       if (s.remote !== undefined) need(typeof s.remote === 'boolean', 'search.remote must be true or false');
       if (s.roleWords !== undefined) need(strList(s.roleWords), 'search.roleWords must be a list of strings');
+      if (s.sources !== undefined) need(s.sources && typeof s.sources === 'object' && Object.values(s.sources).every(isStr), 'search.sources must say where each value came from (resume or person)');
       if (s.variants !== undefined) need(strList(s.variants), 'search.variants must be a list of strings (role-word variants: a synonym or a level)');
     }
   }

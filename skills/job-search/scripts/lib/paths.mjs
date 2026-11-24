@@ -11,14 +11,8 @@ export function rootDir() {
 export function stateDir() {
   return path.join(rootDir(), 'job-search');
 }
-export function guardDir() {
-  return path.join(rootDir(), 'guard');
-}
 export function writingRulesPath() {
   return path.join(rootDir(), 'writing', 'rules.md');
-}
-export function claudeSettingsPath() {
-  return path.join(os.homedir(), '.claude', 'settings.json');
 }
 export function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });

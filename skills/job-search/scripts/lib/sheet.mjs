@@ -15,6 +15,7 @@ const FACTS = [
 ];
 const PLACEHOLDER = /\[[^\]]*(path|insert|your|company|name|todo)[^\]]*\]|\bTODO\b|lorem ipsum|\{\{|<insert|\bXXX+\b|\[PATH TO/i;
 
+export const factKeyFor = (label) => { const hit = FACTS.find(([re]) => re.test(normLabel(label))); return hit ? hit[1] : null; };
 export const isForbiddenLabel = (label) => FORBIDDEN.test(label);
 export const isEeoLabel = (label) => EEO.test(label);
 
@@ -98,7 +99,7 @@ export function buildSheet({ job, questions, profile, answers = [], drafts = {} 
       }
     }
     if (value === undefined) {
-      if (q.required && !(EEO.test(q.label) && eeoMissing)) unanswered.push({ label: q.label, why: 'no fact, earlier answer or checked draft' });
+      if (q.required && !(EEO.test(q.label) && eeoMissing)) unanswered.push({ label: q.label, why: 'no fact, earlier answer or checked draft', factKey: factKeyFor(q.label) });
       continue;
     }
     fields.push({ label: q.label, value, tag, required: q.required });
