@@ -31,13 +31,13 @@ test('the need goes as {query} from text, then {id, input}; a fulfilled envelope
   const f = fake({ answers: [J.spec, J.fulfilled] });
   const [r] = await router.runRound([need], { client: client(f) });
   assert.equal(r.ok, true);
-  assert.equal(r.cost, '$0.003');
+  assert.equal(r.cost, 'provider price 0.003 USD');
   const calls = f.log().filter((l) => l.call).map((l) => l.call);
   assert.deepEqual(Object.keys(calls[0]), ['query']);
   assert.match(calls[0].query, /^job postings for software engineer roles in Berlin/);
-  assert.doesNotMatch(calls[0].query, /jsearch/i, 'the need names no seller');
+  assert.doesNotMatch(calls[0].query, /openwebninja|jsearch/i, 'the need names no seller');
   assert.deepEqual(Object.keys(calls[1]).sort(), ['id', 'input']);
-  assert.equal(calls[1].id, 'offer-1');
+  assert.equal(calls[1].id, J.spec.id, 'the offer id is read from the top level of the spec answer');
   assert.equal(calls[1].input.query, 'software engineer in Berlin');
   assert.equal(r.ingest.need, 'job_postings');
   assert.equal(r.ingest.status, 'fulfilled');
@@ -77,14 +77,16 @@ test('only fulfilled delivers: every other status holds that search with its rea
   assert.equal(spec.log().filter((l) => l.call).length, 1, 'a refusal at the first step sends nothing more');
 });
 
-test('a spec with no known supplier host, or an envelope from another supplier, holds only that search', async () => {
-  const unknown = fake({ answers: [{ status: 'spec', id: 'o', spec: 'Supplier: someone-else.test' }] });
+test('an offer id only at the top level counts: a spec with offers[] or offer.id is not read, and a spec with no known supplier host, or an envelope from another supplier, holds only that search', async () => {
+  const unknown = fake({ answers: [{ status: 'spec', id: 'o', nextStep: 'Request: GET https://someone-else.test/x' }] });
   const [a] = await router.runRound([need], { client: client(unknown) });
   assert.equal(a.status, 'no_adapter');
   assert.match(a.reason, /next attended turn runs this search as the Haiku step/);
-  const mismatch = fake({ answers: [J.spec, { ...J.fulfilled, supplier: 'another.example' }] });
+  const mismatch = fake({ answers: [J.spec, { ...J.fulfilled, supplier: 'another.example.test' }] });
   const [b] = await router.runRound([need], { client: client(mismatch) });
   assert.equal(b.status, 'supplier_mismatch');
+  const nested = fake({ answers: [{ status: 'spec', offers: [{ id: 'x' }], offer: { id: 'y' }, nextStep: J.spec.nextStep }] });
+  assert.equal((await router.runRound([need], { client: client(nested) }))[0].status, 'no_adapter', 'offers[0].id and offer.id are not guessed');
   const bad = fake({ answers: [J.spec, { ...J.fulfilled, result: '{ not json' }] });
   assert.equal((await router.runRound([need], { client: client(bad) }))[0].status, 'parse_failure');
   const schema = fake({ answers: [J.spec, { ...J.fulfilled, result: JSON.stringify({ data: { nope: 1 } }) }] });
@@ -94,9 +96,9 @@ test('a spec with no known supplier host, or an envelope from another supplier, 
 });
 
 test('the supplier is picked by the host in the spec text, and nowhere else', () => {
-  assert.equal(sup.pickSupplier('Supplier: jsearch.example. Inputs...', 'job_postings').host, 'jsearch.example');
+  assert.equal(sup.pickSupplier('Request: GET https://x402.openwebninja.com/jsearch/search-v2', 'job_postings').host, 'x402.openwebninja.com');
   assert.equal(sup.pickSupplier('Supplier: other.test', 'job_postings'), null);
-  assert.equal(sup.pickSupplier('Supplier: jsearch.example', 'x_hiring_posts'), null, 'no adapter for that need yet');
+  assert.equal(sup.pickSupplier('Request: GET https://x402.openwebninja.com/jsearch/search-v2', 'x_hiring_posts'), null, 'no adapter for that need yet');
 });
 
 test('a timed-out run is not sent again; the process is stopped and no server stays running', async () => {

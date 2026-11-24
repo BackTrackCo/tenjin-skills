@@ -12,8 +12,7 @@ export function pickSupplier(specText, kind) {
   for (const s of SUPPLIERS) {
     if (s.kind !== kind) continue;
     // the host the spec names; the envelope's supplier must be this same host after the run
-    const m = new RegExp(`[a-z0-9.-]*${s.host}[a-z0-9.-]*`).exec(lower);
-    if (m) return { ...s, host: m[0].replace(/\.+$/, '') };
+    if (lower.includes(s.host)) return { ...s };
   }
   return null;
 }

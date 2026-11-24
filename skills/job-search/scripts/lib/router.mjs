@@ -124,7 +124,7 @@ export async function runNeed(client, need, { save = saveResult } = {}) {
     return held(need, e.code || 'failed', e.message);
   }
   if (spec.status !== 'spec') return held(need, spec.status || 'no_spec', `the router answered ${spec.status || 'nothing'} to the need`, spec);
-  const offer = spec.id || (spec.offer && spec.offer.id) || ((spec.offers || [])[0] || {}).id;
+  const offer = spec.id; // the spec answer carries the offer id at the top level
   const text = JSON.stringify(spec);
   const sup = pickSupplier(text, need.kind);
   if (!offer || !sup) return held(need, 'no_adapter', 'no known supplier in the spec; the next attended turn runs this search as the Haiku step');
@@ -150,7 +150,8 @@ export async function runNeed(client, need, { save = saveResult } = {}) {
   } catch (e) {
     return held(need, 'schema_failure', e.message);
   }
-  return { ok: true, status: 'fulfilled', cost: env.cost === undefined ? null : env.cost, ingest: { need: need.kind, query: need.query, status: 'fulfilled', fullResultPath, cost: env.cost, ...adapted } };
+  const cost = Array.isArray(env.cost) ? env.cost.join('; ') : env.cost === undefined ? null : env.cost; // e.g. ["provider price 0.003 USD"]
+  return { ok: true, status: 'fulfilled', cost, ingest: { need: need.kind, query: need.query, status: 'fulfilled', fullResultPath, cost, ...adapted } };
 }
 
 const held = (need, status, reason, env) => ({ ok: false, status, reason, need: need.kind, jobId: env && env.job, cost: null });

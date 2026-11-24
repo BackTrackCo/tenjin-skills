@@ -1,8 +1,9 @@
 // The job-posting supplier: input mapper and result adapter. The result has data.jobs[] with job_title, employer_name,
 // job_publisher, job_apply_link, apply_options[], job_is_remote, job_posted_at_datetime_utc, job_city, job_state,
 // job_country, the salary fields and job_description (read from a live answer on 2026-11-24).
-// The host below is the one the spec text names; it is checked again against the envelope's `supplier` after the run.
-export const HOST = 'jsearch';
+// The host below is the one the spec text names ("Request: GET https://<host>/jsearch/search-v2"); the envelope's
+// `supplier` must be the same host after the run.
+export const HOST = 'x402.openwebninja.com';
 
 export function mapper({ role, place, remote, since }) {
   const days = since ? Math.max(1, Math.ceil((Date.now() - Date.parse(since)) / 86400000)) : 14;
