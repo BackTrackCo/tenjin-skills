@@ -21,7 +21,9 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm test
       - run: npm run check:dashes
+      # the skills installer needs Node 22 or later, so this runs on the Node 24 job only
       - name: Every SKILL.md parses (npx skills add must not skip it)
+        if: matrix.node == 24
         run: npm run check:skills
       - name: Gates hash matches the manifest
         run: |
