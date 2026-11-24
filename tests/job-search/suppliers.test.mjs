@@ -140,8 +140,13 @@ test('people: total 0 is a normal empty answer; a person found is a likely conta
   const emptyRes = FX['people-search'].step2.envelope.result;
   assert.equal(emptyRes.total, 0);
   assert.deepEqual(people.adapter(emptyRes, { jobKey: 'k' }), { jobKey: 'k', contacts: [], total: 0 });
-  const hand = people.adapter(FX['people-search'].step2_non_empty_from_spec.result, { jobKey: 'k' });
-  assert.deepEqual([hand.contacts[0].name, hand.contacts[0].channel, hand.contacts[0].notConfirmed, hand.contacts[0].basis], ['Person H', 'linkedin', true, 'likely']);
+  const hand = people.adapter(FX['people-search'].step2_non_empty.envelope.result, { jobKey: 'k' });
+  assert.deepEqual([hand.contacts[0].name, hand.contacts[0].channel, hand.contacts[0].notConfirmed, hand.contacts[0].basis], ['Person J', 'linkedin', true, 'likely']);
+  assert.equal(hand.contacts.length, 2);
+  const inBlr = people.adapter(FX['people-search'].step2_non_empty.envelope.result, { jobKey: 'k', city: 'Bengaluru' });
+  assert.deepEqual(inBlr.contacts.map((c) => c.name), ['Person J'], 'a person whose address does not name the job\'s city is dropped in code');
+  assert.equal(people.adapter(FX['people-search'].step2_non_empty.envelope.result, { jobKey: 'k', city: 'Berlin' }).contacts.length, 0);
+  assert.equal(inBlr.contacts[0].title, 'Engineering Manager');
   const job = { key: 'https://x.test/2', url: 'https://x.test/2', title: 'Engineer', company: 'Acme', city: 'New York', status: 'reviewed', hash: 'h', warnings: [], employerWebsite: 'acme.test', v: 1 };
   reset();
   store.updateState((s) => { s.jobs[job.key] = job; s.contactsRequested = [job.key]; });
@@ -157,9 +162,9 @@ test('people: total 0 is a normal empty answer; a person found is a likely conta
   // a person: stored as a contact marked not confirmed
   store.updateState((s) => { s.contactsRequested = [job.key]; s.jobs[job.key].contactsSearched = undefined; });
   const second = await ing.ingest({ obj: { need: 'people_search', status: 'fulfilled', ...hand, jobKey: job.key }, state: store.loadState(), profile: {}, overlay: empty, fetch: fakeFetch({}), now: NOW });
-  assert.equal(second.contacts, 1, JSON.stringify(second));
+  assert.equal(second.contacts, 2, JSON.stringify(second));
   const c = store.loadState().contacts[job.key][0];
-  assert.deepEqual([c.name, c.notConfirmed, c.channel, c.sourceUrl], ['Person H', true, 'linkedin', 'https://www.linkedin.com/in/person-h']);
+  assert.deepEqual([c.name, c.notConfirmed, c.channel, c.sourceUrl], ['Person J', true, 'linkedin', 'https://www.linkedin.com/in/person-j']);
 });
 
 // ---- the web search stays a model step ------------------------------------------------------

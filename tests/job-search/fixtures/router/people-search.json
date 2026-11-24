@@ -18,9 +18,62 @@
       "result": { "success": true, "leads": [], "total": 0 }
     }
   },
-  "step2_non_empty_from_spec": {
-    "_note": "HAND-BUILT from the spec text, not recorded. Field names inside each lead are a guess from 'first and last name, headline, LinkedIn profileUrl, current job title and company'.",
-    "result": { "success": true, "total": 1, "leads": [{ "firstname": "Person", "lastname": "H", "headline": "Engineering Manager", "profileUrl": "https://www.linkedin.com/in/person-h", "currentJobTitle": "Engineering Manager", "currentCompanyName": "Example Co" }] }
+  "step2_non_empty": {
+    "_note": "Recorded 2026-11-24 (a second call, approved by the operator, with looser filters: company website and title only, 2 people), then cleaned: names, profile URLs, headlines and job descriptions replaced with placeholders, the pagination token shortened, the settlement hash removed. The field names are the real ones.",
+    "input": { "query": { "currentCompanyWebsite": { "include": ["stripe.com"] }, "currentJobTitle": { "include": ["Engineering Manager"] } }, "pagination": { "size": 2 } },
+    "envelope": {
+      "status": "fulfilled",
+      "supplier": "x402.orthogonal.com",
+      "label": "Icypeas lead database",
+      "parameters": { "query": { "currentCompanyWebsite": { "include": ["stripe.com"] }, "currentJobTitle": { "include": ["Engineering Manager"] } }, "pagination": { "size": 2 } },
+      "cost": ["provider price 0.01 USD"],
+      "providerContentUntrusted": true,
+      "result": {
+        "total": 305,
+        "success": true,
+        "leads": [
+          {
+            "firstname": "Person",
+            "lastname": "J",
+            "headline": "Engineering Manager at Stripe",
+            "description": "",
+            "profileUrl": "https://www.linkedin.com/in/person-j",
+            "lastJobTitle": "Engineering Manager",
+            "lastJobDescription": "Stripe - Search Infrastructure team",
+            "lastJobStartDate": "01-2025",
+            "address": "Bengaluru, Karnataka, India",
+            "lastCompanyName": "Stripe",
+            "lastCompanyUrn": "urn:li:fs_salesCompany:2135371",
+            "lastCompanyUrl": "https://www.linkedin.com/company/stripe/",
+            "lastCompanyWebsite": "https://stripe.com/jobs",
+            "lastCompanyDescription": "Stripe builds programmable financial services.",
+            "lastCompanySize": 14127,
+            "lastCompanyIndustry": "Technology, Information and Internet",
+            "lastCompanyAddress": "354 Oyster Point Blvd, 94080, South San Francisco, California, United States of America"
+          },
+          {
+            "firstname": "Person",
+            "lastname": "K",
+            "headline": "Engineering leader",
+            "description": "Leads a platform team.",
+            "profileUrl": "https://www.linkedin.com/in/person-k",
+            "lastJobTitle": "Engineering Manager",
+            "lastJobDescription": "Leads the team and platform for operational work (risk, compliance, KYC).",
+            "lastJobStartDate": "10-2024",
+            "address": "Bucharest Metropolitan Area",
+            "lastCompanyName": "Stripe",
+            "lastCompanyUrn": "urn:li:fs_salesCompany:2135371",
+            "lastCompanyUrl": "https://www.linkedin.com/company/stripe/",
+            "lastCompanyWebsite": "https://stripe.com/jobs",
+            "lastCompanyDescription": "Stripe builds programmable financial services.",
+            "lastCompanySize": 14127,
+            "lastCompanyIndustry": "Technology, Information and Internet",
+            "lastCompanyAddress": "354 Oyster Point Blvd, 94080, South San Francisco, California, United States of America"
+          }
+        ],
+        "pagination": { "token": "token-1", "size": 2 }
+      }
+    }
   },
-  "observed": "Filters by company website, title and location gave zero people. A real run may need a looser filter (title and company only) and must handle `total: 0` as a normal empty answer, not a failure."
+  "observed": "With company website, title and location the search gave zero people; with company website and title only it gave 305 (2 returned), in Bengaluru and Bucharest. So the location filter matters, `total: 0` is a normal empty answer, and the real lead fields are `lastJobTitle`, `lastCompanyName`, `address`, `profileUrl` and the rest above, not the `currentJobTitle` and `currentCompanyName` names that the spec text suggests. The skill never opens the LinkedIn `profileUrl`; it only shows it to the person."
 }
