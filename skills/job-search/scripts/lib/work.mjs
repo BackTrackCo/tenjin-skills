@@ -14,7 +14,7 @@ const GATES = {
   fill_ready: 'Filled and waiting. Do not submit. The person checks the open tab, presses submit and says so; then `J submitted <key>`.',
   employer_page: 'Passed review, no employer posting yet. Haiku: find and read the employer\'s careers page; write {need:"careers_page", jobKey, careersUrl, status, fullResultPath, boardLinks, otherLinks, signIn}; `J ingest <file>`. Code fetches nothing from the page.',
   search_due: 'Run this search round (references/search.md): free web searches first, then the router needs if Tenjin is there; one ingest file per need with query.round; then `J search next`.',
-  post_review: 'A batch of up to 25 X or Hacker News hiring posts, one subagent, one ingest file. For each post: find the employer, the role and an apply link on Greenhouse, Lever or Ashby, then ingest it as a posting; otherwise `J posts drop <url>`.',
+  post_review: 'A batch of up to 25 X or Hacker News hiring posts, one subagent, one ingest file with batch[] (every post link) and outcomes[] (one per post: job, lead, not_hiring or no_fit). A post with a posting goes in postings[]; a post with no posting but a person to write to goes in leads[]. A file with a post that has no outcome is refused.',
   new_job: 'Review: does the work match the title. Warn, never drop except on a mismatch. Score 0 to 100.',
   review_due: 'The posting changed. Review again.',
   reverify_due: 'Verify the job is still open before it goes further.',
@@ -180,7 +180,7 @@ export function waitingSet(state) {
   return w;
 }
 
-export function notifyLine(state, overlay, now = Date.now()) {
+export function notifyLine(state, overlay, now = Date.now(), { unattended = false } = {}) {
   const w = waitingSet(state);
   const fresh = Object.keys(w).filter((k) => state.notified[k] !== w[k]);
   if (!fresh.length) return { line: null, next: w };
@@ -208,6 +208,9 @@ export function notifyLine(state, overlay, now = Date.now()) {
   if (held.length) parts.push(`needs you: ${[...new Set(held)].join(', ').replace(/_/g, ' ')}`);
   let line = parts.join(', ').replace(/[*_`#\[\]]/g, '');
   if (line.length > 190) line = line.slice(0, 187) + '...';
+  // In an unattended run nobody can answer the ask, so the Tenjin hint rides on the notification when it fits.
+  const hint = unattended ? tenjinHint(state, 'daily_search') : null;
+  if (hint && line.length + 3 + hint.line.length < 200) line += ` | ${hint.line}`;
   return { line, next: w };
 }
 
@@ -218,7 +221,7 @@ export function workList({ now = Date.now(), commit = false, unattended = false 
   let res;
   const compute = (state) => {
     const wl = buildWorkList(state, overlay, now, readJson(path.join(stateDir(), 'profile.json'), {}), { unattendedOpen: unattendedBatchOpen(), unattended });
-    const n = notifyLine(state, overlay, now);
+    const n = notifyLine(state, overlay, now, { unattended });
     wl.notify = n.line;
     if (commit) {
       state.notified = n.next;

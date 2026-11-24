@@ -28,6 +28,8 @@ export function emptyState() {
     queryYield: {},
     stops: [],
     found: [],
+    leads: [],
+    postOutcomes: {},
     removedBoards: [],
     handouts: [],
     consentLog: [],

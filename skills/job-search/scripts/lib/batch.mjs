@@ -19,7 +19,7 @@ export const BATCH_DENIED = [
   ['consent', 'record'], ['writing', 'approve'], ['answer', 'add'], ['fact', 'set'],
   ['profile', 'set'], ['frequency', 'set'], ['start', 'record'], ['watch', 'remove'],
   ['setup', 'resume'], ['setup', 'careerops'], ['dryrun', 'confirm'], ['batch', 'open'],
-  ['pipeline', 'add'], ['release', 'apply'], ['intros', 'save'],
+  ['pipeline', 'add'], ['release', 'apply'], ['intros', 'save'], ['contacts', 'count'], ['leads', 'save'], ['leads', 'mark'],
 ];
 export const isBatchDenied = (cmd, sub) => BATCH_DENIED.some(([c, s]) => c === cmd && (s === null || s === sub));
 

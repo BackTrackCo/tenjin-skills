@@ -1,5 +1,7 @@
 import { graph } from './graph.mjs';
 import { boardTarget, fetchBoard } from './boards.mjs';
+import { employerName } from './employer.mjs';
+import { normLabel } from './store.mjs';
 import { careersFromLinks, classifyLinks, probeBoards, resolveFromCareersPage } from './employer.mjs';
 import { isNeverAutomated, isYc } from './platforms.mjs';
 import { loadSkipUrls } from './careerops.mjs';
@@ -15,6 +17,7 @@ import { updateState } from './store.mjs';
 export const DELIVERED = ['fulfilled'];
 const NEEDS = ['job_postings', 'x_hiring_posts', 'hn_hiring_posts', 'careers_page', 'web_search'];
 const POSTING_NEEDS = ['job_postings', 'hn_hiring_posts'];
+export const OUTCOMES = ['job', 'lead', 'not_hiring', 'no_fit'];
 const isStr = (v) => typeof v === 'string' && v.trim() !== '';
 
 // The skill's own shape, never a seller's raw body. Code never guesses a field.
@@ -51,7 +54,21 @@ export function validateIngest(o) {
   }
   const list = POSTING_NEEDS.includes(o.need) ? o.postings : o.posts;
   if (!Array.isArray(list)) return POSTING_NEEDS.includes(o.need) ? 'postings must be a list' : 'posts must be a list';
-  if (!list.length) return 'the list is empty';
+  const reviewed = Array.isArray(o.batch);
+  if (!list.length && !reviewed) return 'the list is empty';
+  if (reviewed) {
+    if (!o.batch.every(isStr)) return 'batch must be a list of post links';
+    if (!Array.isArray(o.outcomes)) return 'outcomes must be a list: every post in the batch needs one';
+    for (const x of o.outcomes) if (!x || !isStr(x.url) || !OUTCOMES.includes(x.outcome)) return `each outcome needs a url and one of ${OUTCOMES.join(', ')}`;
+    const seen = new Set();
+    for (const x of o.outcomes) {
+      if (seen.has(x.url)) return `post ${x.url} has two outcomes`;
+      seen.add(x.url);
+    }
+    const missing = o.batch.filter((u) => !seen.has(u));
+    if (missing.length) return `no outcome for ${missing.length} post${missing.length > 1 ? 's' : ''} (${missing[0]}${missing.length > 1 ? ', ...' : ''}); the posts stay in the queue`;
+    if (o.leads !== undefined && !Array.isArray(o.leads)) return 'leads must be a list';
+  }
   for (const [i, p] of list.entries()) {
     const at = `${POSTING_NEEDS.includes(o.need) ? 'posting' : 'post'} ${i}`;
     if (POSTING_NEEDS.includes(o.need)) {
@@ -110,6 +127,15 @@ export async function planIngest({ obj, state, profile, overlay, fetch, now = Da
     if (!boards.has(id)) boards.set(id, await fetchBoard({ ats: t.ats, token: t.token, region: t.region || 'us', name: '' }, fetch));
     return boards.get(id);
   };
+  if (Array.isArray(obj.batch)) {
+    const r = planPosts({ obj, state, plan });
+    if (r) {
+      plan.outcomes = undefined; // a refused file records nothing: its posts stay in the queue
+      plan.leads = undefined;
+      plan.held.push({ reason: 'source_empty', detail: `routed:${need}: ${r}` });
+      return plan;
+    }
+  }
   const via = need === 'hn_hiring_posts' ? 'hn' : need === 'web_search' ? 'web' : 'routed';
   let postings = obj.postings || [];
   if (need === 'web_search') {
@@ -179,6 +205,47 @@ export async function planIngest({ obj, state, profile, overlay, fetch, now = Da
   return plan;
 }
 
+// Each post in a reviewed batch has one outcome. A lead needs its record: the X handle comes from the post record, an email
+// or a handle in an HN comment only when it appears word for word in the comment. A post's text cannot steer an intro to
+// someone else. Returns a reason when the file is refused (and then nothing is recorded).
+function planPosts({ obj, state, plan }) {
+  const posts = new Map((state.posts || []).map((p) => [p.url, p]));
+  const leads = new Map((obj.leads || []).map((l) => [l.url, l]));
+  plan.outcomes = [];
+  plan.leads = [];
+  for (const o of obj.outcomes) {
+    if (!posts.has(o.url)) return `outcome for a post that is not in the queue: ${o.url}`;
+    if (o.outcome === 'job' && !(obj.postings || []).some((p) => p.sourceUrl === o.url)) return `post ${o.url} is marked job but has no posting with that sourceUrl`;
+    if (o.outcome === 'lead') {
+      const l = leads.get(o.url);
+      const post = posts.get(o.url);
+      if (!l) return `post ${o.url} is marked lead but has no lead record`;
+      const text = post.text || '';
+      const handle = l.handle ? String(l.handle).replace(/^@/, '') : null;
+      let channel = null;
+      if (post.source === 'x' || /^https?:\/\/(x|twitter)\.com\//i.test(o.url)) {
+        if (!post.author) return `post ${o.url} has no author in its record`;
+        channel = 'x';
+        if (handle && handle.toLowerCase() !== String(post.author).replace(/^@/, '').toLowerCase()) return `lead ${o.url}: the handle must be the post's author from the record`;
+      } else if (l.email || handle) {
+        if (l.email && !text.includes(l.email)) return `lead ${o.url}: the email is not word for word in the post`;
+        if (!l.email && handle && !text.includes(handle)) return `lead ${o.url}: the handle is not word for word in the post`;
+        channel = l.email ? 'email' : 'other';
+      } else return `lead ${o.url}: an HN comment needs an email or a handle that appears in it`;
+      plan.leads.push({ url: o.url, key: leadKey(o.url), source: channel === 'x' ? 'x' : 'hn', channel, author: post.author || '', handle: channel === 'x' ? String(post.author).replace(/^@/, '') : handle, email: l.email || null, employer: o.employer || l.employer || '', role: o.role || l.role || '', place: o.place || l.place || '', excerpt: text.slice(0, 280), status: 'new', foundAt: new Date().toISOString(), intro: null, joinedJob: null });
+    }
+    plan.outcomes.push({ url: o.url, outcome: o.outcome, reason: o.reason || null });
+  }
+  return null;
+}
+
+// One lead per post: x.com and twitter.com links normalize to the status id, HN to the item id.
+export function leadKey(url) {
+  const m = /(?:x|twitter)\.com\/[^/]+\/status\/(\d+)/i.exec(url);
+  if (m) return `x:${m[1]}`;
+  return /^hn:/.test(url) ? url : normalizeUrl(url);
+}
+
 // A web search result becomes a posting, a post for review, or nothing. A board link is read from the board's own API
 // (the result's title and place are not trusted over it). A platform result is used only from the result itself.
 async function webPostings(results, getBoard, state) {
@@ -228,6 +295,17 @@ async function planCareers({ obj, state, fetch, now, plan }) {
   return plan;
 }
 
+// A lead whose employer and role later match exactly one job (the board probes' rule) joins that job, with its intro.
+export function joinLeads(state) {
+  for (const l of state.leads || []) {
+    if (l.joinedJob || !l.employer || !l.role || ['done', 'not_interested'].includes(l.status)) continue;
+    const hits = Object.values(state.jobs).filter((j) => employerName(j.company) === employerName(l.employer) && normLabel(j.title) === normLabel(l.role) && (!l.place || /remote/i.test(l.place) && j.remote || normLabel(j.city || '') === normLabel(String(l.place).split(',')[0])));
+    if (hits.length !== 1) continue;
+    (state.contacts[hits[0].key] ||= []).push({ name: l.author || l.handle || 'the poster', title: '', sourceUrl: l.url, how: l.channel === 'email' ? l.email : `DM @${l.handle} on X`, cares: `hiring for ${l.role}`, channel: l.channel, notConfirmed: false, intro: l.intro });
+    l.joinedJob = hits[0].key;
+  }
+}
+
 export function persistIngest(plan, now = Date.now()) {
   const at = new Date(now).toISOString();
   return updateState((state) => {
@@ -251,6 +329,14 @@ export function persistIngest(plan, now = Date.now()) {
       }
     }
     state.posts = [...(state.posts || []), ...plan.posts];
+    if (plan.outcomes) {
+      // the batch is done: its posts leave the queue, each counted by outcome; leads join the list, once per post
+      const done = new Set(plan.outcomes.map((o) => o.url));
+      state.posts = state.posts.filter((p) => !done.has(p.url));
+      for (const o of plan.outcomes) (state.postOutcomes ||= {})[o.outcome] = (state.postOutcomes[o.outcome] || 0) + 1;
+      for (const l of plan.leads) if (!(state.leads || []).some((x) => x.key === l.key)) (state.leads ||= []).push(l);
+      joinLeads(state);
+    }
     if (plan.round !== undefined) {
       if (!state.search.session || (state.search.session.finished && plan.round === 0)) state.search.session = { startedAt: at, round: plan.round, roundAdded: 0, finished: false };
       if (plan.round === state.search.session.round) state.search.session.roundAdded += added.length;

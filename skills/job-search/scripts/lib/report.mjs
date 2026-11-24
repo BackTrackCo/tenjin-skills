@@ -86,6 +86,14 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
     L.push('', '## Waiting on you');
     for (const j of stuck) L.push(`- ${j.company}, ${j.title}: ${j.parked ? j.parked.reasons.join(', ') : 'needs your yes'}`);
   }
+  const leads = (state.leads || []).filter((l) => l.status === 'new' && !l.joinedJob);
+  if (leads.length) {
+    L.push('', `## People hiring (${leads.length})`);
+    for (const l of leads) L.push(`- ${l.author || l.handle || l.email}${l.employer ? `, ${l.employer}` : ''}${l.role ? `, ${l.role}` : ''}: ${l.url}${l.intro ? `. Intro to copy (${l.intro.channel}${l.intro.subject ? `, subject: ${l.intro.subject}` : ''}), you send it yourself: ${l.intro.text.replace(/\n/g, ' ')}` : ''}`);
+  }
+  const oc = state.postOutcomes || {};
+  const skipped = ['not_hiring', 'no_fit'].filter((k) => oc[k]);
+  if (skipped.length) L.push('', `Hiring posts set aside: ${skipped.map((k) => `${oc[k]} ${k.replace('_', ' ')}`).join(', ')}.`);
   const consent = (state.consentLog || []).filter((c) => !c.acked);
   if (consent.length) {
     L.push('', '## Consent changes (check that each one was yours)');

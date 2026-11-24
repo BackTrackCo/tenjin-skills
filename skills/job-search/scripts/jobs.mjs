@@ -17,14 +17,15 @@ import { addAnswer, approveWriting, loadAnswers } from './lib/answers.mjs';
 import * as batch from './lib/batch.mjs';
 import { hintState, defaultRun, findTenjin } from './lib/tenjin.mjs';
 import { buildSheet, checkReadBack, checkSheet, parseGreenhouseQuestions } from './lib/sheet.mjs';
-import { buildContactMessageRequest, buildIntroRequest, buildWritingRequest, parseIntroResult, parseWritingResult, readWritingRules } from './lib/writing.mjs';
+import { buildContactMessageRequest, buildIntroRequest, buildLeadIntroRequest, buildWritingRequest, parseIntroResult, parseWritingResult, readWritingRules } from './lib/writing.mjs';
 import { renderReport } from './lib/report.mjs';
 import * as qs from './lib/questions.mjs';
 import { FREQUENCIES } from './lib/schedule.mjs';
 import { appendPending, isCareerOpsDir, pipelineLine, readCareerOps } from './lib/careerops.mjs';
 import { observations } from './lib/signals.mjs';
-import { ingest } from './lib/ingest.mjs';
+import { ingest, joinLeads, leadKey } from './lib/ingest.mjs';
 import { validateProfile } from './lib/profile.mjs';
+import { routedRounds } from './lib/routed.mjs';
 import { resumeHeld } from './lib/held.mjs';
 import { DEFAULT_BUDGET_MS, runHn } from './lib/hn.mjs';
 import { isFillOnly, markFillReady, markSubmitted } from './lib/fillonly.mjs';
@@ -359,10 +360,21 @@ const commands = {
       return { appended: n, next: 'Tell the person that /career-ops pipeline scores these jobs and tailors their CV.' };
     }));
   },
-  async contacts([sub, ...keys]) {
-    if (sub !== 'request') return out({ error: 'contacts request [key...] (5 jobs, or the contact_count rule, when none are named)' }, 2);
+  async contacts([sub, ...keys], flags) {
+    if (sub === 'count') {
+      // The person's answer, kept as their contact_count rule with their words and the date. 'all' is every job that passed review.
+      const v = keys[0] === 'all' ? 'all' : Number(keys[0]);
+      if (v !== 'all' && !(Number.isInteger(v) && v > 0)) return out({ error: 'contacts count <number>|all [--words text]' }, 2);
+      return out(addRule({ effect: 'contact_count', value: v, words: String(flags.words || `contacts for ${v} jobs`) }));
+    }
+    if (sub !== 'request') return out({ error: 'contacts request [key...] | count <n|all>' }, 2);
     if (!keys.length) {
-      const n = Number(loadOverlay().rules.filter((r) => r.effect === 'contact_count').pop()?.value) || 5;
+      const rule = loadOverlay().rules.filter((r) => r.effect === 'contact_count').pop();
+      // The first request asks how many (J ask contacts); no answer means 5, and the answer is stored once.
+      if (!rule && flags.count === undefined) return out({ ask: 'contacts', next: 'J ask contacts, then J contacts count <n|all>; no answer means 5', default: 5 }, 4);
+      if (!rule) addRule({ effect: 'contact_count', value: flags.count === 'default' ? 5 : Number(flags.count), words: String(flags.words || 'contacts for 5 jobs (no answer, the default)') });
+      const cur = loadOverlay().rules.filter((r) => r.effect === 'contact_count').pop();
+      const n = cur.value === 'all' ? Infinity : Number(cur.value) || 5;
       keys = Object.values(loadState().jobs).filter((j) => ['reviewed', 'shortlisted', 'prepared', 'apply_ready'].includes(j.status)).sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1)).slice(0, n).map((j) => j.key);
     }
     return out(updateState((s) => {
@@ -372,6 +384,9 @@ const commands = {
   },
 
   async 'write-prompt'([key], flags) {
+    if (flags.leads) {
+      return out(buildLeadIntroRequest({ leads: (loadState().leads || []).filter((l) => l.status === 'new' && !l.intro), profile: readProfile() }));
+    }
     if (flags.intros) {
       const st = loadState();
       const j = st.jobs[flags.intros];
@@ -454,15 +469,37 @@ const commands = {
       return s.routed;
     }));
   },
-  async posts([sub, ...urls]) {
-    if (sub !== 'drop') return out({ error: 'posts drop <url...>' }, 2);
-    return out(updateState((s) => {
-      s.posts = (s.posts || []).filter((p) => !urls.includes(p.url));
-      return { left: s.posts.length };
-    }));
+  // Reach-out leads: hiring posts with no job posting. The intro is a draft the person sends themselves.
+  async leads([sub, ...rest], flags) {
+    if (sub === 'save') {
+      const r = parseIntroResult(fs.readFileSync(flags.result, 'utf8'));
+      return out(updateState((s) => {
+        let n = 0;
+        for (const l of s.leads || []) {
+          const v = r[l.url];
+          if (!v) continue;
+          const text = String(v.text).trim();
+          if (l.channel === 'email' ? !String(v.subject || '').trim() || text.split(/\s+/).length > 120 : text.length > 300) throw new Error(`the intro for ${l.url} does not fit its channel`);
+          l.intro = { channel: l.channel, subject: l.channel === 'email' ? v.subject : null, text, writtenAt: new Date().toISOString() };
+          n++;
+        }
+        joinLeads(s);
+        return { saved: n };
+      }));
+    }
+    if (sub === 'mark') {
+      const [url, state] = rest;
+      if (!['done', 'not_interested'].includes(state)) return out({ error: 'leads mark <url> done|not_interested' }, 2);
+      return out(updateState((s) => {
+        const k = leadKey(url);
+        const l = (s.leads || []).find((x) => x.key === k);
+        if (!l) throw new Error('no such lead');
+        l.status = state; // kept as a dedupe key, never shown again
+        return { marked: state };
+      }));
+    }
+    return out({ error: 'leads save --result file | mark <url> done|not_interested' }, 2);
   },
-
-  // Hacker News through the official API, in code, one request a second. Kept posts become post_review items.
   async hn(_, flags) {
     const budgetMs = flags.budget ? Number(flags.budget) * 1000 : DEFAULT_BUDGET_MS;
     return out(await runHn({ fetch: globalThis.fetch, profile: readProfile(), state: loadState(), budgetMs }));
@@ -522,7 +559,7 @@ const commands = {
   // The payload for Claude Code's question tool, so the questions are asked as choices, never as a list in prose.
   async ask([kind], flags) {
     const arg = flags.json ? readJsonArg(flags.json) : {};
-    const make = { start: () => qs.startQuestions(), resume: () => qs.resumeChoiceQuestion(arg), tenjin: () => qs.tenjinAsk(arg), eeo: () => qs.eeoQuestion(), 'optional-writing': () => qs.optionalWritingQuestion(), fact: () => qs.factQuestion(arg), yes: () => qs.sheetYesQuestion(arg) }[kind];
+    const make = { start: () => qs.startQuestions(), resume: () => qs.resumeChoiceQuestion(arg), tenjin: () => qs.tenjinAsk(arg), eeo: () => qs.eeoQuestion(), contacts: () => qs.contactsCountQuestion(), 'optional-writing': () => qs.optionalWritingQuestion(), fact: () => qs.factQuestion(arg), yes: () => qs.sheetYesQuestion(arg) }[kind];
     if (!make) return out({ error: 'ask start | resume --json {header,question,guess,next} | tenjin --json {line,status} | eeo | optional-writing | fact --json {label,options} | yes --json {company,title}' }, 2);
     if (batch.isActive() && batch.batchMode() === 'unattended') return out({ error: 'no questions in an unattended turn: nobody can answer; hold the job and notify' }, 4);
     const p = make();
@@ -565,6 +602,14 @@ const commands = {
   },
   async ack() {
     return out(updateState((s) => { for (const c of s.consentLog || []) c.acked = true; return { acked: true }; }));
+  },
+
+  // A search round in code through the router, for one attended or manual run. The watcher does the same on its tick.
+  async route() {
+    const profile = readProfile();
+    if (!profile.search || !profile.search.role) return out({ error: 'no search role in the profile' }, 2);
+    const log = await routedRounds({ profile, fetch: globalThis.fetch });
+    return out({ rounds: log });
   },
 
   async gates(_, flags) {

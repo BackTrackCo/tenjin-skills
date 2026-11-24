@@ -35,7 +35,9 @@ export function recordConsent(state, profile, overlay, now = Date.now(), optiona
   const problems = unattendedProblems(profile);
   if (problems.length) throw new Error(`cannot record consent: ${problems.join('; ')}`);
   if (!['skip', 'wait'].includes(optionalWriting)) throw new Error('the person picks skip or wait for optional writing fields; there is no default');
-  state.consent.unattended = { rulesHash: rulesHash(profile, overlay), at: new Date(now).toISOString(), optionalWriting };
+  // Limits that only tighten stay out of the hash, but the consent remembers the limits it was given under: removing or
+  // raising the positions rule, or removing a fill-only rule, loosens an unattended run and needs a new consent.
+  state.consent.unattended = { rulesHash: rulesHash(profile, overlay), at: new Date(now).toISOString(), optionalWriting, limits: limitsOf(overlay) };
   state.consent.dryRun = { records: [], confirmedAt: null, rulesHash: null };
   return state.consent.unattended;
 }
@@ -56,10 +58,22 @@ export function revokeConsent(state, which) {
   else throw new Error('revoke unattended or writing');
 }
 
+export function limitsOf(overlay) {
+  const fill = (overlay.rules || []).filter((r) => r.effect === 'fill_only').map((r) => (r.value === true || r.value === 'all' ? '*' : String(r.value).toLowerCase()));
+  return { periodMax: periodLimit(overlay), fillOnly: [...new Set(fill)] };
+}
+// True when the current limits are looser than the ones the consent was given under.
+export function loosened(was, now) {
+  if (!was) return false;
+  if (was.periodMax !== null && (now.periodMax === null || now.periodMax > was.periodMax)) return true;
+  if (was.fillOnly.includes('*') && !now.fillOnly.includes('*')) return true;
+  return was.fillOnly.some((v) => v !== '*' && !now.fillOnly.includes(v) && !now.fillOnly.includes('*'));
+}
+
 export function consentStatus(state, profile, overlay) {
   const c = state.consent.unattended;
   if (!c) return { ok: false, reason: 'no_consent' };
-  if (c.rulesHash !== rulesHash(profile, overlay)) return { ok: false, reason: 'rules_changed' };
+  if (c.rulesHash !== rulesHash(profile, overlay) || loosened(c.limits, limitsOf(overlay))) return { ok: false, reason: 'rules_changed' };
   return { ok: true };
 }
 

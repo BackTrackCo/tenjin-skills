@@ -202,5 +202,9 @@
     "duplicateDays": 90
   },
   "followUpDays": 14,
-  "staleListingDays": 60
+  "staleListingDays": 60,
+  "needTemplates": {
+    "job_postings": "job postings for {role} roles in {place}, posted in the last {days} days",
+    "x_hiring_posts": "X posts from people hiring for {role} roles in {place}, from the last {days} days"
+  }
 }

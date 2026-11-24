@@ -16,9 +16,9 @@ export function startQuestions() {
         { label: 'Auto apply, and also write new answers', description: 'As above, and new free-text answers are written for you without asking.' },
       ]),
       q('Search', 'How often should I search for jobs?', [
-        { label: 'Every day (Recommended)', description: 'One search round a day. A round is one Haiku run with free web searches (usage not measured yet); router calls cost the router price within your Tenjin limits.' },
-        { label: 'Twice a day', description: 'Two search rounds a day, so about twice the usage and router calls of a daily search.' },
-        { label: 'Once a week', description: 'One search round a week, about a seventh of the daily usage and router calls.' },
+        { label: 'Every day (Recommended)', description: 'One search round a day. With Tenjin a round runs in code at the router\'s price, with no Claude usage for the searches; without it, a round is one Haiku run (usage not measured yet).' },
+        { label: 'Twice a day', description: 'Two search rounds a day, about twice the router price (with Tenjin) or Haiku usage (without) of a daily search.' },
+        { label: 'Once a week', description: 'One search round a week, about a seventh of the daily router price or Haiku usage.' },
       ]),
       q('Positions', 'How many positions should I make ready to apply to in each search period?', [
         { label: 'Up to 10 (Recommended)', description: 'Attended: 10 sheets brought for your yes. Auto: 10 applications. The rest stay ranked for the next period; none is dropped.' },
@@ -43,6 +43,16 @@ export function tenjinAsk({ line, status }) {
   return { questions: [q('Tenjin', `${line} ${funded ? 'Add funds to Tenjin?' : 'Install Tenjin and add funds?'}`, [
     { label: `${funded ? 'Add funds' : 'Install Tenjin'} (Recommended)`, description: funded ? 'Runs Tenjin\'s own funding step; you pick the amount there.' : 'Follows the install flow at tenjin.sh, which asks its own spending questions and funding step.' },
     { label: 'Not now', description: 'Everything free keeps working. I will mention it again but ask at most once per session.' },
+  ])] };
+}
+
+// Asked the first time the person asks for contacts. No answer means 5; the answer is kept as the contact_count rule.
+export function contactsCountQuestion() {
+  const cost = 'The free ways are a Haiku step; the router\'s people search runs in code at the router\'s price for each job the free ways left without a contact.';
+  return { questions: [q('Contacts', 'For how many jobs should I find someone to write to?', [
+    { label: '5 jobs (Recommended)', description: `The 5 best-fitting jobs. ${cost}` },
+    { label: '10 jobs', description: `The 10 best-fitting jobs, about twice the work and router price. ${cost}` },
+    { label: 'Every job that passed review', description: `One round of contacts per job that passed review, the most work. ${cost}` },
   ])] };
 }
 

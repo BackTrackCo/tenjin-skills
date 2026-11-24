@@ -9,6 +9,8 @@ import { loadOverlay } from './overlay.mjs';
 import { persist, runSweep, sweepDue } from './sweep.mjs';
 import { workList } from './work.mjs';
 import { frequencyOf } from './schedule.mjs';
+import { allNeedsCovered, routedRounds } from './routed.mjs';
+import { unattendedBatchOpen } from './work.mjs';
 import { hnDue, runHn } from './hn.mjs';
 
 const DAY = 86400000;
@@ -25,6 +27,7 @@ export function watcherCodeHash() {
 // Returns the lines to print. A quiet tick returns none.
 export async function tick(ctx) {
   const { holder, now = Date.now(), fetchImpl, runner, firstTick = false, seen = { sig: null }, startHash } = ctx;
+  void ctx.routerClient;
   const lines = [];
   if (!heartbeat(holder, now)) return { lines: ['lease lost: run /job-search again to re-arm'], stop: true };
   if (startHash && startHash !== watcherCodeHash()) return { lines: [`re-armed: the watcher code changed, run the Monitor command from jobs.mjs arm again`], stop: true };
@@ -39,6 +42,14 @@ export async function tick(ctx) {
       await runHn({ fetch: fetchImpl, profile, state: loadState(), budgetMs: ctx.hnBudgetMs || 60_000, sleep: ctx.sleep, clock: ctx.clock, now });
     } catch (e) {
       updateState((st) => { st.held = [...st.held.filter((h) => !String(h.detail).startsWith('hn:')), { reason: 'source_empty', detail: `hn: ${e.message}` }]; st.hn = { ...(st.hn || {}), lastAt: new Date(now).toISOString() }; });
+    }
+  }
+  // With Tenjin ready, the search rounds run in code, never inside an open unattended batch.
+  if (fetchImpl && profile.search && profile.search.role && (loadState().tenjin || {}).status === 'ready' && allNeedsCovered() && !unattendedBatchOpen()) {
+    try {
+      await routedRounds({ profile, fetch: fetchImpl, now, client: ctx.routerClient });
+    } catch (e) {
+      updateState((st) => { st.held = [...st.held.filter((h) => !String(h.detail).startsWith('routed:run')), { reason: 'source_empty', detail: `routed:run: ${e.message}` }]; });
     }
   }
   const s2 = loadState();
