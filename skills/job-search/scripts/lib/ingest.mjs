@@ -16,6 +16,8 @@ import { postLinks, boardLinksOf, emailsIn, handleOf } from './postinfo.mjs';
 
 // The request tool's envelope status, copied exactly. Only a fulfilled result is clean. Every other word
 // (unverified, running, needs_approval, needs_input, unpaid, failed, native) holds the source for this run.
+// One status word for every need, model-written files included: the router envelope's word, `fulfilled`. Any other word
+// holds the source, and the refusal names the word to write.
 export const DELIVERED = ['fulfilled'];
 const NEEDS = ['job_postings', 'x_hiring_posts', 'hn_hiring_posts', 'careers_page', 'web_search', 'people_search'];
 const POSTING_NEEDS = ['job_postings', 'hn_hiring_posts'];
@@ -28,14 +30,14 @@ export function validateIngest(o) {
   if (!NEEDS.includes(o.need)) return `need must be one of ${NEEDS.join(', ')}`;
   if (o.need === 'people_search') {
     if (!isStr(o.status)) return 'status is missing';
-    if (!DELIVERED.includes(o.status)) return `status "${o.status}" is not a delivered result (fulfilled)`;
+    if (!DELIVERED.includes(o.status)) return `status "${o.status}" is not a delivered result: write "fulfilled" (any other word holds the source)`;
     if (!isStr(o.jobKey) || !Array.isArray(o.contacts)) return 'people_search needs jobKey and a contacts list (empty is a normal answer)';
     for (const c of o.contacts) if (!c || !isStr(c.name) || !isStr(c.sourceUrl) || !isStr(c.how) || !isStr(c.cares)) return 'a contact needs name, sourceUrl, how and cares';
     return null;
   }
   if (o.need === 'careers_page') {
     if (!isStr(o.status)) return 'status is missing';
-    if (!DELIVERED.includes(o.status)) return `status "${o.status}" is not a delivered result (fulfilled)`;
+    if (!DELIVERED.includes(o.status)) return `status "${o.status}" is not a delivered result: write "fulfilled" (any other word holds the source)`;
     if (!isStr(o.jobKey) || !/^https:\/\//.test(String(o.careersUrl || ''))) return 'careers_page needs jobKey and an https careersUrl';
     for (const k of ['boardLinks', 'otherLinks']) if (o[k] !== undefined && !(Array.isArray(o[k]) && o[k].every(isStr))) return `${k} must be a list of links`;
     if (o.signIn !== undefined && typeof o.signIn !== 'boolean') return 'signIn must be true or false';
@@ -45,10 +47,7 @@ export function validateIngest(o) {
   const q = o.query;
   if (!q || typeof q !== 'object' || !isStr(q.role) || typeof q.place !== 'string' || typeof q.remote !== 'boolean' || !(q.since === null || isStr(q.since))) return 'query needs role, place, remote and since';
   if (!isStr(o.status)) return 'status is missing';
-  // A free web search has no router envelope: its status is the skill's own word `ok` (the native WebSearch returned
-  // results), or the envelope word when Tenjin answered it through `request`. Every other need needs `fulfilled`.
-  const delivered = o.need === 'web_search' ? [...DELIVERED, 'ok'] : DELIVERED;
-  if (!delivered.includes(o.status)) return `status "${o.status}" is not a delivered result (${delivered.join(' or ')})`;
+  if (!DELIVERED.includes(o.status)) return `status "${o.status}" is not a delivered result: write "fulfilled" (any other word holds the source)`;
   if (o.need === 'web_search') {
     if (o.raw !== undefined) {
       if (!Array.isArray(o.raw) || !o.raw.every((q) => q && typeof q.query === 'string' && Array.isArray(q.results))) return 'raw must be a list of {query, results[]}';
@@ -147,7 +146,7 @@ export async function planIngest({ obj: given, state, profile, overlay, fetch, n
     const withBoard = obj.posts.filter((p) => postLinks(p).some((u) => resultKind(u).board));
     for (const p of obj.posts) if (!withBoard.includes(p) && !seenAlready(p)) plan.posts.push({ url: p.url, author: p.author, postedAt: p.postedAt, text: p.text.slice(0, 1000), status: 'new', source: 'x' });
     if (withBoard.length) {
-      const sub = await planIngest({ obj: { ...obj, need: 'web_search', status: 'ok', results: withBoard.map((p) => ({ url: postLinks(p).find((u) => resultKind(u).board) })) }, state, profile, overlay, fetch, now });
+      const sub = await planIngest({ obj: { ...obj, need: 'web_search', status: 'fulfilled', results: withBoard.map((p) => ({ url: postLinks(p).find((u) => resultKind(u).board) })) }, state, profile, overlay, fetch, now });
       plan.jobs.push(...sub.jobs);
       plan.closed += sub.closed;
       plan.unresolved += sub.unresolved;
@@ -467,7 +466,7 @@ export async function resolveBoardPosts({ profile, overlay, fetch, now = Date.no
   const found = (state.posts || []).filter((p) => p.status === 'new' && boardLinksOf(p).length);
   if (!found.length) return { resolved: 0 };
   const results = found.map((p) => ({ url: boardLinksOf(p)[0] }));
-  const plan = await planIngest({ obj: { need: 'web_search', status: 'ok', query: { role: 'post', place: '', remote: false, since: null }, results }, state, profile, overlay, fetch, now });
+  const plan = await planIngest({ obj: { need: 'web_search', status: 'fulfilled', query: { role: 'post', place: '', remote: false, since: null }, results }, state, profile, overlay, fetch, now });
   if (plan.held.length) return { resolved: 0, held: plan.held.length }; // a board that did not answer: the posts stay queued
   plan.noClock = true;
   plan.outcomes = found.map((p) => ({ url: p.url, outcome: 'job', reason: null }));

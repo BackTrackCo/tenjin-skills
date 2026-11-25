@@ -280,10 +280,10 @@ test('J search plan prints the exact queries; code extracts, dedupes and sorts t
     { query: plan.queries[1], results: [{ url: 'https://www.linkedin.com/jobs/view/1', title: 'Engineer', snippet: 's', company: 'Zed', city: 'Berlin', remote: false }, { url: 'https://job-boards.greenhouse.io/acme/jobs/5', title: 't' }, { url: 'https://www.indeed.com/viewjob?jk=1', title: 'no company here' }] },
     { query: plan.queries[2], results: [{ url: 'https://job-boards.greenhouse.io/acme/jobs/5/', title: 'again' }, { url: 'https://x.com/someone/status/9', title: 'p', snippet: 'we are hiring', author: 'someone' }] },
   ];
-  const obj = ing.normalizeWeb({ need: 'web_search', status: 'ok', query: plan.query, raw });
+  const obj = ing.normalizeWeb({ need: 'web_search', status: 'fulfilled', query: plan.query, raw });
   assert.deepEqual(obj.results.map((r) => r.url), ['https://job-boards.greenhouse.io/acme/jobs/5', 'https://x.com/someone/status/9', 'https://www.linkedin.com/jobs/view/1'], 'deduped, sorted: board, X, platform; the result with no company is dropped');
   assert.equal(obj.droppedRaw, 1);
-  const out = await ing.ingest({ obj: { need: 'web_search', status: 'ok', query: plan.query, raw }, state: store.loadState(), profile: {}, overlay: empty, fetch: fakeFetch({ 'https://boards-api.greenhouse.io/v1/boards/acme/jobs': gh }), now: NOW });
+  const out = await ing.ingest({ obj: { need: 'web_search', status: 'fulfilled', query: plan.query, raw }, state: store.loadState(), profile: {}, overlay: empty, fetch: fakeFetch({ 'https://boards-api.greenhouse.io/v1/boards/acme/jobs': gh }), now: NOW });
   assert.deepEqual(out.held, []);
   assert.ok(out.added >= 1);
   assert.equal(web.flattenRaw(raw).length, 4);

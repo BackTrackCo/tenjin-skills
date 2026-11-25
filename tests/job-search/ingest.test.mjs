@@ -206,3 +206,20 @@ test('search_due waits while an unattended batch is open, and is back when it cl
   g.closeBatch();
   assert.equal(has(), true);
 });
+
+test('an ingest file written as the references describe passes as it is: the exact HN batch shape, with the one status word', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const ref = fs.readFileSync(path.join(path.resolve(import.meta.dirname, '..', '..'), 'skills', 'job-search', 'references', 'search.md'), 'utf8');
+  const shape = JSON.parse(/```json\n(\{"need":"hn_hiring_posts"[\s\S]*?)\n```/.exec(ref)[1].replace('<every post link in the batch>', 'hn:100').replace('"url":".."', '"url":"hn:100"').replace('"job|lead|not_hiring|no_fit"', '"not_hiring"'));
+  assert.equal(shape.status, 'fulfilled', 'the reference names the one word');
+  shape.query = { role: 'software engineer', place: 'Berlin', remote: false, since: null };
+  assert.equal(ing.validateIngest(shape), null, 'the file as written passes, with no edit');
+  const refused = ing.validateIngest({ ...shape, status: 'ok' });
+  assert.match(refused, /status "ok" is not a delivered result: write "fulfilled"/, 'the refusal names the word to write');
+  // the internal sub-ingests use the same word, so a post with a board link needs no second status
+  assert.doesNotMatch(fs.readFileSync(path.join(path.resolve(import.meta.dirname, '..', '..'), 'skills', 'job-search', 'scripts', 'lib', 'ingest.mjs'), 'utf8'), /status: 'ok'/);
+  for (const f of fs.readdirSync(path.join(path.resolve(import.meta.dirname, '..', '..'), 'skills', 'job-search', 'references'))) {
+    assert.doesNotMatch(fs.readFileSync(path.join(path.resolve(import.meta.dirname, '..', '..'), 'skills', 'job-search', 'references', f), 'utf8'), /"status":\s*"ok"|status `ok`|word `ok`/, f);
+  }
+});

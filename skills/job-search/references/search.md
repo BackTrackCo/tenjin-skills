@@ -18,14 +18,14 @@ Each need runs on its own, in the watcher or with `J route`. The web search is o
 
 ```json
 {"need":"web_search","query":{"role":"..","place":"..","remote":false,"since":"2026-11-16","variant":null,"round":0},
- "status":"ok",
+ "status":"fulfilled",
  "raw":[{"query":"site:jobs.lever.co ...","results":[
    {"url":"https://job-boards.greenhouse.io/acme/jobs/1","title":"..","snippet":".."},
    {"url":"https://www.linkedin.com/jobs/view/1","title":"..","snippet":"..","company":"..","city":"..","remote":false},
    {"url":"https://x.com/someone/status/1","title":"..","snippet":"<the post text from the result>","author":"someone"}]}]}
 ```
 
-The model fills only company, place and remote, and only for a result on a job platform (LinkedIn, Indeed and similar), from the result alone; a platform result with no company is dropped. Status: `ok` when the native web search returned results; when Tenjin answered the search through `request`, copy the envelope word exactly (then only `fulfilled` is delivered). `fullResultPath` is optional. Invent nothing. Code turns a board link into the employer's posting (read from the board API) and sends a platform result through the employer-posting steps, from the search result only. Then `J search web-done`. Never fetch a platform page, never open an X page, and never search or fetch a Y Combinator site.
+The model fills only company, place and remote, and only for a result on a job platform (LinkedIn, Indeed and similar), from the result alone; a platform result with no company is dropped. `fullResultPath` is optional. Invent nothing. Code turns a board link into the employer's posting (read from the board API) and sends a platform result through the employer-posting steps, from the search result only. Then `J search web-done`. Never fetch a platform page, never open an X page, and never search or fetch a Y Combinator site.
 
 ## 2. A need code could not run (`need_due`), or the whole round without code
 
@@ -60,6 +60,19 @@ A posting found on a job platform (LinkedIn, Indeed, Glassdoor, ZipRecruiter and
 
 Only `exact` and `confirmed` postings reach the apply queue. Everything else is an "apply yourself" item with one reason in the report. A Y Combinator job with no other posting carries its Work at a Startup link for the person to open.
 
+## The status word in every ingest file
+
+Every file you write uses one status word, `fulfilled`, the router's own word: the free web search, a reviewed post batch and a careers-page read as much as a routed result. Any other word (`ok`, `unverified`, `running`, `needs_approval`, `needs_input`, `unpaid`, `failed`, `native`) holds that source for this run and the report names it. The refusal names the word to write. If `J ingest` refuses a file, rewrite the file; never edit it with `sed` to make it pass.
+
 ## Hacker News
 
 Code reads the "Ask HN: Who is hiring?" thread through the HN Search API by Algolia (`hn.algolia.com`): one search per role word for comments newer than the last read, top-level comments only, then the role and place prefilter. Job stories come from the Firebase API (`hacker-news.firebaseio.com`), new ids only, one request a second. `J hn` runs both: the job-story reads stop at 90 seconds (`--budget <seconds>`), save every 20 items and report how many are left; the watcher continues on its next tick, 60 seconds at a time. Code first reads each post's board links, author handle and emails word for word, and turns a post with a Greenhouse, Lever or Ashby link into a posting itself, with its author as the contact. The rest go to Haiku review in batches of 25: one subagent, one ingest file per batch (`batch[]`, `outcomes[]`, `postings[]`, `leads[]`), about the input of one review round. A post that cannot be read is `not_hiring` with `reason: unreadable`: it is counted and not shown again unless its text changes. A hiring post with no job posting becomes a reach-out lead, shown under "People hiring", never sent. Never fetch news.ycombinator.com.
+
+A reviewed post batch is one file in this shape (an HN comment or an X post alike; `query` is the round's query):
+
+```json
+{"need":"hn_hiring_posts","status":"fulfilled","query":{"role":"..","place":"..","remote":false,"since":"2026-11-16"},
+ "batch":["<every post link in the batch>"],
+ "outcomes":[{"url":"..","outcome":"job|lead|not_hiring|no_fit","reason":"unreadable"}],
+ "postings":[],"leads":[]}
+```
