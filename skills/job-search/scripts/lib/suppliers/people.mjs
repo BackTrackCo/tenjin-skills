@@ -31,7 +31,7 @@ export function adapter(res, { jobKey, city, names = [], website = null }) {
     if (!c) return null;
     return known.length ? known.some((n) => nameMatches(n, c)) : null;
   };
-  const kept = res.leads.filter((l) => inPlace(l && l.address, city)).filter((l) => sameCompany(l) !== false);
+  const kept = res.leads.filter((l) => inPlace(l && l.address, city)).filter((l) => !!website || sameCompany(l) !== false); // with a domain the search filter did the matching
   const contacts = kept.map((l) => {
     const name = `${str(l.firstname)} ${str(l.lastname)}`.trim();
     if (!name || !str(l.profileUrl)) throw new Error('a lead has no name or profile link');
