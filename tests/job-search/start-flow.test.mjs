@@ -18,7 +18,7 @@ const reset = () => store.updateState((s) => { Object.assign(s, store.emptyState
 const GH = 'https://boards-api.greenhouse.io/v1/boards';
 const ghBoard = (name, jobs) => ({ jobs: jobs.map((j) => ({ id: j.id, title: j.title, company_name: name, location: { name: 'Berlin, Germany' }, first_published: '2026-11-20T00:00:00Z', content: '' })) });
 
-// ---- hints (v0-12, v0-13) -------------------------------------------------
+// ---- hints -------------------------------------------------
 test('code computes the hint at its moments from the Tenjin state; nothing stops', () => {
   const s = store.emptyState();
   const profile = { search: { role: 'engineer', place: 'Berlin' } };
@@ -79,7 +79,7 @@ test('the report mentions the hint for a job with no employer posting', () => {
   assert.doesNotMatch(report.renderReport(s, empty, { now: NOW }), /With Tenjin I can/);
 });
 
-// ---- the first report says what was searched (v0-18) ---------------------------
+// ---- the first report says what was searched ---------------------------
 test('the first report line says what was searched, with its source', () => {
   const profile = { search: { role: 'software engineer', roleWords: ['backend', 'platform'], place: 'New York', remote: false, sources: { role: 'resume', place: 'resume' } } };
   const text = report.renderReport(store.emptyState(), empty, { now: NOW, profile });
@@ -89,7 +89,7 @@ test('the first report line says what was searched, with its source', () => {
   assert.equal(runJobs(home, ['profile', 'set', JSON.stringify({ search: { role: 'x', sources: { role: 7 } } })]).code, 2);
 });
 
-// ---- facts and EEO hold at their trigger (v0-17) ---------------------------------
+// ---- facts and EEO hold at their trigger ---------------------------------
 test('a missing form fact holds only its job as needs_facts, names what is missing, and resumes after the answer', () => {
   const j = mkJob({ key: 'https://boards.greenhouse.io/acme/jobs/60', status: 'prepared', company: 'Globex' });
   const other = mkJob({ key: 'https://boards.greenhouse.io/acme/jobs/61', status: 'prepared' });
@@ -145,7 +145,7 @@ function awaitBatch() {
   return refused.code === 4 && ok.code === 0 && runJobs(home, ['ask', 'eeo']).code === 0;
 }
 
-// ---- the watch list builds itself (v0-20) --------------------------------------------
+// ---- the watch list builds itself --------------------------------------------
 test('a board joins the list when one of its jobs passes review with an exact or confirmed posting', () => {
   reset();
   const ok = mkJob({ key: 'https://boards.greenhouse.io/figma/jobs/1', status: 'new', company: 'Figma', employerPosting: { url: 'https://boards.greenhouse.io/figma/jobs/1', system: 'greenhouse', token: 'figma', jobId: '1', source: 'apply_link', confidence: 'exact', checkedAt: '' } });
@@ -209,7 +209,7 @@ test('a removed company is never added again; one report tip says a careers link
   assert.doesNotMatch(all, /which companies|companies (do you|to) watch|watch list question/i);
 });
 
-// ---- intros (v0-14) -------------------------------------------------------------------
+// ---- intros -------------------------------------------------------------------
 test('intros: one writer call per job for the contacts with a channel, checked per channel, never sent, no consent gate', () => {
   reset();
   const j = mkJob({ key: 'https://boards.greenhouse.io/acme/jobs/70', company: 'Acme', status: 'reviewed' });
