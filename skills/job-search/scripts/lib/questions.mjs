@@ -19,18 +19,31 @@ const plain = (text) => ({ plain: text });
 
 // The start, after the resume: one call, four questions. Remote Control is a reminder line, not a question.
 const RC_FIRST = 'Type /rc to get these notifications on your phone and answer from the Claude app while this session keeps running here.';
-const RC_CONFIG = 'Then open /config and turn on "Push when actions required" and "Push when Claude decides", so questions and updates reach your phone.';
-// Built from what is known, never a question, at most once per start: Remote Control unknown gives both sentences; on, with no
-// push recorded as sent, only the /config sentence; a push recorded as sent gives none. The skill never reads Claude Code's own
-// config file, so "Push when actions required" is always named while any reminder shows.
-export function rcReminder({ rc = 'unknown', pushSent = false } = {}) {
-  if (pushSent) return null;
-  return rc === 'on' ? RC_CONFIG : `${RC_FIRST} ${RC_CONFIG}`;
+const ACTIONS = '"Push when actions required"';
+const DECIDES = '"Push when Claude decides"';
+// The /config sentence names only the settings that are not known to be on (`on`: true, false or null for unknown).
+export function configSentence({ input = null, agent = null } = {}) {
+  const need = [input === true ? null : ACTIONS, agent === true ? null : DECIDES].filter(Boolean);
+  if (!need.length) return null;
+  const why = need.length === 2 ? 'questions and updates' : need[0] === ACTIONS ? 'questions' : 'updates';
+  return `Then open /config and turn on ${need.join(' and ')}, so ${why} reach your phone.`;
 }
-// What to say at a push that came back "not sent", once: off (the push setting is off) the /config sentence; none (no transport)
-// both sentences; present (the person is at the terminal) nothing.
-export const rcAtPush = (reason) => (reason === 'off' ? RC_CONFIG : reason === 'none' ? `${RC_FIRST} ${RC_CONFIG}` : null);
-export function startQuestions({ chromeOff = false, rc = 'unknown', pushSent = false } = {}) {
+// Built from what is known (the two push settings read from Claude Code's config by pushSettings(), Remote Control as the model
+// recorded it, and whether a push was ever sent), never a question, at most once per start. The /rc sentence only while Remote
+// Control is unknown and no push was sent; the /config sentence only for a setting that is off or unknown; none with both on and
+// Remote Control on. A sent push proves Remote Control and "Push when Claude decides" are on, whatever the file says.
+export function rcReminder({ rc = 'unknown', pushSent = false, settings = {} } = {}) {
+  const known = { input: settings.input ?? null, agent: pushSent ? true : settings.agent ?? null };
+  const first = rc !== 'on' && !pushSent ? RC_FIRST : null;
+  const second = configSentence(known);
+  return [first, second].filter(Boolean).join(' ') || null;
+}
+// What to say at a push that came back "not sent", once: off (the push setting is off) the /config sentence, from the file as
+// it is now, with "Push when Claude decides" named since the push says it is off; none (no transport) both sentences; present
+// (the person is at the terminal) nothing.
+export const rcAtPush = (reason, settings = {}) => (reason === 'off' ? configSentence({ input: settings.input ?? null, agent: false }) : reason === 'none' ? `${RC_FIRST} ${configSentence({ input: settings.input ?? null, agent: false })}` : null);
+
+export function startQuestions({ chromeOff = false, rc = 'unknown', pushSent = false, settings = {} } = {}) {
   return {
     questions: [
       chromeQ('Apply mode', 'How should applications go out?', [
@@ -56,7 +69,7 @@ export function startQuestions({ chromeOff = false, rc = 'unknown', pushSent = f
         { label: 'Ask me each job', description: 'For a job that is on LinkedIn and on an employer site, I ask which one with the application.' },
       ]),
     ],
-    reminder: rcReminder({ rc, pushSent }),
+    reminder: rcReminder({ rc, pushSent, settings }),
   };
 }
 

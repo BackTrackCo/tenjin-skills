@@ -36,3 +36,4 @@ Apply modes and approvals: "Fill it, I submit" is in every approval (`J approve 
 
 Claude in Chrome and Remote Control: `J chrome set on|off` is recorded at every start (on clears the Chrome holds and `noChromeTools`), options that need Chrome carry a note when it is off, and the reminder is built by `rcReminder()` from `J rc set on|unknown` and whether a push was ever sent (both sentences, only the `/config` sentence, or none); `J notify result not_sent --reason off|present|none` says its sentence once.
 
+The reminder reads the two push settings (`pushSettings()`, read-only, only those two keys, from Claude Code's global config file and then its user settings file) and names only the ones that are off or unknown; with both on and Remote Control on there is no reminder, and a sent push counts as "Push when Claude decides" on whatever the file says.

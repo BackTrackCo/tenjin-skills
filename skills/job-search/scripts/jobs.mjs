@@ -28,6 +28,7 @@ import { buildContactMessageRequest, buildIntroRequest, buildLeadIntroRequest, b
 import { firstApplicationHosts, renderReport } from './lib/report.mjs';
 import { CHROME_STEPS, maySubmit, stateLine } from './lib/approval.mjs';
 import { openPage, checkOpenUrl, openUrlOf } from './lib/open.mjs';
+import { pushSettings } from './lib/pushsettings.mjs';
 import * as qs from './lib/questions.mjs';
 import { FREQUENCIES, frequencyOf, periodStart } from './lib/schedule.mjs';
 import { appendPending, isCareerOpsDir, pipelineLine, readCareerOps } from './lib/careerops.mjs';
@@ -678,7 +679,7 @@ const commands = {
   // `chrome set`. Code never reads Claude Code's config file.
   async rc([sub, v]) {
     if (sub !== 'set' || !['on', 'unknown'].includes(v)) return out({ error: 'rc set on|unknown' }, 2);
-    return out(updateState((s) => { s.rc = v; return { rc: v, reminder: qs.rcReminder({ rc: v, pushSent: s.pushSent === true }) }; }));
+    return out(updateState((s) => { s.rc = v; return { rc: v, reminder: qs.rcReminder({ rc: v, pushSent: s.pushSent === true, settings: pushSettings() }) }; }));
   },
   async chrome([sub, v]) {
     if (sub !== 'set' || !['on', 'off'].includes(v)) return out({ error: 'chrome set on|off' }, 2);
@@ -799,7 +800,7 @@ const commands = {
     updateState((s) => {
       s.start = { ...(s.start || {}), modeAt: now, frequencyAt: now, positionsAt: now, whereAt: now };
     });
-    return out({ recorded: { mode, frequency, positions, where }, reminder: qs.rcReminder({ rc: st.rc || 'unknown', pushSent: st.pushSent === true }), note: ['attended', 'fill_only', 'open_only'].includes(mode) ? 'no consent is needed for this mode' : 'an auto mode also needs the unattended rules shown back, a clear yes, then consent record (and consent record writing for Fully auto apply)' });
+    return out({ recorded: { mode, frequency, positions, where }, reminder: qs.rcReminder({ rc: st.rc || 'unknown', pushSent: st.pushSent === true, settings: pushSettings() }), note: ['attended', 'fill_only', 'open_only'].includes(mode) ? 'no consent is needed for this mode' : 'an auto mode also needs the unattended rules shown back, a clear yes, then consent record (and consent record writing for Fully auto apply)' });
   },
   // The payload for Claude Code's question tool, so the questions are asked as choices, never as a list in prose.
   async ask([kind], flags) {
@@ -816,7 +817,7 @@ const commands = {
       if (!job || !job.linkedinShownAt) return out({ error: 'ask applied --key <job>: its LinkedIn link was not shown yet' }, 2);
       return out(qs.appliedQuestion(job));
     }
-    const make = { approve: () => qs.approveListQuestion(readySheets(loadState()).length, { chromeOff: loadState().chrome === 'off' }), start: () => qs.startQuestions({ chromeOff: loadState().chrome === 'off', rc: loadState().rc || 'unknown', pushSent: loadState().pushSent === true }), auto: () => qs.autoModeQuestion({ chromeOff: loadState().chrome === 'off' }), place: () => qs.placeQuestion(arg), role: () => qs.roleQuestion(arg), acknowledge: () => qs.acknowledgeQuestion(arg), follow_up_detail: () => qs.followUpDetail(arg), resume: () => qs.resumeChoiceQuestion(arg), tenjin: () => qs.tenjinAsk(arg), eeo: () => qs.eeoFieldQuestion(arg), follow_up: () => qs.followUpQuestion(arg), contacts: () => qs.contactsCountQuestion(), 'optional-writing': () => qs.optionalWritingQuestion(), fact: () => qs.factQuestion(arg), yes: () => qs.sheetYesQuestion(arg), email: () => qs.emailBatchQuestion(em.addBatchPeek(loadState()), flags.group === undefined ? null : Number(flags.group)), 'email-mode': () => qs.emailModeQuestion() }[kind];
+    const make = { approve: () => qs.approveListQuestion(readySheets(loadState()).length, { chromeOff: loadState().chrome === 'off' }), start: () => qs.startQuestions({ chromeOff: loadState().chrome === 'off', rc: loadState().rc || 'unknown', pushSent: loadState().pushSent === true, settings: pushSettings() }), auto: () => qs.autoModeQuestion({ chromeOff: loadState().chrome === 'off' }), place: () => qs.placeQuestion(arg), role: () => qs.roleQuestion(arg), acknowledge: () => qs.acknowledgeQuestion(arg), follow_up_detail: () => qs.followUpDetail(arg), resume: () => qs.resumeChoiceQuestion(arg), tenjin: () => qs.tenjinAsk(arg), eeo: () => qs.eeoFieldQuestion(arg), follow_up: () => qs.followUpQuestion(arg), contacts: () => qs.contactsCountQuestion(), 'optional-writing': () => qs.optionalWritingQuestion(), fact: () => qs.factQuestion(arg), yes: () => qs.sheetYesQuestion(arg), email: () => qs.emailBatchQuestion(em.addBatchPeek(loadState()), flags.group === undefined ? null : Number(flags.group)), 'email-mode': () => qs.emailModeQuestion() }[kind];
     if (!make) return out({ error: 'ask start | auto | place --json {guess,remote} | role --json {guess} | acknowledge --json {company,text,link} | follow_up_detail --json {company} | resume --json {header,question,guess,next} | tenjin --json {line,status} | eeo --json {label,options} | optional-writing | fact --json {label,options} | yes --json {company,title} | email | email-mode | approve | approve-pick | approval --key <job>' }, 2);
     if (batch.isActive() && batch.batchMode() === 'unattended') return out({ error: 'no questions in an unattended turn: nobody can answer; hold the job and notify' }, 4);
     const p = make();
@@ -1003,7 +1004,7 @@ const commands = {
       w.notifyAt = new Date().toISOString();
       if (result === 'sent') s.pushSent = true; // a sent push proves Remote Control and "Push when Claude decides" are both on
       // One reminder at a push result, once: off says the /config sentence, none says both, present says nothing.
-      const say = result === 'not_sent' && !s.rcPushSaid ? qs.rcAtPush(reason) : null;
+      const say = result === 'not_sent' && !s.rcPushSaid ? qs.rcAtPush(reason, pushSettings()) : null;
       if (say) s.rcPushSaid = true;
       return { recorded: result, ...(reason ? { reason } : {}), say };
     }));

@@ -267,12 +267,11 @@ test('J chrome set on clears chrome_disconnected and no_chrome_tools holds and j
   assert.equal(J('chrome', 'set', 'maybe').code, 2);
 });
 
-test('the reminder is built from what is known: unknown both sentences, on the /config sentence, a sent push none', () => {
+test('the reminder is built from what is known: unknown both sentences, on the /config sentence, a sent push the rest', () => {
   const both = qs.rcReminder({ rc: 'unknown' });
   assert.match(both, /^Type \/rc to get these notifications on your phone and answer from the Claude app while this session keeps running here\. Then open \/config and turn on "Push when actions required" and "Push when Claude decides", so questions and updates reach your phone\.$/);
   assert.equal(qs.rcReminder({ rc: 'on' }), 'Then open /config and turn on "Push when actions required" and "Push when Claude decides", so questions and updates reach your phone.');
-  assert.equal(qs.rcReminder({ rc: 'unknown', pushSent: true }), null);
-  assert.equal(qs.rcReminder({ rc: 'on', pushSent: true }), null);
+  assert.equal(qs.rcReminder({ rc: 'unknown', pushSent: true }), 'Then open /config and turn on "Push when actions required", so questions reach your phone.', 'a sent push proves Remote Control and the other setting');
   reset();
   assert.equal(J('start', 'record', '--mode', 'attended').json.reminder, both);
   J('rc', 'set', 'on');
@@ -280,7 +279,7 @@ test('the reminder is built from what is known: unknown both sentences, on the /
   assert.equal(J('rc', 'set', 'maybe').code, 2);
   assert.equal(J('ask', 'start').json.reminder, qs.rcReminder({ rc: 'on' }));
   J('notify', 'result', 'sent');
-  assert.equal(J('start', 'record', '--mode', 'attended').json.reminder, null, 'a push that was sent proves both settings');
+  assert.equal(J('start', 'record', '--mode', 'attended').json.reminder, qs.rcReminder({ rc: 'on', pushSent: true }), 'a push that was sent proves Remote Control and one setting');
   assert.doesNotMatch(JSON.stringify(qs.startQuestions()), /Remote Control/);
 });
 
