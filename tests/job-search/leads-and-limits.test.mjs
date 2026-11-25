@@ -50,7 +50,7 @@ test('removing or raising period_max, or removing fill_only, loosens an unattend
 });
 
 // ---- fix 5: the Tenjin hint rides on an unattended notification when it fits ---------
-test('in an unattended run the Tenjin hint is added to the notification line when it stays under 200 characters', () => {
+test('in an unattended run the Tenjin hint rides on the notification line only when it fits under 200 characters; the approved search hint is longer, so it stays in the report', () => {
   const s = store.emptyState();
   s.tenjin.status = 'missing';
   const j = mkJob({ status: 'apply_ready', company: 'Initech' });
@@ -60,7 +60,8 @@ test('in an unattended run the Tenjin hint is added to the notification line whe
   assert.doesNotMatch(attended.line, /With Tenjin/);
   const un = work.notifyLine(s, empty, NOW, { unattended: true });
   assert.ok(un.line.length < 200);
-  assert.match(un.line, /1 application wait for your yes \| With Tenjin I can also run/);
+  assert.equal(un.line, attended.line, 'the approved hint is too long to fit the 200-character line: it stays in the report');
+  assert.ok(work.HINT_LINES.daily_search.length + attended.line.length + 3 >= 200);
   // with a long line the hint stays in the report only
   const long = store.emptyState();
   long.tenjin.status = 'missing';
