@@ -131,7 +131,7 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
   const okEp = (j) => j.employerPosting && ['exact', 'confirmed'].includes(j.employerPosting.confidence);
   const ready = jobs.filter((j) => ['reviewed', 'shortlisted', 'prepared', 'apply_ready'].includes(j.status) && okEp(j));
   const waiting = jobs.filter((j) => j.status === 'new' && !j.unresolved);
-  L.push('', `${ready.length} reviewed jobs have an employer posting ready to apply on (${[...new Set(ready.map((j) => j.board).filter(Boolean))].join(', ') || 'no board yet'}); ${waiting.length} new jobs still wait for review.`);
+  L.push('', `${ready.length} reviewed job${ready.length === 1 ? ' has' : 's have'} an employer posting ready to apply on (${[...new Set(ready.map((j) => j.board).filter(Boolean))].join(', ') || 'no board yet'}); ${waiting.length} new job${waiting.length === 1 ? ' still waits' : 's still wait'} for review.`);
   const dc = (state.lastSweep && state.lastSweep.dropCounts) || {};
   if (Object.keys(dc).length) L.push(`Dropped by code in the last sweep: ${Object.entries(dc).map(([k, n]) => `${n} ${k.replace(/_/g, ' ')}`).join(', ')}.`);
   const dropped = jobs.filter((j) => j.status === 'skipped' && j.skipReason && (!since || Date.parse(j.statusAt || 0) >= Date.parse(since)));

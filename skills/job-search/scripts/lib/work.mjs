@@ -450,11 +450,11 @@ export function notifyLine(state, overlay, now = Date.now(), { unattended = fals
   const updates = fresh.filter((k) => k.startsWith('update:'));
   const parts = [];
   if (filled) parts.push(`${filled} filled, waiting for your submit (fill ready)`);
-  if (yes) parts.push(`${yes} application${yes > 1 ? 's' : ''} wait for your yes`);
+  if (yes) parts.push(`${yes} application${yes > 1 ? 's wait' : ' waits'} for your yes`);
   if (mails.length) parts.push(`${mails[0].slice(6)} intro email draft${mails[0].slice(6) === '1' ? '' : 's'} to ${emailConsentCurrent(state, {}, overlay) ? 'send' : 'approve'}`);
   if (stops.length) {
     const j = state.jobs[stops[0].slice(5)];
-    parts.push(`${stops.length} stop${stops.length > 1 ? 's' : ''} need you${stops.length === 1 && j ? ` at ${j.company}` : ''} (${j && j.parked ? (j.parked.reasons[0] === 'needs_facts' && (j.missingFacts || []).length ? `needs facts: ${j.missingFacts.map((f) => f.replace(/_/g, ' ')).join(', ')}` : j.parked.reasons[0].replace(/_/g, ' ')) : 'parked'})`);
+    parts.push(`${stops.length} stop${stops.length > 1 ? 's need' : ' needs'} you${stops.length === 1 && j ? ` at ${j.company}` : ''} (${j && j.parked ? (j.parked.reasons[0] === 'needs_facts' && (j.missingFacts || []).length ? `needs facts: ${j.missingFacts.map((f) => f.replace(/_/g, ' ')).join(', ')}` : j.parked.reasons[0].replace(/_/g, ' ')) : 'parked'})`);
   }
   if (updates.length) parts.push(`${updates.length} update${updates.length > 1 ? 's' : ''} for the report`);
   if (consents.length) parts.push(`consent changed: ${[...new Set(consents.map((k) => w[k]))].join('; ')}`);

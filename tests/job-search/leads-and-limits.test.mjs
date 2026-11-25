@@ -56,7 +56,7 @@ test('in an unattended run the Tenjin hint rides on the notification line only w
   const j = mkJob({ status: 'apply_ready', company: 'Initech' });
   s.jobs[j.key] = j;
   const attended = work.notifyLine(s, empty, NOW);
-  assert.match(attended.line, /wait for your yes/);
+  assert.match(attended.line, /waits? for your yes/);
   assert.doesNotMatch(attended.line, /With Tenjin/);
   const un = work.notifyLine(s, empty, NOW, { unattended: true });
   assert.ok(un.line.length < 200);

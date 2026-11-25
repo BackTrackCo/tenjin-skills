@@ -139,7 +139,7 @@ test('upload_blocked: attended the stop gives the one-line step at once; unatten
   assert.equal(u.json.batchClosed, false, 'the round goes on');
   J('batch', 'close');
   const w = (async () => (await import(`${S}work.mjs`)).notifyLine(store.loadState(), { rules: [], lessons: [] }, Date.now()).line)();
-  return w.then((line) => assert.match(line, /2 stops need you.*upload blocked|stop.*upload blocked/));
+  return w.then((line) => assert.match(line, /stops? needs? you.*upload blocked/));
 });
 
 test('SKILL.md and the docs: the say line, the grant record, the new stop kind, the README line; under 10,000 characters', () => {

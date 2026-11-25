@@ -77,7 +77,7 @@ test('a notify-only wake comes at most once per round, only for a changed waitin
   await arm();
   const first = await tick(NOW + 1000);
   assert.equal(first.length, 1);
-  assert.match(first[0], /notify: 1 application wait for your yes/);
+  assert.match(first[0], /notify: 1 application waits for your yes/);
   // the same round: a changed waiting set waits for the next round
   store.updateState((s) => { const j = waiting(2); s.jobs[j.key] = j; });
   assert.deepEqual(await tick(NOW + 2000), [], 'one notify-only wake per round');
