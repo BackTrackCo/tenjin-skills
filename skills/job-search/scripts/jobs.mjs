@@ -697,7 +697,7 @@ const commands = {
       const missing = [];
       if (!profile.resumeText && !profile.resumePath) missing.push('resume');
       if (!profile.applyMode || !profile.frequency || !(st.start && st.start.positionsAt) || !(profile.apply && profile.apply.where)) missing.push('start_questions');
-      return out({ missing, next: missing[0] === 'resume' ? 'ask for the resume as a plain question: a file, a link or the text; end with: Waiting for your resume: drop the file here, paste a link, or paste the text.' : missing.length ? 'J ask start, then J start record' : 'run the free search and the report', start: st.start || null });
+      return out({ missing, next: missing[0] === 'resume' ? 'Job Search is set up and watching, and this is the first run, so I need one thing to start: can you share your resume? Drop the file here, paste a link, or paste the text. I\'ll take your role, location and remote preference from it, then ask four quick choices and run the first search.' : missing.length ? 'J ask start, then J start record' : 'run the free search and the report', start: st.start || null });
     }
     if (sub !== 'record') return out({ error: 'start status | record --mode m --frequency f --catch-up n --per-day n|none (or --positions n|none|skip, or --no-limit) --where employer|linkedin|ask [--words text]' }, 2);
     if (flags.where !== undefined && !['employer', 'linkedin', 'ask'].includes(flags.where)) return out({ error: 'where must be employer, linkedin or ask' }, 2);
