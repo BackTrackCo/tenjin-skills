@@ -82,8 +82,19 @@ export async function routedRounds({ profile, fetch, client = new RouterClient()
       const r = results[k];
       const need = needs[k];
       if (r.ok) {
-        const out = await ingest({ obj: r.ingest, state: loadState(), profile, overlay: loadOverlay(), fetch, now });
+        // A paid result is never paid for twice: a result that cannot be ingested is held with its reason, the rest of the round
+        // goes on, and every attempt on a job's careers lookup counts as tried.
+        let out;
+        try {
+          out = await ingest({ obj: r.ingest, state: loadState(), profile, overlay: loadOverlay(), fetch, now });
+        } catch (e) {
+          hold({ need: need.kind, status: 'ingest_failed', reason: e.message }, now);
+          if (need.jobKey) updateState((s) => { if (s.jobs[need.jobKey]) (s.jobs[need.jobKey].routedTried ||= {})[need.kind] = true; });
+          log.push({ round, need: need.kind, ok: false, status: 'ingest_failed' });
+          continue;
+        }
         updateState((s) => { s.routed.lastCost = r.cost || s.routed.lastCost; });
+        if (need.jobKey) updateState((s) => { if (s.jobs[need.jobKey]) (s.jobs[need.jobKey].routedTried ||= {})[need.kind] = true; });
         log.push({ round, need: need.kind, ok: true, status: 'fulfilled', added: out.added });
       } else if (r.status === 'no_adapter' && need.kind !== 'web_search') {
         leaveForModel(need, round, now);

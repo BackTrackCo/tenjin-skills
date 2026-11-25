@@ -35,7 +35,7 @@ export function ruleText(r) {
   return `${r.effect} ${typeof v === 'object' ? JSON.stringify(v) : v}`;
 }
 // What the wake log counts: items handled, in words ("13 new jobs"), apart from the number of wakes.
-const REASON_WORDS = { new_job: 'new job', employer_page: 'employer page', search_due: 'search', post_review: 'post review', review_due: 'review', prepare_due: 'prepare', apply_ready: 'application', contacts_requested: 'contacts request', web_search_due: 'web search', need_due: 'search need', email_due: 'email batch' };
+const REASON_WORDS = { new_job: 'new job', employer_page: 'employer page', search_due: 'search', post_review: 'post review', review_due: 'review', prepare_due: 'prepare', apply_ready: 'application', contacts_requested: 'contacts request',  need_due: 'search need', email_due: 'email batch' };
 export const itemWords = (reason, n) => { const w = REASON_WORDS[reason] || reason.replace(/_due$/, '').replace(/_/g, ' '); return `${n} ${w}${n > 1 ? 's' : ''}`; };
 
 export const CONTACTS_LINE = 'Contacts: I can find someone to write to for the jobs above (a hiring manager, team lead or founder); messages are drafts you send.';

@@ -96,12 +96,12 @@ test('the job match: titles, place, dates, exactly one hit; two hits, none and a
 test('step 3, the careers page: a linked board is confirmed, another system is named, a sign-in page is a stop', async () => {
   const jobs = [{ id: 7, title: 'Software Engineer' }];
   const p = { title: 'Software Engineer', employer: 'Acme', city: 'Berlin', remote: false, postedAt: '2026-11-16T00:00:00Z' };
-  const linked = emp.careersFromLinks({ boardLinks: ['https://job-boards.greenhouse.io/acmeco/jobs/1', 'https://job-boards.greenhouse.io/acmeco/jobs/2', 'https://boards.greenhouse.io/embed/job_app?for=acmeco&token=1'] });
+  const linked = emp.careersFromLinks({ careersUrl: 'https://careers.acmeco.test/', boardLinks: ['https://job-boards.greenhouse.io/acmeco/jobs/1', 'https://job-boards.greenhouse.io/acmeco/jobs/2', 'https://boards.greenhouse.io/embed/job_app?for=acmeco&token=1'] });
   assert.deepEqual(linked.boards, [{ ats: 'greenhouse', token: 'acmeco', region: 'us' }], 'the same board once');
-  const r = await emp.resolveFromCareersPage(p, linked, { fetch: fakeFetch({ [`${GH}/acmeco/`]: ghBoard('Totally Different Name', jobs) }), now: NOW });
+  const r = await emp.resolveFromCareersPage(p, linked, { fetch: fakeFetch({ [`${GH}/acmeco/`]: ghBoard('Totally Different Name', jobs) }), now: NOW, website: 'acmeco.test' });
   assert.equal(r.match.employerPosting.source, 'careers_page');
   assert.equal(r.match.employerPosting.confidence, 'confirmed', 'linked from the employer\'s own page, so no name check');
-  const two = await emp.resolveFromCareersPage(p, linked, { fetch: fakeFetch({ [`${GH}/acmeco/`]: ghBoard('X', [...jobs, { id: 8, title: 'Software Engineer' }]) }), now: NOW });
+  const two = await emp.resolveFromCareersPage(p, linked, { fetch: fakeFetch({ [`${GH}/acmeco/`]: ghBoard('X', [...jobs, { id: 8, title: 'Software Engineer' }]) }), now: NOW, website: 'acmeco.test' });
   assert.equal(two.reason, 'multiple_matches');
   const other = emp.careersFromLinks({ otherLinks: ['https://acme.wd5.myworkdayjobs.com/en-US/External/job/1'] });
   assert.deepEqual((await emp.resolveFromCareersPage(p, other, { fetch: fakeFetch({}) })).other.system, 'Workday');

@@ -352,13 +352,13 @@ test('J leave takes every work-list key; search items come back at the next peri
   const T0 = Date.now(); // `J leave` stamps the period with the real clock
   const c = noPosting(3);
   reset([c], { contactsRequested: [c.key], posts: [{ url: 'https://x.com/a/status/1', author: 'a', source: 'x', text: 't', status: 'new' }] });
-  store.updateState((s) => { s.search.webPending = { round: 0, at: new Date(T0).toISOString() }; s.search.needPending = [{ kind: 'x_hiring_posts', text: 't', query: {}, round: 0, at: new Date(T0).toISOString() }]; });
+  store.updateState((s) => { s.search.needPending = [{ kind: 'x_hiring_posts', text: 't', query: {}, round: 0, at: new Date(T0).toISOString() }]; });
   runJobs(home, ['profile', 'set', JSON.stringify({ search: { role: 'e', place: '' } })]);
   const keys = () => work.buildWorkList(store.loadState(), empty, T0, store.loadState() && JSON.parse(fs.readFileSync(path.join(process.env.TENJIN_SKILLS_DIR, 'job-search', 'profile.json'), 'utf8'))).items.map((i) => i.key);
-  assert.ok(keys().includes('web') && keys().includes('need:x_hiring_posts') && keys().includes('search'));
-  assert.equal(runJobs(home, ['leave', 'search', 'web', 'need:x_hiring_posts', '--reason', 'no_web_search']).code, 0);
-  assert.ok(!keys().includes('web') && !keys().includes('search') && !keys().includes('need:x_hiring_posts'));
-  assert.equal(work.buildWorkList(store.loadState(), empty, T0 + 86400000 * 2, { search: { role: 'e', place: '' } }).items.some((i) => i.key === 'web'), true, 'comes back at the next period');
+  assert.ok(keys().includes('need:x_hiring_posts') && keys().includes('search'));
+  assert.equal(runJobs(home, ['leave', 'search', 'need:x_hiring_posts', '--reason', 'no_web_search']).code, 0);
+  assert.ok(!keys().includes('search') && !keys().includes('need:x_hiring_posts'));
+  assert.equal(work.buildWorkList(store.loadState(), empty, T0 + 86400000 * 2, { search: { role: 'e', place: '' } }).items.some((i) => i.key === 'need:x_hiring_posts'), true, 'comes back at the next period');
   assert.equal(runJobs(home, ['leave', `contacts:${c.key}`, '--reason', 'none_found']).code, 0);
   assert.ok(!keys().includes(c.key) || !work.buildWorkList(store.loadState(), empty, T0, {}).items.some((i) => i.reason === 'contacts_requested'));
   assert.equal(runJobs(home, ['leave', `contacts:${c.key}`, '--reason', 'low_score']).code, 2, 'a reason from another kind is refused');
@@ -373,7 +373,6 @@ test('subagent runs are logged where their result is recorded, and the report sh
   reset([mkJob({ key: 'https://boards.greenhouse.io/acme/jobs/91', status: 'new', hash: 'h' })]);
   const k = 'https://boards.greenhouse.io/acme/jobs/91';
   assert.equal(runJobs(home, ['ops', JSON.stringify([{ op: 'rank', key: k, fit: 70, line: 'ok' }])]).code, 0);
-  assert.equal(runJobs(home, ['search', 'web-done']).code, 0);
   const s = store.loadState();
   assert.deepEqual(s.runs.map((r) => [r.kind, r.items]), [['review', 1]]);
   const text = report.renderReport(s, empty, { now: Date.parse(s.runs[0].at) + 1000 });

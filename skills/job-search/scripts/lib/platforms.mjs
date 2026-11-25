@@ -9,7 +9,7 @@ export const HN_SITE = 'news.ycombinator.com';
 
 export function hostOf(url) {
   try {
-    return new URL(url).hostname.toLowerCase();
+    return new URL(url).hostname.toLowerCase().replace(/\.+$/, '');
   } catch {
     return null;
   }
@@ -42,7 +42,7 @@ export function jobSiteOf(url) {
     return null;
   }
   if (u.protocol !== 'https:') return null;
-  const h = u.hostname.toLowerCase();
+  const h = u.hostname.toLowerCase().replace(/\.+$/, '');
   if (h === 'www.ycombinator.com' || h === 'ycombinator.com') return /^\/companies\/[a-z0-9-]+\/jobs\/[A-Za-z0-9-]+\/?$/.test(u.pathname) ? 'Y Combinator' : null;
   if (h === 'www.workatastartup.com' || h === 'workatastartup.com') return /^\/jobs\/\d+/.test(u.pathname) ? 'Work at a Startup' : null;
   const hit = JOB_SITES.find(([d]) => h === d || h.endsWith(`.${d}`));

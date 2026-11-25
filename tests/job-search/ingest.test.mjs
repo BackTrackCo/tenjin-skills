@@ -75,7 +75,7 @@ test('a schema failure holds the source, with the reason, and invents nothing', 
   assert.match((await run(long)).held[0], /at most 2,000 characters/);
   const noLinks = doc();
   noLinks.postings[0].applyLinks = [{ url: 'u' }];
-  assert.match((await run(noLinks)).held[0], /applyLinks/);
+  assert.match((await run(noLinks)).held[0], /apply link/);
   assert.match((await run(null)).held[0], /not an object/);
   assert.ok(store.loadState().held.some((h) => h.reason === 'source_empty' && h.detail.startsWith('routed:')));
 });

@@ -11,11 +11,30 @@ import { askFirst, tenjinAsk, tenjinHint } from './work.mjs';
 export const MAX_REDIRECTS = 3;
 export const FILE_TYPES = ['.pdf', '.doc', '.docx', '.md', '.markdown', '.txt', '.rtf'];
 const MAX_BYTES = 8 * 1024 * 1024;
+const MAX_TEXT_BYTES = 2 * 1024 * 1024;
+// The body, read in pieces and refused once it passes the limit, so a huge answer is never held whole.
+export async function readCapped(res, max) {
+  if (res.body && typeof res.body.getReader === 'function') {
+    const reader = res.body.getReader();
+    const parts = [];
+    let n = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      n += value.length;
+      if (n > max) { try { await reader.cancel(); } catch {} return null; }
+      parts.push(Buffer.from(value));
+    }
+    return Buffer.concat(parts);
+  }
+  const buf = typeof res.arrayBuffer === 'function' ? Buffer.from(await res.arrayBuffer()) : Buffer.from(await res.text());
+  return buf.length > max ? null : buf;
+}
 
 export const isLinkedIn = (url) => {
   try {
     const u = new URL(url);
-    return /(^|\.)linkedin\.com$/i.test(u.hostname) && /^\/in\//i.test(u.pathname);
+    return /(^|\.)linkedin\.com$/i.test(u.hostname.replace(/\.+$/, '')) && /^\/in\//i.test(u.pathname);
   } catch {
     return false;
   }
@@ -86,11 +105,13 @@ export async function fetchResume(url, fetchImpl = globalThis.fetch, { lookup } 
     const type = String((res.headers && res.headers.get && res.headers.get('content-type')) || '').toLowerCase();
     if (!res.ok) return signInPage(cur, res.status, '') ? { signIn: true } : { ask: true, why: `the link answered ${res.status}` };
     if (type.includes('pdf') || /\.pdf($|\?)/i.test(cur)) {
-      const buf = Buffer.from(await res.arrayBuffer());
-      if (buf.length > MAX_BYTES) return { ask: true, why: 'the file is too large' };
+      const buf = await readCapped(res, MAX_BYTES);
+      if (!buf) return { ask: true, why: 'the file is too large' };
       { const up = saveToUploads('resume.pdf', buf); return { source: 'link', url, resumePath: up, resumeUploadPath: up, needsText: true }; }
     }
-    const html = await res.text();
+    const body = await readCapped(res, MAX_TEXT_BYTES);
+    if (!body) return { ask: true, why: 'the page is too large' };
+    const html = body.toString('utf8');
     if (signInPage(cur, res.status, html)) return { signIn: true };
     const text = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
     if (text.length < 80) return { ask: true, why: 'the page has no readable text' };

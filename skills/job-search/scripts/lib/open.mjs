@@ -19,6 +19,9 @@ export function checkOpenUrl(url) {
   if (u.protocol !== 'https:') return 'https links only';
   const host = hostOf(url);
   if (!host || isLocalHost(host)) return 'local or private address';
+  // a name that carries an address inside it (127.0.0.1.nip.io) is that address
+  const emb = /^(\d{1,3})[.-](\d{1,3})[.-](\d{1,3})[.-](\d{1,3})\./.exec(host);
+  if (emb && isLocalHost(emb.slice(1).join('.'))) return 'local or private address';
   if (net.isIP(host) && isPrivateAddress(host)) return 'local or private address';
   if (u.username || u.password) return 'a link with a login in it';
   if (/["\u0000-\u001f\u007f]/.test(String(url))) return 'a link with a quote or a control character in it';
@@ -50,6 +53,7 @@ export const FALLBACK_LINE = 'Google Chrome did not open it, so the page opened 
 export function openPage(url, { spawn = spawnSync, platform = process.platform, env = process.env, exists = fs.existsSync } = {}) {
   const bad = checkOpenUrl(url);
   if (bad) return { ok: false, why: bad };
+  url = new URL(url).href; // the parsed form, never the raw string
   const run = ({ bin, args }) => spawn(bin, args, { stdio: 'ignore', timeout: 10000 });
   if (env.JOB_SEARCH_OPEN_BIN) {
     const r = run({ bin: env.JOB_SEARCH_OPEN_BIN, args: [url] });

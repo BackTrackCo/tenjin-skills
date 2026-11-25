@@ -16,7 +16,7 @@ export const ALLOWED_HOSTS = [
 // skill never fetches, opens or scripts them. Reading X posts goes through the router's supplier, not through here.
 // A local or private address, by its name or its literal IP: never fetched, at any hop of a redirect.
 export function isLocalHost(host) {
-  const h = String(host).toLowerCase().replace(/^\[|\]$/g, '');
+  const h = String(host).toLowerCase().replace(/^\[|\]$/g, '').replace(/\.+$/, '');
   if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal') || !h.includes('.') && !h.includes(':')) return true;
   const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
   if (m) {
@@ -77,7 +77,8 @@ export function assertYcRead(url) {
 export function assertAllowed(url, { allowUrl = null, yc = false } = {}) {
   if (yc) return assertYcRead(url);
   const u = new URL(url);
-  const host = u.hostname.toLowerCase();
+  const rawHost = u.hostname.toLowerCase();
+  const host = rawHost.replace(/\.+$/, ''); // a trailing dot is the same host: it never gets past the list
   if (graph().neverHosts.some((b) => host === b || host.endsWith(`.${b}`))) throw new Error(`never-automated host refused: ${host}`);
   if (allowUrl) {
     if (u.protocol !== 'https:') throw new Error(`https only: ${url}`);
@@ -85,17 +86,20 @@ export function assertAllowed(url, { allowUrl = null, yc = false } = {}) {
     if (u.href !== new URL(allowUrl).href) throw new Error('that URL is not the one allowed');
     return;
   }
-  if (!ALLOWED_HOSTS.includes(host)) throw new Error(`host not allowed: ${host}`);
+  if (rawHost !== host || !ALLOWED_HOSTS.includes(host)) throw new Error(`host not allowed: ${rawHost}`);
 }
 
 export async function guardedFetch(url, opts = {}, fetchImpl = globalThis.fetch, { allowUrl = null, lookup, yc = false } = {}) {
   assertAllowed(url, { allowUrl, yc });
   if (yc) {
     // Logged out by construction: no cookie, no credentials, and a redirect is never followed.
-    return fetchImpl(url, { method: 'GET', redirect: 'manual', credentials: 'omit', headers: { 'user-agent': 'tenjin-skills-job-search', accept: 'text/html' } });
+    return fetchImpl(url, { method: 'GET', redirect: 'manual', credentials: 'omit', signal: AbortSignal.timeout(30_000), headers: { 'user-agent': 'tenjin-skills-job-search', accept: 'text/html' } });
   }
   if (allowUrl) await assertPublicName(new URL(url).hostname, lookup); // before every hop, redirects included
+  // The fixed hosts answer in place: a redirect is never followed (the hop would go unchecked), and a request has a time limit.
   const res = await fetchImpl(url, {
+    redirect: 'manual',
+    signal: AbortSignal.timeout(30_000),
     ...opts,
     headers: { 'user-agent': 'tenjin-skills-job-search', accept: 'application/json', ...(opts.headers || {}) },
   });

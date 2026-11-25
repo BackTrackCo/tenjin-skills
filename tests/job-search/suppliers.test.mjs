@@ -188,7 +188,6 @@ test('board search: with Tenjin it runs in code by tool id, ingests board-confir
   assert.equal(calls.some((c) => typeof c.query === 'string' && /site:|boards?|search api/i.test(c.query)), false, 'no {query} route for the board search');
   const s = store.loadState();
   assert.ok(s.held.filter((h) => h.detail.startsWith('routed:web_search')).every((h) => /board .* unavailable/.test(h.detail)), 'only a board lookup may hold it (no board answers in this test), never the router call');
-  assert.equal(s.search.webPending, null, 'never a model step with Tenjin');
   const wl = (await import('../../skills/job-search/scripts/lib/work.mjs')).buildWorkList(s, empty, NOW, prof);
   assert.ok(!wl.items.some((i) => i.reason === 'web_search_due'));
   assert.equal(routed.roundNeeds(prof, s, NOW, 0).find((n) => n.kind === 'web_search').tool, 'exa-search');

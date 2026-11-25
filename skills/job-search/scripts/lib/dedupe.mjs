@@ -1,14 +1,20 @@
 import crypto from 'node:crypto';
 import { bump, companyTitleKey, normLabel } from './store.mjs';
 
-const TRACKING = /^(utm_.*|gh_src|gh_jid|lever-source|lever-origin|ref|source|src|gclid|fbclid|mc_.*)$/i;
+// gh_jid is kept: on an employer's own page it names the job.
+const TRACKING = /^(utm_.*|gh_src|lever-source|lever-origin|ref|source|src|gclid|fbclid|mc_.*)$/i;
 
 export function sha(s) {
   return crypto.createHash('sha256').update(s).digest('hex');
 }
 
 export function normalizeUrl(u) {
-  const url = new URL(u);
+  let url;
+  try {
+    url = new URL(u);
+  } catch {
+    return String(u).trim(); // a link with no scheme is kept as it came, never thrown on
+  }
   url.hash = '';
   for (const k of [...url.searchParams.keys()]) if (TRACKING.test(k)) url.searchParams.delete(k);
   url.hostname = url.hostname.toLowerCase();
@@ -21,29 +27,40 @@ export function contentHash(job) {
   return sha([job.title, job.company, job.city, job.region, job.country, job.remote, job.type, job.salary, job.desc].join('\u0001')).slice(0, 16);
 }
 
+// What a resolved job keeps when the same link comes back from a search that did not resolve it.
+const RESOLVED = ['employerPosting', 'openConfirmed', 'ats', 'board', 'sourceId', 'applyLinks', 'employerWebsite', 'employerWebsiteSource', 'unresolved', 'otherSystem', 'workAtStartupUrl', 'siteLinks'];
+const sameJobOnBoard = (a, b) => a.board && a.board === b.board && a.sourceId && a.sourceId === b.sourceId;
+
 // Merge freshly swept jobs into state. A job dropped earlier never comes back.
 export function mergeJobs(state, swept, nowIso) {
   const added = [];
   for (const j of swept) {
-    const key = normalizeUrl(j.url);
-    const ctKey = `ct:${companyTitleKey(j)}`;
-    const existing = state.jobs[key];
+    let key = normalizeUrl(j.url);
+    let existing = state.jobs[key];
+    // Another job under the same link (a generic apply link, one comment that lists several roles, no link at all) is its own
+    // record: only the same posting on the same board may change a title and a company.
+    if (existing && companyTitleKey(existing) !== companyTitleKey(j) && !sameJobOnBoard(existing, j)) {
+      key = `${key}#${sha(companyTitleKey(j)).slice(0, 10)}`;
+      existing = state.jobs[key];
+    }
     if (existing) {
       const h = contentHash(j);
       const changed = h !== existing.hash;
-      Object.assign(existing, { ...j, key, hash: h, lastSeen: nowIso, status: existing.status, firstSeen: existing.firstSeen, parked: existing.parked, fit: existing.fit, fitLine: existing.fitLine, warnings: existing.warnings, reviewedHash: existing.reviewedHash, drafts: existing.drafts, verifiedAt: nowIso, statusAt: existing.statusAt });
+      const kept = {};
+      // A repeat that carries no employer posting does not wipe the one a careers page or a board probe confirmed.
+      if (!j.employerPosting && existing.employerPosting) for (const f of RESOLVED) if (existing[f] !== undefined) kept[f] = existing[f];
+      Object.assign(existing, { ...j, key, hash: h, lastSeen: nowIso, status: existing.status, firstSeen: existing.firstSeen, parked: existing.parked, fit: existing.fit, fitLine: existing.fitLine, warnings: existing.warnings, reviewedHash: existing.reviewedHash, drafts: existing.drafts, verifiedAt: nowIso, statusAt: existing.statusAt, ...kept });
       if (changed) bump(existing); // new data for this job: a changed posting
       continue;
     }
-    if (state.dedupe[key]) continue;
-    // cross-source merge: same company and title already live under another URL
-    const twin = Object.values(state.jobs).find((x) => companyTitleKey(x) === companyTitleKey(j) && x.place === j.place);
+    // The same posting found again under another link: a job whose employer posting is this link, or the same company, title and
+    // place already live. A different opening on the same board (another job id) and a repost after a close are separate jobs.
+    const twin = Object.values(state.jobs).find((x) => (x.employerPosting && normalizeUrl(x.employerPosting.url) === key) || (companyTitleKey(x) === companyTitleKey(j) && x.place === j.place && x.status !== 'closed' && !(x.sourceId && j.sourceId && x.sourceId !== j.sourceId) && !(x.board && j.board && x.board === j.board && x.sourceId !== j.sourceId)));
     if (twin) {
       twin.alsoAt = [...new Set([...(twin.alsoAt || []), key])];
       twin.lastSeen = nowIso;
       continue;
     }
-    if (state.dedupe[ctKey]) continue;
     state.jobs[key] = { ...j, v: 1, key, hash: contentHash(j), employerPosting: j.employerPosting !== undefined ? j.employerPosting : derivePosting(j, nowIso), openConfirmed: j.openConfirmed !== undefined ? j.openConfirmed : Boolean(j.sourceId && j.board && ['greenhouse', 'lever', 'ashby'].includes(j.ats)), status: 'new', firstSeen: nowIso, lastSeen: nowIso, verifiedAt: nowIso, warnings: j.warnings || [], parked: null };
     added.push(key);
   }

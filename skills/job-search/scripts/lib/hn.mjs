@@ -2,7 +2,7 @@ import { postSeen } from './ingest.mjs';
 import { guardedFetch } from './net.mjs';
 import { HN_API_HOST } from './platforms.mjs';
 import { updateState } from './store.mjs';
-import { roleWords } from './verify.mjs';
+import { hasWord, placeKey, roleWords } from './verify.mjs';
 import { INTERVAL_MS, frequencyOf } from './schedule.mjs';
 
 // Hacker News through its official APIs only, never news.ycombinator.com (the YC Terms of Use ban automated access to the site):
@@ -32,8 +32,9 @@ export async function latestHiringThread(fetchImpl) {
 export function keepPost(body, profile) {
   const words = roleWords(profile);
   const t = body.toLowerCase();
-  if (!words.length || !words.some((w) => t.includes(w))) return false;
-  const place = String((profile.search || {}).place || '').toLowerCase().trim();
+  if (!words.length || !words.some((w) => hasWord(t, w))) return false;
+  // The person's city, not the whole string a resume gave: "San Francisco, CA" and "New York City" match "San Francisco" and "New York, NY".
+  const place = placeKey((profile.search || {}).place);
   return /\bremote\b/.test(t) || (place !== '' && t.includes(place));
 }
 

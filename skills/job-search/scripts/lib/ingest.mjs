@@ -27,6 +27,7 @@ const isStr = (v) => typeof v === 'string' && v.trim() !== '';
 // The skill's own shape, never a seller's raw body. Code never guesses a field.
 export function validateIngest(o) {
   if (!o || typeof o !== 'object' || Array.isArray(o)) return 'not an object';
+  const nulls = (name, list) => (Array.isArray(list) && list.some((x) => !x || typeof x !== 'object' || Array.isArray(x)) ? `${name} must hold objects only: rewrite the entry that is empty or not an object` : null);
   if (!NEEDS.includes(o.need)) return `need must be one of ${NEEDS.join(', ')}`;
   if (o.need === 'company_lookup') {
     if (!isStr(o.status) || !DELIVERED.includes(o.status)) return `status "${o.status}" is not a delivered result: write "fulfilled"`;
@@ -66,9 +67,11 @@ export function validateIngest(o) {
   if (o.need === 'web_search') {
     if (o.raw !== undefined) {
       if (!Array.isArray(o.raw) || !o.raw.every((q) => q && typeof q.query === 'string' && Array.isArray(q.results))) return 'raw must be a list of {query, results[]}';
+      { const n = nulls('a raw query result list', o.raw.flatMap((q) => q.results)); if (n) return n; }
       o = normalizeWeb(o);
     }
     if (!Array.isArray(o.results)) return 'results must be a list';
+    { const n = nulls('results', o.results); if (n) return n; }
     if (!o.results.length) return 'the list is empty';
     for (const [i, r] of o.results.entries()) {
       const at = `result ${i}`;
@@ -82,6 +85,7 @@ export function validateIngest(o) {
   }
   const list = POSTING_NEEDS.includes(o.need) ? o.postings : o.posts;
   if (!Array.isArray(list)) return POSTING_NEEDS.includes(o.need) ? 'postings must be a list' : 'posts must be a list';
+  { const n = nulls(POSTING_NEEDS.includes(o.need) ? 'postings' : 'posts', list); if (n) return n; if (o.leads !== undefined) { const m = nulls('leads', o.leads); if (m) return m; } if (o.outcomes !== undefined) { const m = nulls('outcomes', o.outcomes); if (m) return m; } }
   const reviewed = Array.isArray(o.batch);
   if (!list.length && !reviewed) return 'the list is empty';
   if (reviewed) {
@@ -107,6 +111,7 @@ export function validateIngest(o) {
       if (!(p.postedAt === null || isStr(p.postedAt)) || (p.postedAt && Number.isNaN(Date.parse(p.postedAt)))) return `${at}: postedAt must be a date or null`;
       const s = p.salary;
       if (s !== null && !(s && typeof s === 'object' && ['min', 'max'].every((k) => s[k] === null || typeof s[k] === 'number') && typeof s.currency === 'string' && typeof s.period === 'string')) return `${at}: salary must be null or {min, max, currency, period}`;
+      if (Array.isArray(p.applyLinks) && p.applyLinks.some((l) => l && isStr(l.url) && !/^https?:\/\//i.test(l.url))) return `${at}: every apply link must start with http:// or https://`;
       if (!Array.isArray(p.applyLinks) || p.applyLinks.some((l) => !l || !isStr(l.url) || typeof l.publisher !== 'string')) return `${at}: applyLinks must be a list of {url, publisher}`;
       if (typeof p.description !== 'string' || p.description.length > 2000) return `${at}: description must be text of at most 2,000 characters`;
       if (!isStr(p.sourceUrl)) return `${at}: sourceUrl is required`;
@@ -162,7 +167,7 @@ export async function planIngest({ obj: given, state, profile, overlay, fetch, n
     const withBoard = obj.posts.filter((p) => postLinks(p).some((u) => resultKind(u).board));
     for (const p of obj.posts) if (!withBoard.includes(p) && !seenAlready(p)) plan.posts.push({ url: p.url, author: p.author, postedAt: p.postedAt, text: p.text.slice(0, 1000), status: 'new', source: 'x' });
     if (withBoard.length) {
-      const sub = await planIngest({ obj: { ...obj, need: 'web_search', status: 'fulfilled', results: withBoard.map((p) => ({ url: postLinks(p).find((u) => resultKind(u).board) })) }, state, profile, overlay, fetch, now });
+      const sub = await planIngest({ obj: { ...obj, need: 'web_search', status: 'fulfilled', results: withBoard.flatMap((p) => postLinks(p).filter((u) => resultKind(u).board).map((url) => ({ url }))) }, state, profile, overlay, fetch, now });
       plan.jobs.push(...sub.jobs);
       plan.closed += sub.closed;
       plan.unresolved += sub.unresolved;
@@ -172,7 +177,8 @@ export async function planIngest({ obj: given, state, profile, overlay, fetch, n
     return plan;
   }
   const eff = effectiveProfile(profile, overlay);
-  eff.windowDays = catchUpDays(state, now, profile.windowDays || 14);
+  // The routed window runs from the last routed search, never from the board sweep's clock; a window the person set holds.
+  eff.windowDays = profile.windowDays || catchUpDays({ sweep: { lastAt: (state.routed || {}).lastSearchAt || null } }, now, 14);
   plan.round = obj.query && obj.query.round;
   const boards = new Map();
   const getBoard = async (t) => {
@@ -202,7 +208,8 @@ export async function planIngest({ obj: given, state, profile, overlay, fetch, n
     const asJob = { title: p.title, company: p.employer, city: p.city, region: p.region, country: p.country, remote: p.remote, posted: p.postedAt, type: p.employmentType, salary: salaryText(p.salary), desc: p.description };
     const screen = screenJob(asJob, eff, overlay, now);
     // A routed posting older than the window stays only when its board confirms that it is open.
-    const tooOld = screen.drop.includes('outside_date_window');
+    // A Hacker News post is dated from its own comment, so its age says nothing about the job: the board decides whether it is open.
+    const tooOld = need !== 'hn_hiring_posts' && screen.drop.includes('outside_date_window');
     if (screen.drop.filter((d) => d !== 'outside_date_window').length) {
       plan.dropped++;
       continue;
@@ -346,7 +353,7 @@ async function webPostings(results, getBoard, state) {
 // The company lookup: the domain is saved as the job's employer website only after code checks it against the company name and the
 // board's company name. A domain that does not match is not saved, and the people search then runs by name and city.
 function planCompany({ obj, state, plan }) {
-  const job = state.jobs[obj.jobKey];
+  const job = Object.hasOwn(state.jobs, obj.jobKey) ? state.jobs[obj.jobKey] : undefined;
   if (!job) {
     plan.held.push({ reason: 'source_empty', detail: `routed:company_lookup: unknown job ${obj.jobKey}` });
     return plan;
@@ -361,7 +368,7 @@ function planCompany({ obj, state, plan }) {
 }
 
 function planPeople({ obj, state, plan }) {
-  if (!state.jobs[obj.jobKey]) {
+  if (!Object.hasOwn(state.jobs, obj.jobKey)) {
     plan.held.push({ reason: 'source_empty', detail: `routed:people_search: unknown job ${obj.jobKey}` });
     return plan;
   }
@@ -372,7 +379,7 @@ function planPeople({ obj, state, plan }) {
 // Step 3: a Haiku step read the employer's careers page and returned its links. Code fetches nothing from that page;
 // it runs the ownership and job checks through the board APIs only.
 async function planCareers({ obj, state, fetch, now, plan }) {
-  const job = state.jobs[obj.jobKey];
+  const job = Object.hasOwn(state.jobs, obj.jobKey) ? state.jobs[obj.jobKey] : undefined;
   if (!job) {
     plan.held.push({ reason: 'source_empty', detail: `routed:careers_page: unknown job ${obj.jobKey}` });
     return plan;
@@ -524,7 +531,7 @@ export async function resolveBoardPosts({ profile, overlay, fetch, now = Date.no
   const state = loadState();
   const found = (state.posts || []).filter((p) => p.status === 'new' && boardLinksOf(p).length);
   if (!found.length) return { resolved: 0 };
-  const results = found.map((p) => ({ url: boardLinksOf(p)[0] }));
+  const results = found.flatMap((p) => boardLinksOf(p).map((url) => ({ url })));
   const plan = await planIngest({ obj: { need: 'web_search', status: 'fulfilled', query: { role: 'post', place: '', remote: false, since: null }, results }, state, profile, overlay, fetch, now });
   if (plan.held.length) return { resolved: 0, held: plan.held.length }; // a board that did not answer: the posts stay queued
   plan.noClock = true;
@@ -532,7 +539,7 @@ export async function resolveBoardPosts({ profile, overlay, fetch, now = Date.no
   plan.leads = [];
   for (const j of plan.jobs) {
     const ep = j.employerPosting;
-    const p = ep && found.find((x) => { const t = boardTarget([{ url: boardLinksOf(x)[0] }]); return t && t.token === ep.token && String(t.jobId) === String(ep.jobId); });
+    const p = ep && found.find((x) => boardLinksOf(x).some((u) => { const t = boardTarget([{ url: u }]); return t && t.token === ep.token && String(t.jobId) === String(ep.jobId); }));
     if (p) j.fromPost = p.url;
   }
   persistIngest(plan, now);

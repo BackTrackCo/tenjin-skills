@@ -114,6 +114,7 @@ const commands = {
     if (sub === 'set') {
       ensureDir(stateDir());
       const given = readJsonArg(arg);
+      if (!given || typeof given !== 'object' || Array.isArray(given)) return out({ error: 'profile set takes a JSON object, for example {"remote": true}' }, 2);
       // A field from an earlier version is never converted: it is refused with its name, and removed with null.
       const next = { ...readProfile(), ...given };
       for (const o of oldFields(given)) {
@@ -592,7 +593,14 @@ const commands = {
       obj = null;
     }
     const state = loadState();
-    const r = await ingest({ obj, state, profile: readProfile(), overlay: loadOverlay(), fetch: globalThis.fetch });
+    let r;
+    try {
+      r = await ingest({ obj, state, profile: readProfile(), overlay: loadOverlay(), fetch: globalThis.fetch });
+    } catch (e) {
+      // The file could not be read as the shape the need takes: say what to rewrite, and let the item come back for it.
+      if (obj) updateState((s) => releaseClaims(s, (key) => key === obj.jobKey || (Array.isArray(obj.batch) && key.startsWith('posts:')) || key === `need:${obj.need}` || (obj.need === 'web_search' && (key === 'web' || key === 'search'))));
+      return out({ error: `the result file was not ingested (${e.message}): rewrite it in the shape the need takes, with no empty or non-object entries` }, 2);
+    }
     if (obj) updateState((s) => releaseClaims(s, (key) => key === obj.jobKey || (Array.isArray(obj.batch) && key.startsWith('posts:')) || key === `need:${obj.need}` || (obj.need === 'web_search' && (key === 'web' || key === 'search'))));
     if (obj && !r.held.length) updateState((s) => logRun(s, obj.need === 'web_search' ? 'web_search' : obj.need === 'careers_page' ? 'careers' : Array.isArray(obj.batch) ? 'post_review' : obj.need === 'people_search' ? 'contacts' : 'search', 1));
     return out(r, r.held.length && !r.added && !r.applyYourself && !r.posts ? 4 : 0);
@@ -853,12 +861,12 @@ const commands = {
       // Ask first: while the session's Tenjin ask is due, the ask is printed in place of the free queries.
       const ask = askFirst(st, 'daily_search', { unattended: flags.unattended === true || batch.isActive() && batch.batchMode() === 'unattended' });
       if (ask) return out(ask);
-      const round = st.search.webPending ? st.search.webPending.round : st.search.session ? st.search.session.round : 0;
+      // a finished session starts again at round 0: its last round is not today's plan
+      const round = st.search.session && !st.search.session.finished ? st.search.session.round : 0;
       return out(webPlan(profile, round, st.routed.lastSearchAt));
     }
-    if (sub === 'web-done') return out(updateState((s) => { s.search.webPending = null; return { done: true }; }));
     if (sub === 'done') return out(updateState((s) => { s.search.needPending = (s.search.needPending || []).filter((n) => n.kind !== kind); return { done: kind }; }));
-    if (sub !== 'next') return out({ error: 'search plan | next | web-done | done <need kind>' }, 2);
+    if (sub !== 'next') return out({ error: 'search plan | next | done <need kind>' }, 2);
     return out(updateState((s) => advanceSearch(s, profile)));
   },
 

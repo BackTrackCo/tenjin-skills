@@ -14,7 +14,6 @@ export function emptyState() {
   return {
     schemaVersion: SCHEMA_VERSION,
     jobs: {},
-    dedupe: {},
     sources: {},
     sweep: { lastAt: null },
     approvals: {},
@@ -54,7 +53,7 @@ export function emptyState() {
     routed: { skipReason: null, lastSearchAt: null, lastCost: null },
     watched: null,
     hn: { seen: [], thread: null, lastRead: 0, lastAt: null, remaining: 0 },
-    search: { session: null, webPending: null },
+    search: { session: null },
     emails: null,
     watcherEver: false,
     tenjinSetup: null,

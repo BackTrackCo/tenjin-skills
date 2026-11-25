@@ -20,7 +20,6 @@ export const POST_BATCH = 25;
 const HOUR = 3600000;
 const DAY = 24 * HOUR;
 const GATES = {
-  web_search_due: 'Free web searches for this round: `J search plan` prints the exact queries. One Haiku step runs them and returns the raw results; `J ingest` the file (code extracts and sorts the URLs), then `J search web-done`.',
   need_due: 'A routed need that code cannot run (no adapter for its supplier). One Haiku step: state it in plain words through `request` if the tool is there, write the ingest file for it (references/search.md, section 2), `J ingest`, then `J search done <kind>`. No Tenjin tool: `J leave need:<kind> --reason no_web_search`.',
   email_due: 'Intro emails to addresses the poster published. Attended: `J email batch`, `J ask email`, `J email approve <ids> --skip-rest`. Then `J email next` (add --unattended under the email consent) and send only what it hands out; `J email sent <id>` after each.',
   fill_ready: 'Filled and waiting. Do not submit. The person checks the open tab, presses submit and says so; then `J submitted <key>`.',
@@ -287,7 +286,6 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
     items.push({ key: 'search', reason: 'search_due', title: 'Daily routed search', company: '', gate: GATES.search_due, hint: tenjinHint(state, 'daily_search'), askTenjin: tenjinAsk(state, { unattended: opts.unattended === true }), query: { role: profile.search.role, place: profile.search.place || '', remote: profile.search.remote === true, since: since.toISOString().slice(0, 10), variant: variantFor(profile, round), round }, routed: !state.held.some((h) => h.reason === 'tenjin_missing') && !['missing', 'outdated', 'unfunded'].includes((state.tenjin || {}).status) });
   }
   // The web search stays a model step with Tenjin (the router answers native): one item per round, until recorded as done.
-  if (state.search.webPending && !itemStillLeft(state, 'web', profile, now)) items.push({ key: 'web', reason: 'web_search_due', title: 'Free web searches', company: '', gate: GATES.web_search_due, query: { role: profile.search && profile.search.role, place: profile.search && profile.search.place, round: state.search.webPending.round } });
   // A routed need that code could not run (no adapter, an unknown supplier) is one Haiku item in the round's wake.
   for (const n of state.search.needPending || []) if (!itemStillLeft(state, `need:${n.kind}`, profile, now)) items.push({ key: `need:${n.kind}`, reason: 'need_due', title: `Search: ${n.kind.replace(/_/g, ' ')}`, company: '', gate: GATES.need_due, query: { ...n.query, kind: n.kind, text: n.text, round: n.round } });
   // One Haiku subagent takes a batch of hiring posts and writes one ingest file. 25 posts is about 6,000 tokens of
@@ -355,7 +353,7 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
   }
   for (const i of items) {
     const job = state.jobs[i.key];
-    i.v = i.reason === 'email_due' ? sha(canonical(pendingEmails(state).map((c) => c.id))).slice(0, 10) : i.reason === 'web_search_due' ? `${state.search.webPending.round}:${state.search.webPending.at}` : i.reason === 'need_due' ? (() => { const n = state.search.needPending.find((x) => `need:${x.kind}` === i.key); return `${n.round}:${n.at}`; })() : job ? itemVersion(job) : i.reason === 'search_due' ? `${(state.search.session || {}).round ?? 'new'}:${state.routed.lastSearchAt}` : String(i.posts ? i.posts.length : 0);
+    i.v = i.reason === 'email_due' ? sha(canonical(pendingEmails(state).map((c) => c.id))).slice(0, 10) : i.reason === 'need_due' ? (() => { const n = state.search.needPending.find((x) => `need:${x.kind}` === i.key); return `${n.round}:${n.at}`; })() : job ? itemVersion(job) : i.reason === 'search_due' ? `${(state.search.session || {}).round ?? 'new'}:${state.routed.lastSearchAt}` : String(i.posts ? i.posts.length : 0);
     { const ep = (state.claimEpochs || {})[ckey(i)]; if (ep) i.v = `${i.v}~${ep}`; } // a timed-out claim on a still-open item: one more wake
     i.waitsForPerson = waitsForPerson(state, profile, i, overlay);
   }

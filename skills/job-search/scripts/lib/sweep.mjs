@@ -63,7 +63,7 @@ export async function runSweep({ state, profile, overlay, fetch, now = Date.now(
     }
     sources[id] = { ok: true, count: res.jobs.length, at: new Date(now).toISOString() };
     const present = new Set(res.jobs.map((j) => normalizeUrl(j.url)));
-    for (const j of Object.values(state.jobs)) if (j.board === id && !present.has(j.key)) closedKeys.push(j.key);
+    for (const j of Object.values(state.jobs)) if (j.board === id && !present.has(j.key) && !(j.employerPosting && present.has(normalizeUrl(j.employerPosting.url)))) closedKeys.push(j.key);
     for (const j of res.jobs) {
       const screen = screenJob(j, eff, overlay, now, { source: 'watched' });
       if (screen.drop.length) {

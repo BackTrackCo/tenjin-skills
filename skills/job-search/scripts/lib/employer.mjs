@@ -119,7 +119,7 @@ export function careersFromLinks({ boardLinks = [], otherLinks = [], signIn = fa
     const p = parseBoardUrl(u);
     if (p && SYSTEMS.includes(p.ats) && p.token && /^[A-Za-z0-9._-]+$/.test(p.token) && p.token !== 'embed' && !boards.some((b) => b.ats === p.ats && b.token === p.token)) boards.push({ ats: p.ats, token: p.token, region: p.region });
   }
-  if (boards.length) return { kind: 'board', boards };
+  if (boards.length) return { kind: 'board', boards, careersUrl };
   if (listings.length) return { kind: 'listing', listings, careersUrl };
   const other = [...boardLinks, ...otherLinks].map(otherSystem).find(Boolean);
   return other ? { kind: 'none', other } : { kind: 'none' };
@@ -156,11 +156,18 @@ export async function resolveFromCareersPage(posting, page, { fetch, now = Date.
   if (page.kind === 'none') return { reason: 'no_careers_page', other: page.other || null };
   if (page.kind === 'listing') return matchListing(posting, page, website, now);
   const boards = [];
+  let foreign = 0;
+  const fromEmployerPage = Boolean(page.careersUrl && website && onEmployerSite(page.careersUrl, website));
   for (const b of page.boards) {
     const r = await fetchBoard({ ...b, name: '' }, fetch);
-    if (r.ok) boards.push({ ...b, jobs: r.jobs });
+    if (!r.ok) continue;
+    // A board link counts only when it is the employer's own: linked from a page on the employer's site, named like the employer
+    // (the token), or, on Greenhouse, a board whose own company name is the employer's. Any other board is somebody else's.
+    const owned = fromEmployerPage || candidates(posting.employer, website).includes(b.token) || (b.ats === 'greenhouse' && r.jobs.length > 0 && employerName(r.jobs[0].company) === employerWords(posting.employer).join(' '));
+    if (owned) boards.push({ ...b, jobs: r.jobs });
+    else foreign++;
   }
   const res = matchInBoards(posting, boards, 'careers_page', now);
   if (res.match) return res;
-  return { reason: res.reason || 'no_board' };
+  return { reason: res.reason || (foreign ? 'unconfirmed_board' : 'no_board') };
 }
