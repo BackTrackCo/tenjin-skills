@@ -222,7 +222,7 @@ test('the unattended consent needs no EEO text; a woken turn holds the first una
   assert.deepEqual(store.loadState().jobs[j.key].parked.reasons, ['eeo_missing']);
   assert.equal(woken.json.ask, undefined, 'nobody is asked in a woken turn');
   const first = work.workList({ now: Date.now(), commit: true });
-  assert.match(first.notify, /1 stop needs you at Acme \(eeo missing\)/, 'the usual push');
+  assert.match(first.notify, /1 stop needs you at Acme \(a demographic question\)/, 'the usual push');
   assert.equal(work.workList({ now: Date.now(), commit: true }).notify, null, 'one push, not a second');
   // the next attended turn asks the plain question
   const q = J('eeo', 'question', '--key', j.key).json;

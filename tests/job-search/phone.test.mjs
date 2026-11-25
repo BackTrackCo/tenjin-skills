@@ -111,7 +111,7 @@ test('the read-back refills a field once, then holds the job as fill_problem and
   assert.deepEqual(second.json.show, [{ label: 'Email', value: 'wrong@x.test' }]);
   assert.equal(store.loadState().jobs[job.key].parked.reasons[0], 'fill_problem');
   const waiting = (async () => (await import(`${S}work.mjs`)).notifyLine(store.loadState(), empty, Date.now()).line)();
-  return waiting.then((line) => assert.match(line, /fill problem/));
+  return waiting.then((line) => assert.match(line, /a field that did not fill right/));
 });
 
 test('a filled job offers Submit it now, I\'ll submit in Chrome and Not this one; Submit it now is checked by may-submit on the unchanged sheet', () => {
