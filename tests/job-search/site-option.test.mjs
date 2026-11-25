@@ -122,7 +122,6 @@ test('every J open names Google Chrome as the app, never the extension; Chrome m
   const calls = [];
   const spawn = (fail) => (bin, args) => { calls.push([bin, ...args]); return { status: fail && calls.length === 1 ? 1 : 0 }; };
   assert.deepEqual(open.chromeCommand(IN, 'darwin'), { bin: 'open', args: ['-a', 'Google Chrome', IN] });
-  assert.deepEqual(open.chromeCommand(IN, 'win32'), { bin: 'cmd', args: ['/c', 'start', '', 'chrome', IN] });
   assert.deepEqual(open.chromeCommand(IN, 'linux'), { bin: 'google-chrome', args: [IN] });
   const ok = open.openPage(IN, { spawn: spawn(false), platform: 'darwin', env: {} });
   assert.deepEqual(ok, { ok: true, browser: 'chrome' });
@@ -138,6 +137,35 @@ test('every J open names Google Chrome as the app, never the extension; Chrome m
   assert.equal(open.openPage('https://127.0.0.1/x', { spawn: spawn(false), platform: 'darwin', env: {} }).ok, false, 'local addresses still refused');
   const src = fs.readFileSync(path.join(ROOT, 'skills', 'job-search', 'scripts', 'lib', 'open.mjs'), 'utf8');
   assert.doesNotMatch(src, /claude-in-chrome|mcp__/);
+});
+
+test('on Windows no shell is started: Chrome is spawned directly from its install paths, the link is one argument, and the fallback line shows when Chrome is not found', () => {
+  const env = { ProgramFiles: 'C:\\Program Files', 'ProgramFiles(x86)': 'C:\\Program Files (x86)', LocalAppData: 'C:\\Users\\p\\AppData\\Local' };
+  const tail = 'Google\\Chrome\\Application\\chrome.exe';
+  const all = [`C:\\Program Files\\${tail}`, `C:\\Program Files (x86)\\${tail}`, `C:\\Users\\p\\AppData\\Local\\${tail}`];
+  const risky = 'https://example.com/apply?a=1&b=2|c^d%20e';
+  assert.equal(open.checkOpenUrl(risky), null);
+  // the order: Program Files, then Program Files (x86), then LocalAppData; the first that exists
+  for (const [have, want] of [[all, all[0]], [all.slice(1), all[1]], [all.slice(2), all[2]]]) assert.equal(open.chromeCommand(risky, 'win32', { env, exists: (p) => have.includes(p) }).bin, want);
+  assert.equal(open.chromeCommand(risky, 'win32', { env, exists: () => false }), null);
+  const calls = [];
+  const spawn = (bin, args, o) => { calls.push({ bin, args, o }); return { status: 0 }; };
+  assert.deepEqual(open.openPage(risky, { spawn, platform: 'win32', env, exists: (p) => p === all[1] }), { ok: true, browser: 'chrome' });
+  assert.deepEqual(calls.map((c) => [c.bin, c.args]), [[all[1], [risky]]], 'the link reaches spawn as exactly one argument, unchanged');
+  calls.length = 0;
+  const fb = open.openPage(risky, { spawn, platform: 'win32', env, exists: () => false });
+  assert.equal(fb.browser, 'default');
+  assert.equal(fb.line, open.FALLBACK_LINE);
+  assert.deepEqual(calls.map((c) => [c.bin, c.args]), [['rundll32.exe', ['url.dll,FileProtocolHandler', risky]]]);
+  for (const c of calls) {
+    assert.doesNotMatch(c.bin, /cmd|powershell|pwsh/i);
+    assert.equal(c.args.some((a) => /^\/c$|^-command$/i.test(a)), false);
+    assert.ok(!c.o.shell, 'no shell option');
+  }
+  // defense in depth: a quote or a control character is refused
+  for (const bad of ['https://example.com/a"b', 'https://example.com/a\u0001b', 'https://example.com/a\nb']) assert.ok(open.checkOpenUrl(bad), JSON.stringify(bad));
+  const src = fs.readFileSync(path.join(ROOT, 'skills', 'job-search', 'scripts', 'lib', 'open.mjs'), 'utf8');
+  assert.doesNotMatch(src.replace(/\/\/.*$/gm, ''), /cmd|powershell|shell\s*:\s*true/i);
 });
 
 test('an old linkedin value is refused with an error naming the field; old job fields in state are refused too', () => {
