@@ -4,7 +4,7 @@ In an attended turn, every question that has choices goes through Claude Code's 
 
 - Each option has a short label and a one-line description. The default is the first option, labelled "(Recommended)", or "(from your resume)" for a resume guess. The tool adds its own "Other" free-text answer.
 - Group the questions of one moment in one call: 1 to 4 questions, 2 to 4 options each.
-- The start: the resume path as a plain question (free text), then one call (`J ask start`) with the apply mode, the search frequency, the positions per period and Remote Control.
+- The start: the resume as a plain question (a file, a link or the text), then one call (`J ask start`) with the apply mode, the search frequency and the positions, then the `/rc` reminder line (not a question). Many sheets at once, attended: `J ask approve`, then `J ask approve-pick` for the groups of 16.
 - The same tool for: the role, place or remote when the resume leaves it open (`J ask resume`), the Tenjin ask (`J ask tenjin`), the EEO choice (`J ask eeo`), the optional-writing `skip` or `wait` (`J ask optional-writing`), the attended yes for a sheet when it fits (`J ask yes`), and a missing fact with fixed answers (`J ask fact`, with "Skip this job").
 - A fact with no fixed answers (a phone number, pay) can be a plain question, or the tool with "Skip this job" and the answer through "Other".
 - Never in an unattended turn: nobody can answer. Hold the job, send the notification, and ask when the person is back. `J ask` refuses in an unattended batch.
