@@ -40,10 +40,12 @@ test('every illegal transition is refused, every legal one lands', () => {
 });
 
 test('a contact needs a source link; an approval must name the current sheet hash', () => {
-  const j = mkJob({ sheet: { hash: 'abc' } });
+  const j = mkJob({ sheet: { hash: 'abc', passed: false } });
   seed([j]);
   assert.throws(() => store.applyOps([{ op: 'contact', key: j.key, name: 'A', title: 'VP' }]), /source link/);
   assert.throws(() => store.applyOps([{ op: 'approve', key: j.key, sheetHash: 'zzz' }]), /current sheet hash/);
+  assert.throws(() => store.applyOps([{ op: 'approve', key: j.key, sheetHash: 'abc' }]), /passed its check/);
+  store.updateState((st) => { st.jobs[j.key].sheet.passed = true; });
   store.applyOps([{ op: 'approve', key: j.key, sheetHash: 'abc' }]);
   assert.equal(store.loadState().approvals[j.key].sheetHash, 'abc');
 });
