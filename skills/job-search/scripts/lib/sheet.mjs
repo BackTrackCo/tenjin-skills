@@ -48,19 +48,68 @@ export function checkDraft(text, { limit = null, profile = {} } = {}) {
   return problems;
 }
 
-export const TAGS = ['fact', 'upload', 'answer', 'new_writing'];
+export const TAGS = ['fact', 'upload', 'answer', 'record', 'new_writing'];
 
 // Every field carries one source tag:
 //   fact: a profile value (the EEO choice and a select option chosen from a fact included)
 //   upload: the resume file
 //   answer: an earlier answer that matches by the code-only rule (answers.mjs)
+//   record: a value from the skill's own records about this job (where it was found), mapped to the form's own option by code
 //   new_writing: drafted text the person has not approved for this exact question
+// ---- answers from the skill's own records ----------------------------------------------------------------
+// "Where did you hear about this role?" is answered from the source the search recorded for the job, mapped by code to one of
+// the form's own options, word for word, with a fixed word list per source. A saved answer for the same question comes first
+// (earlier answers are matched before this), and a free-text field gets a short phrase of the source, not new writing. With no
+// matching option the question stays a normal new question. "Referral" only on the person's word; an AI-assistant option is
+// never the default.
+const HEARD = /\b(hear|heard|find out|found out|learn|learned|come across|discover)\b.*\b(role|position|job|us|opportunity|company|vacancy)\b|\bhow did you (hear|find|learn)\b|\bsource\b.*\b(applicant|application)\b|\breferral source\b/i;
+const WORDS = {
+  employer: [['company website', 'careers page', 'company careers', 'career page', 'careers site', 'company site', 'corporate website', 'job board', 'job boards', 'other job boards', 'other']],
+  posting: [['job board', 'job boards', 'other job boards', 'online job board', 'other']],
+  linkedin: [['linkedin']],
+  x: [['x', 'twitter', 'x (twitter)', 'social media']],
+  hn: [['hacker news', 'developer communities', 'developer community', 'online community', 'online communities', 'community']],
+};
+const PHRASE = { linkedin: 'LinkedIn', x: 'X', hn: 'Hacker News', posting: 'Job board' };
+export function recordedSource(job) {
+  const from = String(job.fromPost || job.sourceUrl || '');
+  if (/(^|\/\/)(www\.)?(x|twitter)\.com\//i.test(from)) return 'x';
+  if (job.via === 'hn' || /ycombinator\.com|hacker-?news/i.test(from)) return 'hn';
+  if (/linkedin\.com/i.test(from)) return 'linkedin';
+  if (job.via === 'routed' || job.via === 'web') return 'posting';
+  return 'employer';
+}
+const lc = (t) => String(t).toLowerCase().replace(/\s+/g, ' ').trim();
+export function recordAnswer(job, q) {
+  if (!HEARD.test(q.label)) return null;
+  const src = recordedSource(job);
+  const options = (q.options || []).filter(Boolean);
+  if (!options.length) {
+    if (q.type && !/text/.test(q.type)) return null;
+    const ep = job.employerPosting;
+    return src === 'employer' ? (ep && ep.system ? `${ep.system[0].toUpperCase()}${ep.system.slice(1).replace(/_/g, ' ')} job board` : 'Company careers page') : PHRASE[src];
+  }
+  for (const list of WORDS[src]) {
+    for (const w of list) {
+      const hit = options.find((o) => lc(o) === w);
+      if (hit) return hit;
+    }
+    // a looser word: an option that contains it as a whole word (never the AI-assistant options, never Referral)
+    for (const w of list.filter((x) => x.length > 3)) {
+      const hit = options.find((o) => new RegExp(`\\b${w}\\b`).test(lc(o)) && !/referral|\bai\b|llm|assistant/.test(lc(o)));
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
 export function buildSheet({ job, questions, profile, answers = [], drafts = {} }) {
   const facts = profile.facts || {};
   const fields = [];
   const unanswered = [];
   const forbidden = [];
   let eeoMissing = false;
+  const eeoFields = [];
   for (const q of questions) {
     if (FORBIDDEN.test(q.label)) {
       forbidden.push(q.label);
@@ -74,10 +123,20 @@ export function buildSheet({ job, questions, profile, answers = [], drafts = {} 
       tag = 'upload';
     } else if (EEO.test(q.label)) {
       const e = profile.eeo;
+      // A per-field answer is reused only for the same option text; a field with no answer, or an answer the form no longer
+      // offers, is asked (the form's own options, one field at a time).
+      const mine = e && e !== 'decline_all' ? (e.answers || {})[nl] : null;
+      const offered = !q.options || !q.options.length || q.options.includes(mine);
       if (!e) eeoMissing = true;
-      else {
-        value = e === 'decline_all' ? 'Decline to self-identify' : (e.answers || {})[nl] || 'Decline to self-identify';
+      else if (e === 'decline_all') {
+        value = 'Decline to self-identify';
         tag = 'fact';
+      } else if (mine && offered) {
+        value = mine;
+        tag = 'fact';
+      } else {
+        eeoMissing = true;
+        eeoFields.push({ label: q.label, options: q.options || [] });
       }
     } else {
       const earlier = matchAnswer(q, answers);
@@ -85,6 +144,9 @@ export function buildSheet({ job, questions, profile, answers = [], drafts = {} 
       if (earlier) {
         value = earlier.answer;
         tag = 'answer';
+      } else if (recordAnswer(job, q)) {
+        value = recordAnswer(job, q);
+        tag = 'record';
       } else if (hit && facts[hit[1]] !== undefined && facts[hit[1]] !== '') {
         value = String(facts[hit[1]]);
         tag = 'fact';
@@ -105,7 +167,7 @@ export function buildSheet({ job, questions, profile, answers = [], drafts = {} 
     }
     fields.push({ label: q.label, value, tag, required: q.required });
   }
-  const sheet = { job: job.key, fields, unanswered, forbidden, eeoMissing };
+  const sheet = { job: job.key, fields, unanswered, forbidden, eeoMissing, eeoFields };
   sheet.hash = sha(canonical({ job: job.key, fields: fields.map((f) => [f.label, f.value]) })).slice(0, 16);
   return sheet;
 }

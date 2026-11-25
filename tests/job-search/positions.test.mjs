@@ -19,7 +19,7 @@ const profile = { eeo: 'decline_all', unattended: { roles: ['engineer'], places:
 
 // ---- the start questions: four in one call after the resume ------------------
 test('the start: the resume is a plain question, then one call with four questions and a /rc reminder', () => {
-  assert.match(q.START_RESUME_QUESTION, /plain question/);
+  assert.equal(q.START_RESUME_QUESTION, undefined, 'the leftover path question is gone');
   const p = q.startQuestions();
   assert.equal(p.questions.length, 4);
   assert.deepEqual(p.questions.map((x) => x.header), ['Apply mode', 'Search', 'Positions', 'Where']);
@@ -27,16 +27,18 @@ test('the start: the resume is a plain question, then one call with four questio
   assert.doesNotMatch(JSON.stringify(p), /remote-control|Remote Control/);
   assert.deepEqual(q.validateAsk(p), []);
   for (const x of p.questions) assert.match(x.options[0].label, /\(Recommended\)$/);
+  assert.doesNotMatch(JSON.stringify(p), /\bOther\b/, 'no question text names the free-text option');
   assert.deepEqual(p.questions[1].options.map((o) => o.label), ['Every day (Recommended)', 'Twice a day', 'Once a week']);
   assert.deepEqual(p.questions[2].options.map((o) => o.label), ['50 now, 10 daily (Recommended)', '100 now, 20 daily', '20 now, 5 daily', 'No limit']);
-  assert.deepEqual(p.questions[0].options.map((o) => o.label), ['Ask me each time (Recommended)', 'Auto apply, approve new answers', 'Fully auto apply']);
+  assert.deepEqual(p.questions[0].options.map((o) => o.label), ['Ask me each time (Recommended)', 'Auto apply', 'Fill only, I submit', 'Just open the pages']);
   assert.deepEqual(p.questions[3].options.map((o) => o.label), ['Employer\'s site (Recommended)', 'LinkedIn, I apply', 'Ask me each job']);
-  assert.match(p.questions[0].options[1].description, /the answer is drafted and that job waits for your yes/);
+  assert.match(q.autoModeQuestion().questions[0].options[0].description, /the answer is drafted and that job waits for your yes/);
+  assert.deepEqual(q.autoModeQuestion().questions[0].options.map((o) => o.label), ['Auto apply, approve new answers', 'Fully auto apply']);
   assert.match(p.questions[1].options[0].description, /runs in code at the router's price, with no Claude usage for the searches/);
 });
 
 test('the other questions go through the same tool: resume choice, Tenjin ask, EEO, optional writing, facts, the yes', () => {
-  const all = [q.resumeChoiceQuestion({ header: 'Role', question: 'Which role?', guess: 'Backend engineer', next: 'Data engineer' }), q.tenjinAsk({ line: 'Tenjin adds X.', status: 'missing' }), q.tenjinAsk({ line: 'Tenjin adds X.', status: 'unfunded' }), q.eeoQuestion(), q.optionalWritingQuestion(), q.factQuestion({ label: 'Work authorization', options: ['Yes', 'No'] }), q.sheetYesQuestion({ company: 'Acme', title: 'Engineer' })];
+  const all = [q.resumeChoiceQuestion({ header: 'Role', question: 'Which role?', guess: 'Backend engineer', next: 'Data engineer' }), q.tenjinAsk({ line: 'Tenjin adds X.', status: 'missing' }), q.tenjinAsk({ line: 'Tenjin adds X.', status: 'unfunded' }), q.eeoFieldQuestion({ label: 'Gender', options: ['Male', 'Female', 'Decline to self-identify'] }), q.optionalWritingQuestion(), q.factQuestion({ label: 'Work authorization', options: ['Yes', 'No'] }), q.sheetYesQuestion({ company: 'Acme', title: 'Engineer' })];
   for (const p of all) assert.deepEqual(q.validateAsk(p), [], JSON.stringify(p).slice(0, 80));
   assert.match(all[0].questions[0].options[0].label, /\(from your resume\)$/);
   assert.equal(all[5].questions[0].options.at(-1).label, 'Skip this job');

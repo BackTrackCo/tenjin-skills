@@ -278,12 +278,13 @@ test('attended with many sheets: the report lists them in rank order, one questi
   assert.ok(i > 0);
   assert.match(text.slice(i), /90 \| Co2, Eng 2 \| fits 2\n {2}- new answer, "Why us\?": Because compilers\.\n- 75 \| Co3[\s\S]*- 60 \| Co1/);
   const ask = J('ask', 'approve').json;
-  assert.deepEqual(ask.questions[0].options.map((o) => o.label), ['Approve all 3 listed (Recommended)', 'Pick in groups of 16', 'Only those with no new answers', 'Not now']);
+  assert.deepEqual(ask.questions[0].options.map((o) => o.label), ['Approve all 3 listed (Recommended)', 'Fill all 3, I submit', 'Pick in groups of 12', 'Not now']);
   assert.deepEqual(qs.validateAsk(ask), []);
   const many = Array.from({ length: 40 }, (_, i) => ({ key: `k${i}`, company: `C${i}`, title: 't', fitLine: '' }));
   const groups = qs.approvePickQuestions(many);
-  assert.equal(groups.length, 3, '40 sheets in calls of up to 16');
-  assert.ok(groups[0].questions.length === 4 && groups[0].questions.every((q) => q.multiSelect && q.options.length <= 4));
+  assert.equal(groups.length, 4, '40 sheets in calls of up to 12');
+  assert.ok(groups[0].questions.length === 4 && groups[0].questions.slice(0, 3).every((q) => q.multiSelect && q.options.length <= 4));
+  assert.deepEqual(groups[0].questions[3].options.map((o) => o.label), ['Apply them (Recommended)', 'Fill them, I submit']);
   assert.deepEqual(qs.validateAsk(groups[0]), []);
   assert.equal(J('approve', '--no-new').json.approved, 2, 'only the sheets with no new answer');
   const st = store.loadState();

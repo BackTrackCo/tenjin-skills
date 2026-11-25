@@ -151,7 +151,7 @@ test('the batch question fits the tool: 4 options per question, 16 drafts, then 
   assert.deepEqual(qs.validateAsk(q16), []);
   assert.ok(q16.questions.every((q) => q.multiSelect === true && q.options.length <= 4));
   const q17 = qs.emailBatchQuestion(d(17));
-  assert.deepEqual(q17.questions[0].options.map((o) => o.label), ['Yes, send all 17', 'None']);
+  assert.deepEqual(q17.questions[0].options.map((o) => o.label), ['Yes, send all 17', 'Pick in groups of 16', 'None']);
   assert.deepEqual(qs.validateAsk(q17), []);
   assert.deepEqual(qs.validateAsk(qs.emailModeQuestion()), []);
   assert.match(qs.emailModeQuestion().questions[0].options[0].label, /Ask me each batch \(Recommended\)/);

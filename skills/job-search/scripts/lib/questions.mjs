@@ -1,27 +1,50 @@
 // The questions, as data for Claude Code's question tool (AskUserQuestion). In an attended turn, every question that has
 // choices goes through it, never as a list in prose: 1 to 4 questions per call, 2 to 4 options each, a short label and a
 // one-line description, the default first and labelled "(Recommended)" (or "(from your resume)" for a resume guess).
-// The tool adds its own "Other" free-text answer. Never in an unattended turn: nobody can answer there.
+// The tool adds its own free-text answer; no question or option text names it. A choice is only for a question whose options
+// usually hold the answer: a typed answer (a place, a phone, pay, an address, a name) is a plain question, `{plain}`, with the
+// guess in its text. Never in an unattended turn: nobody can answer there.
 const q = (header, question, options, multiSelect = false) => ({ header, question, multiSelect, options });
 
-export const START_RESUME_QUESTION = 'Which file is your resume? Give its path. (A plain question: I read only that file and never search your files.)';
+// Options that need Claude in Chrome get a note when it is off in this session (`J chrome set off`), and the question says so
+// once. The pick is still recorded.
+export const CHROME_NOTE = 'Needs Claude in Chrome, which is off in this session.';
+export const CHROME_SENTENCE = 'Claude in Chrome is off in this session; options marked need it.';
+const needing = (label, set) => set.some((p) => label.startsWith(p));
+export function chromeQ(header, question, options, { chromeOff = false, needs = [], multiSelect = false } = {}) {
+  const noted = chromeOff && options.some((o) => needing(o.label, needs));
+  return q(header, noted ? `${question} ${CHROME_SENTENCE}` : question, options.map((o) => (chromeOff && needing(o.label, needs) ? { ...o, description: `${o.description} ${CHROME_NOTE}` } : o)), multiSelect);
+}
+const plain = (text) => ({ plain: text });
 
 // The start, after the resume: one call, four questions. Remote Control is a reminder line, not a question.
-export const RC_REMINDER = 'Type /rc to get these notifications on your phone and answer from the Claude app while this session keeps running here.';
-export function startQuestions() {
+const RC_FIRST = 'Type /rc to get these notifications on your phone and answer from the Claude app while this session keeps running here.';
+const RC_CONFIG = 'Then open /config and turn on "Push when actions required" and "Push when Claude decides", so questions and updates reach your phone.';
+// Built from what is known, never a question, at most once per start: Remote Control unknown gives both sentences; on, with no
+// push recorded as sent, only the /config sentence; a push recorded as sent gives none. The skill never reads Claude Code's own
+// config file, so "Push when actions required" is always named while any reminder shows.
+export function rcReminder({ rc = 'unknown', pushSent = false } = {}) {
+  if (pushSent) return null;
+  return rc === 'on' ? RC_CONFIG : `${RC_FIRST} ${RC_CONFIG}`;
+}
+// What to say at a push that came back "not sent", once: off (the push setting is off) the /config sentence; none (no transport)
+// both sentences; present (the person is at the terminal) nothing.
+export const rcAtPush = (reason) => (reason === 'off' ? RC_CONFIG : reason === 'none' ? `${RC_FIRST} ${RC_CONFIG}` : null);
+export function startQuestions({ chromeOff = false, rc = 'unknown', pushSent = false } = {}) {
   return {
     questions: [
-      q('Apply mode', 'How should applications go out?', [
+      chromeQ('Apply mode', 'How should applications go out?', [
         { label: 'Ask me each time (Recommended)', description: 'I prepare each application, show it, and submit only after your yes.' },
-        { label: 'Auto apply, approve new answers', description: 'Uses your resume and answers you gave or approved before. When a form has a new question, the answer is drafted and that job waits for your yes.' },
-        { label: 'Fully auto apply', description: 'Also submits the answers drafted for new questions, without showing them to you first.' },
-      ]),
+        { label: 'Auto apply', description: 'I submit without asking, from your resume and answers you gave or approved before; the next question says how new answers are handled.' },
+        { label: 'Fill only, I submit', description: 'I fill each application form and stop before submit; you check it and press submit.' },
+        { label: 'Just open the pages', description: 'I prepare each application and open its page in your browser; you fill and submit it.' },
+      ], { chromeOff, needs: ['Ask me each time', 'Auto apply', 'Fill only'] }),
       q('Search', 'How often should I search for jobs?', [
         { label: 'Every day (Recommended)', description: 'One search round a day. With Tenjin a round runs in code at the router\'s price, with no Claude usage for the searches; without it, a round is one Haiku run (usage not measured yet).' },
         { label: 'Twice a day', description: 'Two search rounds a day, about twice the router price (with Tenjin) or Haiku usage (without) of a daily search.' },
         { label: 'Once a week', description: 'One search round a week, about a seventh of the daily router price or Haiku usage.' },
       ]),
-      q('Positions', 'How many positions should I make ready to apply to? Other: your own numbers.', [
+      q('Positions', 'How many positions should I make ready to apply to?', [
         { label: '50 now, 10 daily (Recommended)', description: 'Up to fifty jobs from the last two weeks on the first run, then up to ten a day.' },
         { label: '100 now, 20 daily', description: 'A big push: up to a hundred jobs from the last two weeks on the first run, then up to twenty a day.' },
         { label: '20 now, 5 daily', description: 'A light search: up to twenty jobs on the first run, then up to five a day.' },
@@ -33,8 +56,16 @@ export function startQuestions() {
         { label: 'Ask me each job', description: 'For a job that is on LinkedIn and on an employer site, I ask which one with the application.' },
       ]),
     ],
-    reminder: RC_REMINDER,
+    reminder: rcReminder({ rc, pushSent }),
   };
+}
+
+// After "Auto apply": how new answers are handled. Asked in the auto follow-up call, with the rules and consents.
+export function autoModeQuestion({ chromeOff = false } = {}) {
+  return { questions: [chromeQ('Auto mode', 'How should new answers be handled in auto apply?', [
+    { label: 'Auto apply, approve new answers', description: 'Uses your resume and answers you gave or approved before. When a form has a new question, the answer is drafted and that job waits for your yes.' },
+    { label: 'Fully auto apply', description: 'Also submits the answers drafted for new questions, without showing them to you first.' },
+  ], { chromeOff, needs: ['Auto apply', 'Fully auto'] })] };
 }
 
 // The role, place or remote, only when the resume really leaves it open: the guess first, the next best second.
@@ -61,21 +92,25 @@ export function contactsCountQuestion() {
   ])] };
 }
 
-// A follow-up that is due: what happened with an application. Asked in an attended turn, never a wake.
+// A follow-up that is due: what happened with an application. Asked in an attended turn, never a wake. After "They replied",
+// one optional plain question asks what they said (`followUpDetail`).
 export function followUpQuestion({ company, title }) {
-  return { questions: [q('Follow-up', `What happened with ${title} at ${company}?`, [
+  return { questions: [q('Follow-up', `Did you hear back about ${title} at ${company}?`, [
     { label: 'No reply yet (Recommended)', description: 'Keep waiting; I will ask again in 14 days.' },
-    { label: 'They replied', description: 'Record a reply; tell me more through Other if you want it noted.' },
+    { label: 'They replied', description: 'Record a reply; I then ask what they said.' },
     { label: 'Interview', description: 'Record an interview.' },
     { label: 'Rejected', description: 'Record a rejection and stop following up.' },
   ])] };
 }
+export const followUpDetail = ({ company }) => plain(`What did ${company} say? You can answer in a sentence, or skip it.`);
 
-export function eeoQuestion() {
-  return { questions: [q('EEO', 'This form asks voluntary demographic questions. How should I answer them from now on?', [
-    { label: 'Decline to answer all (Recommended)', description: 'Chooses "decline to self-identify" wherever a form offers it.' },
-    { label: 'Let me answer each question', description: 'I will ask you the questions when a form has them.' },
-  ])] };
+// One voluntary demographic field, per field: the form's own options word for word when they fit the tool (at most 4, "decline"
+// among them when the form has it); otherwise a plain question that lists them. The answer is kept per field and reused on a
+// later form only for the same option text.
+export function eeoFieldQuestion({ label, options = [] }) {
+  const opts = options.filter(Boolean);
+  if (opts.length >= 2 && opts.length <= 4) return { questions: [q('EEO', `The form asks (voluntary): ${label}`, opts.map((o) => ({ label: o, description: `Answer "${o}" for "${label}", and reuse it for the same option text.` })))] };
+  return plain(`The form asks (voluntary): ${label}${opts.length ? ` Its options are: ${opts.join('; ')}.` : ''} Which should I answer? You can say decline if the form has that option.`);
 }
 
 export function optionalWritingQuestion() {
@@ -85,11 +120,30 @@ export function optionalWritingQuestion() {
   ])] };
 }
 
-// A missing fact with fixed answers (for example work authorization). One without fixed answers (a phone number, pay)
-// is a plain question, or this one with "Skip this job" and the answer through "Other".
-export function factQuestion({ label, options }) {
-  const opts = options.map((o, i) => ({ label: i === 0 ? `${o} (Recommended)` : o, description: `Answer "${o}" for "${label}", and reuse it for the same question.` }));
-  return { questions: [q('Missing fact', `A form asks: ${label}`, [...opts.slice(0, 3), { label: 'Skip this job', description: 'Do not apply to this job.' }].slice(0, 4))] };
+// A missing fact with fixed answers (for example work authorization): a choice only with the form's own options, word for
+// word, when they fit (at most 3, plus "Skip this job"); otherwise a plain question that lists them. One without fixed answers
+// (a phone number, pay) is always a plain question.
+export function factQuestion({ label, options = [] }) {
+  const opts = options.filter(Boolean);
+  if (opts.length >= 2 && opts.length <= 3) return { questions: [q('Missing fact', `A form asks: ${label}`, [...opts.map((o) => ({ label: o, description: `Answer "${o}" for "${label}", and reuse it for the same question.` })), { label: 'Skip this job', description: 'Do not apply to this job.' }])] };
+  return plain(`A form asks: ${label}${opts.length ? ` Its options are: ${opts.join('; ')}.` : ''} What should I answer? Or say skip to leave the job.`);
+}
+
+// A place the resume does not give, or a role with no clear guess: a plain question with the guess in its text.
+export function placeQuestion({ guess = '', remote = false } = {}) {
+  return plain(guess ? `From your resume I would search ${guess}${remote ? ' and remote' : ''}. Where should I search?` : 'Where should I search for jobs? A city, or remote.');
+}
+export function roleQuestion({ guess = '' } = {}) {
+  return plain(guess ? `From your resume I would search for ${guess}. Which role should I search for?` : 'Which role should I search for?');
+}
+
+// A form's own legal acknowledgement (a privacy notice, terms to accept): its own question, with the form's text and link,
+// because accepting terms needs the person's own yes. Never part of an approval.
+export function acknowledgeQuestion({ company, text, link = null }) {
+  return { questions: [q('Terms', `The ${company} form asks you to accept: ${String(text).slice(0, 300)}${link ? ` (${link})` : ''}`, [
+    { label: 'Yes, I accept', description: 'Records your own yes to that text for this form; I never accept terms for you.' },
+    { label: 'Skip this job', description: 'Do not apply to this job.' },
+  ])] };
 }
 
 export function sheetYesQuestion({ company, title }) {
@@ -101,12 +155,14 @@ export function sheetYesQuestion({ company, title }) {
 
 // The round's email drafts, shown after they are ready: multi-select questions of up to 4 options each (the tool's limits, 16
 // drafts at most), each option a recipient and a subject. More than 16: send all, none, or the numbers through Other.
-export function emailBatchQuestion(drafts) {
+export function emailBatchQuestion(all, group = null) {
+  const drafts = group === null ? all : all.slice(group * 16, group * 16 + 16);
   if (drafts.length > 16) {
     return { questions: [q('Emails', `${drafts.length} email drafts are ready, each to an address the poster published. Which should go?`, [
       { label: `Yes, send all ${drafts.length}`, description: 'Every draft goes from your Gmail, once per address.' },
+      { label: 'Pick in groups of 16', description: 'Tick the drafts to send, 16 at a time.' },
       { label: 'None', description: 'Send nothing; the drafts stay for the report.' },
-    ])], note: 'The numbers to send come through Other.' };
+    ])] };
   }
   const chunks = [];
   for (let i = 0; i < drafts.length; i += 4) chunks.push(drafts.slice(i, i + 4));
@@ -126,30 +182,41 @@ export function emailModeQuestion() {
 // a fact (`J approve <key> --facts`), the sheet is completed, and the yes covers the completed sheet.
 // `path` is 'ask' when the job is on LinkedIn and on an employer site and the person chose "Ask me each job": the choice joins
 // the approval call, and a LinkedIn pick means the person applies there (the skill never opens LinkedIn).
-export function approvalQuestions(job, path = 'employer') {
+export function approvalQuestions(job, path = 'employer', { chromeOff = false } = {}) {
   const sheet = job.sheet || { fields: [], unanswered: [] };
   const application = [
     ...(sheet.fields || []).map((f) => `${f.label}: ${f.tag === 'upload' ? 'your resume' : f.value} (${f.tag.replace('_', ' ')})`),
     ...(job.warnings || []).map((w) => `warning: ${w}`),
   ];
+  const needs = ['Yes, apply', 'Fill it', 'Employer\'s site'];
+  const fill = { label: 'Fill it, I submit', description: 'I fill the form and stop before submit; you check it and press submit.' };
   const asks = [path === 'ask'
-    ? q('Apply', `Where should ${job.title} at ${job.company} go, with the application shown above?`, [
+    ? chromeQ('Apply', `Where should ${job.title} at ${job.company} go, with the application shown above?`, [
       { label: 'Employer\'s site (I apply)', description: 'Records your yes for this exact application, then I fill it and submit it on the employer\'s page.' },
+      fill,
       { label: 'LinkedIn (you apply)', description: 'I show its LinkedIn link and the answers; you apply there. I never open LinkedIn.' },
       { label: 'Skip this job', description: 'Do not apply to this job.' },
-    ])
-    : q('Apply', `Apply to ${job.title} at ${job.company} with the application shown above?`, [
+    ], { chromeOff, needs })
+    : chromeQ('Apply', `Apply to ${job.title} at ${job.company} with the application shown above?`, [
       { label: 'Yes, apply (Recommended)', description: 'Records your yes for this exact application, then fills it and submits it in one pass.' },
+      fill,
       { label: 'Not this one', description: 'Skip this job.' },
-    ])];
-  const plain = [];
+    ], { chromeOff, needs })];
+  // A fact the form needs: its own options word for word (at most 3, plus Skip) in a choice, else a plain question listing them.
+  // A fact question never shares a call with the approval that follows it: the sheet the approval shows must be complete.
+  const facts = [];
+  const plainFacts = [];
   for (const u of (sheet.unanswered || []).filter((x) => x.factKey)) {
     const form = (job.questions || []).find((x) => x.label === u.label) || {};
-    const options = (form.options || []).filter(Boolean).slice(0, 3);
-    if (options.length >= 2 && asks.length < 4) asks.push(q('Missing fact', `The form asks: ${u.label}`, [...options.map((o, i) => ({ label: i === 0 ? `${o} (Recommended)` : o, description: `Answer "${o}" for "${u.label}", saved as ${u.factKey} for later forms.` })), { label: 'Skip this job', description: 'Do not apply to this job.' }].slice(0, 4)));
-    else plain.push({ label: u.label, fact: u.factKey });
+    const options = (form.options || []).filter(Boolean);
+    const fq = factQuestion({ label: u.label, options });
+    if (fq.questions) facts.push({ ...fq.questions[0], fact: u.factKey });
+    else plainFacts.push({ label: u.label, fact: u.factKey, plain: fq.plain });
   }
-  return { application, questions: asks, plain, next: 'show the application, ask these in one call; save with J approve <key> --facts <json> (a plain question: J fact set <name> <value> first)' };
+  if (facts.length || plainFacts.length) {
+    return { application, step: 'facts first', questions: facts.slice(0, 4), plain: plainFacts, then: 'J ask approval --key <job> again once every fact is saved (J approve <key> --facts <json> saves choices; J fact set <name> <value> saves a plain answer)', next: 'show the application, ask the fact questions in their own call; the approval comes after, with the completed sheet' };
+  }
+  return { application, questions: asks, plain: [], next: 'show the application, then ask this one call; record with J approve <key> [--fill-only|--via employer|linkedin]; say the state line it prints as given' };
 }
 
 // After a LinkedIn link was shown: did the person apply there? Asked once per version of the job, in an attended turn.
@@ -162,27 +229,37 @@ export function appliedQuestion({ company, title }) {
 }
 
 // Attended, many sheets at once: the report lists every ready sheet in rank order, then one question asks how to approve them.
-export function approveListQuestion(n) {
-  return { questions: [q('Approve', `${n} application sheets are listed in the report. How should I approve them?`, [
+export function approveListQuestion(n, { chromeOff = false } = {}) {
+  return { questions: [chromeQ('Approve', `${n} application sheets are listed in the report. How should I approve them?`, [
     { label: `Approve all ${n} listed (Recommended)`, description: 'Records your yes for each listed sheet as it is shown; nothing is submitted without it.' },
-    { label: 'Pick in groups of 16', description: 'Tick the sheets to approve, 16 at a time.' },
-    { label: 'Only those with no new answers', description: 'Approves the sheets that use only facts, your resume and answers you gave before.' },
+    { label: `Fill all ${n}, I submit`, description: 'I fill each form and stop before submit; you check each one and press submit.' },
+    { label: 'Pick in groups of 12', description: 'Tick the sheets to approve, 12 at a time.' },
     { label: 'Not now', description: 'Approve nothing yet; the sheets stay listed.' },
-  ])] };
+  ], { chromeOff, needs: ['Approve all', 'Fill all'] })] };
 }
-export function approvePickQuestions(sheets) {
+// Groups of 12: three multi-select questions of 4 options each, plus one question for how to go on (the tool's limit of 4).
+export function approvePickQuestions(sheets, { chromeOff = false } = {}) {
   const groups = [];
-  for (let i = 0; i < sheets.length; i += 16) {
-    const g = sheets.slice(i, i + 16);
+  for (let i = 0; i < sheets.length; i += 12) {
+    const g = sheets.slice(i, i + 12);
     const chunks = [];
     for (let k = 0; k < g.length; k += 4) chunks.push(g.slice(k, k + 4));
-    groups.push({ questions: chunks.map((c, n) => q(`Sheets ${i / 4 + n + 1}`, 'Tick the applications to approve.', [...c.map((x) => ({ label: `${x.company}`.slice(0, 40), description: `${x.title}${x.fitLine ? `: ${x.fitLine}` : ''}`.replace(/\n/g, ' ').slice(0, 90) })), ...(c.length < 2 ? [{ label: 'None of these', description: 'Tick this, or nothing, to approve none of the above.' }] : [])], true)), keys: g.map((x) => x.key) });
+    const picks = chunks.map((c, n) => q(`Sheets ${i / 4 + n + 1}`, 'Tick the applications to approve.', [...c.map((x) => ({ label: `${x.company}`.slice(0, 40), description: `${x.title}${x.fitLine ? `: ${x.fitLine}` : ''}`.replace(/\n/g, ' ').slice(0, 90) })), ...(c.length < 2 ? [{ label: 'None of these', description: 'Tick this, or nothing, to approve none of the above.' }] : [])], true));
+    const how = chromeQ('How', 'Apply the ones you picked, or fill them for you to submit?', [
+      { label: 'Apply them (Recommended)', description: 'Records your yes for each ticked sheet, then fills and submits it.' },
+      { label: 'Fill them, I submit', description: 'I fill each ticked form and stop before submit; you press submit.' },
+    ], { chromeOff, needs: ['Apply them', 'Fill them'] });
+    groups.push({ questions: [...picks, how], keys: g.map((x) => x.key) });
   }
   return groups;
 }
 
 // A payload is valid when it fits the question tool: 1 to 4 questions, 2 to 4 options each, labels and descriptions
 // present, the first option marked as the default.
+// The question tool shows its own free-text option; no question or option text may name it ("type under Other"). A form's own
+// option that happens to start with "Other" (for example "Other job boards") is fine.
+const NAMES_OTHER = /\b(under|through|via|in|use|choose|pick|select|type|write|enter)\s+(?:\w+\s+){0,3}["']?Other["']?\b|\bOther:|\bor\s+["']?Other["']?\s*[.?]|\bOther\s+(?:option|field)\b/i;
+const NO_MARKER = new Set(['Missing fact', 'EEO', 'Terms']);
 export function validateAsk(p) {
   const bad = [];
   if (!p || !Array.isArray(p.questions) || p.questions.length < 1 || p.questions.length > 4) return ['1 to 4 questions per call'];
@@ -190,10 +267,14 @@ export function validateAsk(p) {
     const at = `question ${i}`;
     if (!x.header || x.header.length > 12) bad.push(`${at}: a short header (12 characters at most)`);
     if (!x.question) bad.push(`${at}: no question text`);
+    if (NAMES_OTHER.test(String(x.question || ''))) bad.push(`${at}: the question text names the free-text option`);
     if (!Array.isArray(x.options) || x.options.length < 2 || x.options.length > 4) bad.push(`${at}: 2 to 4 options`);
     else {
-      for (const o of x.options) if (!o.label || !o.description || o.description.includes('\n')) bad.push(`${at}: each option needs a label and a one-line description`);
-      if (!x.multiSelect && !/\((Recommended|from your resume|from your LinkedIn)\)$/.test(x.options[0].label) && !/^(Skip them|Yes|Install|Employer's site \(I apply\))/.test(x.options[0].label)) bad.push(`${at}: the first option is the default and carries its marker`);
+      for (const o of x.options) {
+        if (!o.label || !o.description || o.description.includes('\n')) bad.push(`${at}: each option needs a label and a one-line description`);
+        if (NAMES_OTHER.test(`${o.label} ${o.description}`)) bad.push(`${at}: an option names the free-text option`);
+      }
+      if (!x.multiSelect && !NO_MARKER.has(x.header) && !/\((Recommended|from your resume|from your LinkedIn)\)$/.test(x.options[0].label) && !/^(Skip them|Yes|Install|Employer's site \(I apply\))/.test(x.options[0].label)) bad.push(`${at}: the first option is the default and carries its marker`);
     }
   }
   return bad;

@@ -29,7 +29,7 @@ export function checkJobSheet(job, live = null, profile = {}) {
     // Attended ("Ask me each time"): a missing fact is asked inside the approval itself, so the job is not parked: it waits
     // prepared, and `J approve <key> --facts` saves the answers, completes the sheet and records the yes. An auto mode holds
     // the job as needs_facts, as before.
-    const attended = !profile.applyMode || profile.applyMode === 'attended';
+    const attended = !profile.applyMode || ['attended', 'fill_only', 'open_only'].includes(profile.applyMode);
     if (attended && facts.length && facts.length === job.sheet.unanswered.length && !job.sheet.eeoMissing && !job.sheet.forbidden.length) {
       job.awaitingApproval = true;
       unpark(job);

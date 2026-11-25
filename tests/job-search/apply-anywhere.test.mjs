@@ -212,7 +212,7 @@ test('"Ask me each job" puts the choice in the approval call, and a plain approv
   reset([j]);
   runJobs(home, ['profile', 'set', JSON.stringify({ apply: { where: 'ask', source: 'person' } })]);
   const q = runJobs(home, ['ask', 'approval', '--key', j.key]).json;
-  assert.deepEqual(q.questions[0].options.map((o) => o.label), ['Employer\'s site (I apply)', 'LinkedIn (you apply)', 'Skip this job']);
+  assert.deepEqual(q.questions[0].options.map((o) => o.label), ['Employer\'s site (I apply)', 'Fill it, I submit', 'LinkedIn (you apply)', 'Skip this job']);
   assert.equal(runJobs(home, ['approve', j.key]).code, 4, 'no approval before the where is chosen');
   assert.equal(runJobs(home, ['approve', j.key, '--via', 'linkedin']).json.via, 'linkedin');
   assert.equal(ap.applyPathOf(store.loadState().jobs[j.key], { apply: { where: 'ask' } }), 'linkedin');

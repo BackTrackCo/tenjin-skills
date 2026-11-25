@@ -26,6 +26,8 @@ import { hintState, defaultRun, findTenjin } from './lib/tenjin.mjs';
 import { buildSheet, checkReadBack, checkSheet, parseGreenhouseQuestions } from './lib/sheet.mjs';
 import { buildContactMessageRequest, buildIntroRequest, buildLeadIntroRequest, buildWritingRequest, parseIntroResult, parseWritingResult, readWritingRules } from './lib/writing.mjs';
 import { firstApplicationHosts, renderReport } from './lib/report.mjs';
+import { CHROME_STEPS, maySubmit, stateLine } from './lib/approval.mjs';
+import { openPage, checkOpenUrl, openUrlOf } from './lib/open.mjs';
 import * as qs from './lib/questions.mjs';
 import { FREQUENCIES, frequencyOf, periodStart } from './lib/schedule.mjs';
 import { appendPending, isCareerOpsDir, pipelineLine, readCareerOps } from './lib/careerops.mjs';
@@ -272,6 +274,13 @@ const commands = {
   async approve(keys, flags) {
     let st = loadState();
     let list = keys;
+    // Withdraw: the first step whenever the person says stop or don't apply. The yes goes back to waiting for its approval.
+    if (flags.withdraw === true) {
+      const gone = flags.all === true ? Object.keys(st.approvals) : keys;
+      if (!gone.length) return out({ error: 'approve <key> --withdraw | --withdraw --all' }, 2);
+      updateState((s) => { for (const k of gone) { delete s.approvals[k]; if (s.jobs[k]) { s.jobs[k].fillOnly = false; bump(s.jobs[k]); } } });
+      return out({ withdrawn: gone.length, state: 'Submitted: none. Every yes you took back is waiting for a new approval; nothing will be submitted for it.' });
+    }
     // "Ask me each job": the choice joins the approval. LinkedIn means the person applies there; nothing is approved.
     if (flags.via !== undefined) {
       if (keys.length !== 1 || !['employer', 'linkedin'].includes(flags.via)) return out({ error: 'approve <key> --via employer|linkedin takes one job' }, 2);
@@ -300,7 +309,9 @@ const commands = {
         return checkJobSheet(job, null, next);
       });
       if (!r.ok) return out({ error: `the sheet is still not complete: ${r.problems.join('; ')}` }, 4);
-      st = loadState();
+      // The facts are saved and the sheet is complete. The approval comes in its own call after them, with the completed sheet:
+      // one click never both answers a fact and approves.
+      return out({ saved: Object.keys(given), sheetComplete: true, next: `ask the approval now: J ask approval --key ${keys[0]}` });
     }
     if (flags.all === true || flags['no-new'] === true) list = readySheets(st).filter((r) => !r.missingFacts.length && (flags.all === true || !r.newAnswers.length)).map((r) => r.key);
     if (!list.length) return out({ error: 'approve <key...> | --all | --no-new (nothing to approve)' }, 2);
@@ -310,7 +321,11 @@ const commands = {
     }
     if (!list.length) return out({ error: 'every listed job waits for its where choice (J ask approval --key <job>)' }, 4);
     for (const k of list) if (!st.jobs[k] || !st.jobs[k].sheet || !st.jobs[k].sheet.passed) return out({ error: `${k} has no complete sheet yet: answer its missing facts (J ask approval <key>)` }, 4);
-    return out({ ...applyOps(list.map((key) => ({ op: 'approve', key, sheetHash: st.jobs[key].sheet.hash }))), approved: list.length });
+    const res = applyOps(list.map((key) => ({ op: 'approve', key, sheetHash: st.jobs[key].sheet.hash })));
+    // "Fill it, I submit": the yes for that sheet hash, with fill-only on for these jobs only (the existing fill-only path).
+    if (flags['fill-only'] === true) updateState((s) => { for (const k of list) { s.jobs[k].fillOnly = true; bump(s.jobs[k]); } });
+    const fin = loadState();
+    return out({ ...res, approved: list.length, fillOnly: flags['fill-only'] === true, state: stateLine(fin, readProfile(), loadOverlay(), list) });
   },
 
   // Consent is recorded or revoked only by the person's yes, in an attended session. Recording is refused while a batch is open.
@@ -651,6 +666,65 @@ const commands = {
     }
     return out({ error: 'linkedin show <key> | applied <key> yes|not_yet|skip' }, 2);
   },
+  // The last check right before the submit click: the browser subagent presses submit only on yes.
+  async 'may-submit'([key, hash]) {
+    if (!key || !hash) return out({ error: 'may-submit <key> <sheet hash>' }, 2);
+    const r = maySubmit(loadState(), readProfile(), loadOverlay(), key, hash, batch.isActive());
+    return out(r, r.ok ? 0 : 4);
+  },
+  // Whether the Claude in Chrome tools are in this session, recorded at every start and after a /chrome reconnect. With them
+  // off, options that need them carry a note. On clears every Chrome hold, so those jobs go back to the normal flow in this turn.
+  // Whether Remote Control looks connected in this session (Claude Code's own session note is there), recorded at each start next to
+  // `chrome set`. Code never reads Claude Code's config file.
+  async rc([sub, v]) {
+    if (sub !== 'set' || !['on', 'unknown'].includes(v)) return out({ error: 'rc set on|unknown' }, 2);
+    return out(updateState((s) => { s.rc = v; return { rc: v, reminder: qs.rcReminder({ rc: v, pushSent: s.pushSent === true }) }; }));
+  },
+  async chrome([sub, v]) {
+    if (sub !== 'set' || !['on', 'off'].includes(v)) return out({ error: 'chrome set on|off' }, 2);
+    return out(updateState((s) => {
+      s.chrome = v;
+      let cleared = 0;
+      if (v === 'on') {
+        const n = s.held.length;
+        s.held = s.held.filter((h) => !['chrome_disconnected', 'no_chrome_tools'].includes(h.reason));
+        cleared = n - s.held.length;
+        for (const j of Object.values(s.jobs)) if (j.noChromeTools) { j.noChromeTools = false; cleared++; }
+      }
+      return { chrome: v, cleared, ...(v === 'off' ? { steps: CHROME_STEPS } : {}) };
+    }));
+  },
+  // "Just open the pages": the OS's own open command, in the person's default browser, with the job's exact URL. Attended turns only.
+  async open(keys) {
+    if (!keys.length) return out({ error: 'open <key...>' }, 2);
+    if (batch.isActive() && batch.batchMode() === 'unattended') return out({ error: 'pages open only in an attended turn' }, 4);
+    const st = loadState();
+    const profile = readProfile();
+    const res = [];
+    for (const k of keys) {
+      const job = st.jobs[k];
+      const url = job ? openUrlOf(job, profile) : null;
+      if (!url) { res.push({ key: k, opened: false, why: 'nothing to open for this job' }); continue; }
+      const bad = checkOpenUrl(url);
+      if (bad) { res.push({ key: k, opened: false, why: bad }); continue; }
+      const r = openPage(url);
+      res.push({ key: k, url, opened: r.ok, ...(r.ok ? {} : { why: r.why }), sheet: job.sheet ? (job.sheet.fields || []).map((f) => ({ label: f.label, value: f.tag === 'upload' ? 'your resume' : f.value, tag: f.tag })) : [] });
+      if (r.ok) updateState((s) => { s.jobs[k].openedAt = new Date().toISOString(); s.jobs[k].broughtAt = s.jobs[k].broughtAt || s.jobs[k].openedAt; bump(s.jobs[k]); });
+    }
+    return out({ opened: res.filter((x) => x.opened).length, results: res, next: 'show each opened job\'s sheet as text; the outcome is the person\'s word: J submitted <key>' });
+  },
+  // A voluntary demographic answer, per field, kept for a later form only when the same option text is offered.
+  async eeo([sub, label, ...rest]) {
+    if (sub !== 'set' || !label || !rest.length) return out({ error: 'eeo set <field label> <answer>' }, 2);
+    const profile = readProfile();
+    const cur = profile.eeo && typeof profile.eeo === 'object' ? profile.eeo : { answers: {} };
+    const nl = String(label).normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
+    const next = { ...profile, eeo: { answers: { ...(cur.answers || {}), [nl]: rest.join(' ') } } };
+    const bad = validateProfile(next);
+    if (bad.length) return out({ error: bad.join('; ') }, 2);
+    writeJsonAtomic(profileFile(), next);
+    return out({ saved: label });
+  },
   async fillonly([key, onoff]) {
     return out(updateState((s) => {
       if (!s.jobs[key]) throw new Error(`unknown job: ${key}`);
@@ -701,7 +775,7 @@ const commands = {
     }
     if (sub !== 'record') return out({ error: 'start status | record --mode m --frequency f --catch-up n --per-day n|none (or --positions n|none|skip, or --no-limit) --where employer|linkedin|ask [--words text]' }, 2);
     if (flags.where !== undefined && !['employer', 'linkedin', 'ask'].includes(flags.where)) return out({ error: 'where must be employer, linkedin or ask' }, 2);
-    if (!['attended', 'auto_no_new', 'auto_write'].includes(flags.mode || 'attended')) return out({ error: 'mode must be attended, auto_no_new or auto_write' }, 2);
+    if (!['attended', 'auto_no_new', 'auto_write', 'fill_only', 'open_only'].includes(flags.mode || 'attended')) return out({ error: 'mode must be attended, auto_no_new, auto_write, fill_only or open_only' }, 2);
     if (flags.frequency && !FREQUENCIES.includes(flags.frequency)) return out({ error: 'frequency must be daily, twice_daily or weekly' }, 2);
     const mode = flags.mode || 'attended';
     const frequency = flags.frequency || 'daily';
@@ -725,7 +799,7 @@ const commands = {
     updateState((s) => {
       s.start = { ...(s.start || {}), modeAt: now, frequencyAt: now, positionsAt: now, whereAt: now };
     });
-    return out({ recorded: { mode, frequency, positions, where }, reminder: qs.RC_REMINDER, note: mode === 'attended' ? 'attended is the default; nothing more to record' : 'an auto mode also needs the unattended rules shown back, a clear yes, then consent record (and consent record writing for Fully auto apply)' });
+    return out({ recorded: { mode, frequency, positions, where }, reminder: qs.rcReminder({ rc: st.rc || 'unknown', pushSent: st.pushSent === true }), note: ['attended', 'fill_only', 'open_only'].includes(mode) ? 'no consent is needed for this mode' : 'an auto mode also needs the unattended rules shown back, a clear yes, then consent record (and consent record writing for Fully auto apply)' });
   },
   // The payload for Claude Code's question tool, so the questions are asked as choices, never as a list in prose.
   async ask([kind], flags) {
@@ -734,18 +808,19 @@ const commands = {
       const job = loadState().jobs[flags.key];
       if (!job || !job.sheet) return out({ error: 'ask approval --key <job>: prepare its sheet first' }, 2);
       updateState((st) => { markShown(st, [`yes:${flags.key}`]); }); // the application is shown with this call: no push repeats it
-      return out(qs.approvalQuestions(job, applyPathOf(job, readProfile())));
+      { const ap = qs.approvalQuestions(job, applyPathOf(job, readProfile()), { chromeOff: loadState().chrome === 'off' }); const bad = ap.questions.length ? qs.validateAsk(ap) : []; return bad.length ? out({ error: bad.join('; ') }, 2) : out(ap); }
     }
-    if (kind === 'approve-pick') return out({ groups: qs.approvePickQuestions(readySheets(loadState())) });
+    if (kind === 'approve-pick') return out({ groups: qs.approvePickQuestions(readySheets(loadState()), { chromeOff: loadState().chrome === 'off' }) });
     if (kind === 'applied') {
       const job = loadState().jobs[flags.key];
       if (!job || !job.linkedinShownAt) return out({ error: 'ask applied --key <job>: its LinkedIn link was not shown yet' }, 2);
       return out(qs.appliedQuestion(job));
     }
-    const make = { approve: () => qs.approveListQuestion(readySheets(loadState()).length), start: () => qs.startQuestions(), resume: () => qs.resumeChoiceQuestion(arg), tenjin: () => qs.tenjinAsk(arg), eeo: () => qs.eeoQuestion(), follow_up: () => qs.followUpQuestion(arg), contacts: () => qs.contactsCountQuestion(), 'optional-writing': () => qs.optionalWritingQuestion(), fact: () => qs.factQuestion(arg), yes: () => qs.sheetYesQuestion(arg), email: () => qs.emailBatchQuestion(em.addBatchPeek(loadState())), 'email-mode': () => qs.emailModeQuestion() }[kind];
-    if (!make) return out({ error: 'ask start | resume --json {header,question,guess,next} | tenjin --json {line,status} | eeo | optional-writing | fact --json {label,options} | yes --json {company,title} | email | email-mode | approve | approve-pick | approval --key <job>' }, 2);
+    const make = { approve: () => qs.approveListQuestion(readySheets(loadState()).length, { chromeOff: loadState().chrome === 'off' }), start: () => qs.startQuestions({ chromeOff: loadState().chrome === 'off', rc: loadState().rc || 'unknown', pushSent: loadState().pushSent === true }), auto: () => qs.autoModeQuestion({ chromeOff: loadState().chrome === 'off' }), place: () => qs.placeQuestion(arg), role: () => qs.roleQuestion(arg), acknowledge: () => qs.acknowledgeQuestion(arg), follow_up_detail: () => qs.followUpDetail(arg), resume: () => qs.resumeChoiceQuestion(arg), tenjin: () => qs.tenjinAsk(arg), eeo: () => qs.eeoFieldQuestion(arg), follow_up: () => qs.followUpQuestion(arg), contacts: () => qs.contactsCountQuestion(), 'optional-writing': () => qs.optionalWritingQuestion(), fact: () => qs.factQuestion(arg), yes: () => qs.sheetYesQuestion(arg), email: () => qs.emailBatchQuestion(em.addBatchPeek(loadState()), flags.group === undefined ? null : Number(flags.group)), 'email-mode': () => qs.emailModeQuestion() }[kind];
+    if (!make) return out({ error: 'ask start | auto | place --json {guess,remote} | role --json {guess} | acknowledge --json {company,text,link} | follow_up_detail --json {company} | resume --json {header,question,guess,next} | tenjin --json {line,status} | eeo --json {label,options} | optional-writing | fact --json {label,options} | yes --json {company,title} | email | email-mode | approve | approve-pick | approval --key <job>' }, 2);
     if (batch.isActive() && batch.batchMode() === 'unattended') return out({ error: 'no questions in an unattended turn: nobody can answer; hold the job and notify' }, 4);
     const p = make();
+    if (p.plain) return out(p); // a plain question: ask it in words, with the guess in its text
     const bad = qs.validateAsk(p);
     return bad.length ? out({ error: bad.join('; ') }, 2) : out(p);
   },
@@ -916,11 +991,22 @@ const commands = {
   async shown(keys, flags) {
     return out(updateState((s) => ({ shown: markShown(s, flags.all === true || !keys.length ? null : keys) })));
   },
-  async notify([sub, result]) {
+  async notify([sub, result], flags) {
     // The model records each push's answer. A "not sent" notify-only push stops further notify-only wakes until the person's
     // next turn; an answer that cannot tell sent from not sent allows them only for items that block work.
-    if (sub !== 'result' || !['sent', 'not_sent', 'unknown'].includes(result)) return out({ error: 'notify result sent|not_sent|unknown' }, 2);
-    return out(updateState((s) => { const w = (s.watcher ||= {}); w.notifyResult = result; w.notifyAt = new Date().toISOString(); return { recorded: result }; }));
+    if (sub !== 'result' || !['sent', 'not_sent', 'unknown'].includes(result)) return out({ error: 'notify result sent|not_sent|unknown [--reason off|present|none]' }, 2);
+    const reason = flags.reason;
+    if (reason !== undefined && (result !== 'not_sent' || !['off', 'present', 'none'].includes(reason))) return out({ error: '--reason off|present|none goes with not_sent' }, 2);
+    return out(updateState((s) => {
+      const w = (s.watcher ||= {});
+      w.notifyResult = result;
+      w.notifyAt = new Date().toISOString();
+      if (result === 'sent') s.pushSent = true; // a sent push proves Remote Control and "Push when Claude decides" are both on
+      // One reminder at a push result, once: off says the /config sentence, none says both, present says nothing.
+      const say = result === 'not_sent' && !s.rcPushSaid ? qs.rcAtPush(reason) : null;
+      if (say) s.rcPushSaid = true;
+      return { recorded: result, ...(reason ? { reason } : {}), say };
+    }));
   },
 
   async gates(_, flags) {

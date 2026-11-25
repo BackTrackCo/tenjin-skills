@@ -53,9 +53,9 @@ test('attended: a missing fact is asked inside the approval, with its fixed answ
   assert.equal(held.parked, null, 'not parked: nothing is asked before the approval');
   assert.deepEqual(held.missingFacts.sort(), ['security_clearance', 'us_citizen']);
   const ask = J('ask', 'approval', '--key', j.key).json;
-  assert.equal(ask.questions[0].header, 'Apply', 'the first question about the job is its approval');
-  assert.equal(ask.questions[0].options[0].label, 'Yes, apply (Recommended)');
-  assert.deepEqual(ask.questions[1].options.map((o) => o.label), ['Yes (Recommended)', 'No', 'Skip this job']);
+  assert.equal(ask.step, 'facts first', 'a fact never shares a call with the approval');
+  assert.equal(ask.questions[0].header, 'Missing fact');
+  assert.deepEqual(ask.questions[0].options.map((o) => o.label), ['Yes', 'No', 'Skip this job'], 'the form\'s own options, word for word');
   assert.deepEqual(ask.plain.map((p) => p.fact), ['security_clearance'], 'a fact with no fixed answers is a plain question');
   assert.deepEqual(qs.validateAsk({ questions: ask.questions }), []);
   assert.ok(ask.application.some((l) => /^Email: ada@example\.test \(fact\)/.test(l)), 'the prepared application is shown');
@@ -65,6 +65,13 @@ test('attended: a missing fact is asked inside the approval, with its fixed answ
   assert.equal(J('approve', j.key, '--facts', '{"us_citizen":"Yes"}').code, 4, 'still one fact short');
   const done = J('approve', j.key, '--facts', '{"security_clearance":"None"}');
   assert.equal(done.code, 0, done.stdout);
+  assert.equal(store.loadState().approvals[j.key], undefined, 'saving facts approves nothing');
+  const ask2 = J('ask', 'approval', '--key', j.key).json;
+  assert.equal(ask2.questions[0].header, 'Apply', 'the approval comes after, with the completed sheet');
+  assert.deepEqual(ask2.questions[0].options.map((o) => o.label), ['Yes, apply (Recommended)', 'Fill it, I submit', 'Not this one']);
+  const ok = J('approve', j.key);
+  assert.equal(ok.code, 0, ok.stdout);
+  assert.match(ok.json.state, /^Submitted: none\. Applying next: /);
   const s = store.loadState();
   assert.equal(s.jobs[j.key].status, 'apply_ready');
   assert.notEqual(s.jobs[j.key].sheet.hash, before);

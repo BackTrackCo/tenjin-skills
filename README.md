@@ -76,7 +76,7 @@ npx skills add BackTrackCo/tenjin-skills@job-search-v0.1.0 \
   --skill job-search --skill writing -a claude-code -g
 ```
 
-Then run `/job-search` in Claude Code. It asks for your resume path, then in one question: how applications go out (you approve each, or auto), how often to search, how many positions to make ready per period, and Remote Control. The free search and the first report follow in the same session. Tenjin is never required to start; it comes up as a recommendation where it would do better, and you decide. The install (the `skills` installer) needs Node 22.20 or later, and the skill itself runs on Node 20 or later.
+Then run `/job-search` in Claude Code. It asks you to share your resume (a file, a link or the text), then four quick choices in one question: how applications go out (you approve each, auto, "Fill only, I submit" or "Just open the pages"), how often to search, how many positions to make ready per period, and where you prefer to apply. The free search and the first report follow in the same session. Tenjin is never required to start; it comes up as a recommendation where it would do better, and you decide. The install (the `skills` installer) needs Node 22.20 or later, and the skill itself runs on Node 20 or later.
 
 ### What it does
 
@@ -91,7 +91,7 @@ Then run `/job-search` in Claude Code. It asks for your resume path, then in one
 - **Apply.** A Haiku subagent drives your real Chrome through Claude in Chrome, one application at a time, only on Greenhouse, Lever and Ashby, only from the sheet you saw. Attended is the default: nothing is submitted without your yes for that job and that sheet. Unattended is opt-in, with your own rules, a recorded consent and a dry run first. New writing in an unattended submit needs its own separate consent: without it, unattended runs only upload your resume and reuse answers you gave or approved before, and anything new waits for your yes.
 - **Safety, with no hook.** Job Search edits none of your Claude Code settings. In code: a job is handed out only in an open batch, only as the employer's own posting, and the commands that change what a submit may do (rules, consents, the profile, answers, writing approval) are refused while a batch is open. The rest is a rule in the browser subagent's task, because nothing in code sees its clicks. Every consent change and writing approval shows in your next report and in a notification.
 - **Rules and lessons.** Your rules keep your own words and date. The skill adds lessons only about its own work, and they only make it more careful and expire.
-- **Notifications.** One line, under 200 characters, when something waits for you. With Remote Control on, it reaches your phone.
+- **Notifications.** One line, under 200 characters, when something waits for you. With Remote Control on and both push settings in `/config` turned on ("Push when actions required" and "Push when Claude decides"), it reaches your phone.
 - **No default limits.** There is no application cap or usage budget unless you set one as a rule, for example "at most 5 a day".
 
 ### Where your data goes

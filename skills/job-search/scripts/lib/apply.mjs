@@ -162,7 +162,7 @@ export function applyNext(ctx) {
       continue;
     }
     const skipFields = mode === 'unattended' && !writingOk && state.consent.unattended.optionalWriting === 'skip' ? (job.sheet.fields || []).filter((f) => f.tag === 'new_writing' && !f.required).map((f) => f.label) : [];
-    const fillOnly = isFillOnly(job, overlay);
+    const fillOnly = isFillOnly(job, overlay, profile);
     return out({ handout: { key: job.key, url: job.employerPosting.url, sheetHash: job.sheet.hash, mode, dryRun: dry, fillOnly, submit: !dry && !fillOnly, skipFields } });
   }
   return out({});
@@ -181,6 +181,7 @@ export function applyPathOf(job, profile = {}) {
 }
 
 export function jobFailure({ job, state, profile, overlay, mode, now, writingOk = false }) {
+  if (profile.applyMode === 'open_only') return 'open_only_mode'; // the page is opened for the person, never filled or submitted
   const path = applyPathOf(job, profile);
   if (path === 'linkedin') return 'linkedin_path'; // shown to the person, never opened
   if (path === 'ask') return 'where_needs_answer'; // the choice joins the approval call; nothing is handed out before it
@@ -201,7 +202,7 @@ export function jobFailure({ job, state, profile, overlay, mode, now, writingOk 
   if (duplicateWithin(state, job, now, graph().unattendedWindow.duplicateDays)) return 'applied_to_company_title_within_90_days';
   if (state.applications.some((a) => a.key === job.key)) return 'already_applied';
   if (mode === 'attended') {
-    if (isFillOnly(job, overlay)) return null; // nothing is submitted, so no yes is needed
+    if (isFillOnly(job, overlay, profile)) return null; // nothing is submitted, so no yes is needed
     const a = state.approvals[job.key];
     if (!a) return 'no_recorded_yes';
     if (a.sheetHash !== job.sheet.hash) return 'sheet_changed_needs_new_yes';

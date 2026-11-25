@@ -4,6 +4,7 @@ import { loadOverlay, activeLessons, ruleValue } from './overlay.mjs';
 import { readJson, stateDir } from './paths.mjs';
 import { frequencyOf, periodStart, searchIsDue } from './schedule.mjs';
 import { applyPathOf, periodLimit } from './apply.mjs';
+import { openUrlOf } from './open.mjs';
 import { employerName } from './employer.mjs';
 import { sha } from './dedupe.mjs';
 import { canonical } from './overlay.mjs';
@@ -29,6 +30,7 @@ const GATES = {
   contacts_requested: 'Free ways only (the router\'s people search is `J contacts route`, in code). Find a contact with a source link, or `J leave contacts:<key> --reason none_found`.',
   prepare_due: 'The sheet needs new writing, or its questions need the browser first (Lever, Ashby). Round writer call: `J write-prompt --round`, then `J write-result --round`. Facts only from the profile.',
   linkedin_ready: 'The person applies on LinkedIn: `J linkedin show <key>` prints the job\'s own LinkedIn link and the prepared answers; show both in the reply. Never open, fetch or fill LinkedIn.',
+  open_ready: 'Open the page for the person: `J open <key...>` (attended turns only) opens each job\'s page in their own browser; then show each job\'s sheet as text so they can copy the answers. Nothing is filled or submitted; the outcome is their word (`J submitted <key>`).',
   linkedin_applied: 'A LinkedIn link was shown: ask once, `J ask applied --key <key>`, then `J linkedin applied <key> yes|not_yet|skip`. Applied is recorded only on the person\'s word.',
   apply_ready: 'Attended: show the sheet, wait for a yes. Never submit without it.',
   follow_up_due: 'Ask the person for the status. Do not contact the employer.',
@@ -193,9 +195,9 @@ export function itemVersion(job) {
 // What waits for the person never wakes the model: a sheet that needs their yes (unless they gave it, or the mode is auto),
 // a filled form waiting for their submit, a follow-up that asks them. Each keeps its one notification.
 export function waitsForPerson(state, profile, item, overlay = { rules: [] }) {
-  if (item.reason === 'fill_ready' || item.reason === 'follow_up_due' || item.reason === 'linkedin_applied') return true;
+  if (item.reason === 'fill_ready' || item.reason === 'follow_up_due' || item.reason === 'linkedin_applied' || item.reason === 'open_ready') return true;
   if (item.reason === 'email_due') return !emailConsentCurrent(state, profile, overlay);
-  if (item.reason === 'apply_ready') return !(String(profile.applyMode || '').startsWith('auto') || state.approvals[item.key]);
+  if (item.reason === 'apply_ready') return !(String(profile.applyMode || '').startsWith('auto') || profile.applyMode === 'fill_only' || (state.jobs[item.key] || {}).fillOnly || state.approvals[item.key]);
   return false;
 }
 
@@ -317,6 +319,13 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
       inventory.push({ key: j.key, title: j.title, company: j.company, left: j.left.reason });
       continue;
     }
+    // A page the skill opens for the person: "Just open the pages", and the fallback in every stronger mode for a job it must not
+    // or cannot fill (a deny-listed host, a login, a bot check). Pages open only in an attended turn.
+    const openUrl = openUrlOf(j, profile);
+    if (openUrl && !j.openedAt && ['reviewed', 'shortlisted', 'prepared', 'apply_ready'].includes(j.status)) {
+      items.push({ key: j.key, reason: 'open_ready', title: j.title, company: j.company, url: openUrl, gate: GATES.open_ready });
+      continue;
+    }
     if (j.parked) {
       inventory.push({ key: j.key, title: j.title, company: j.company, parked: j.parked.reasons });
       continue;
@@ -383,12 +392,12 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
     const start = periodStart(now, frequencyOf(profile));
     const brought = Object.values(state.jobs).filter((j) => j.broughtAt && Date.parse(j.broughtAt) >= start).length;
     let room = Math.max(0, limit - brought);
-    const fresh = items.filter((i) => (i.reason === 'apply_ready' || i.reason === 'linkedin_ready') && !state.jobs[i.key].broughtAt).sort((a, b) => (state.jobs[b.key].fit ?? -1) - (state.jobs[a.key].fit ?? -1));
+    const fresh = items.filter((i) => (i.reason === 'apply_ready' || i.reason === 'linkedin_ready' || i.reason === 'open_ready') && !state.jobs[i.key].broughtAt).sort((a, b) => (state.jobs[b.key].fit ?? -1) - (state.jobs[a.key].fit ?? -1));
     const allowed = new Set(fresh.slice(0, room).map((i) => i.key));
     for (const i of fresh) if (!allowed.has(i.key)) heldForPeriod++;
-    for (let k = items.length - 1; k >= 0; k--) if ((items[k].reason === 'apply_ready' || items[k].reason === 'linkedin_ready') && !state.jobs[items[k].key].broughtAt && !allowed.has(items[k].key)) items.splice(k, 1);
+    for (let k = items.length - 1; k >= 0; k--) if ((items[k].reason === 'apply_ready' || items[k].reason === 'linkedin_ready' || items[k].reason === 'open_ready') && !state.jobs[items[k].key].broughtAt && !allowed.has(items[k].key)) items.splice(k, 1);
     bring.push(...allowed);
-  } else bring.push(...items.filter((i) => (i.reason === 'apply_ready' || i.reason === 'linkedin_ready') && !state.jobs[i.key].broughtAt).map((i) => i.key));
+  } else bring.push(...items.filter((i) => (i.reason === 'apply_ready' || i.reason === 'linkedin_ready' || i.reason === 'open_ready') && !state.jobs[i.key].broughtAt).map((i) => i.key));
   return {
     bring,
     heldForPeriod,
@@ -419,11 +428,12 @@ export function markShown(state, keys = null) {
 }
 export function waitingSetRaw(state) {
   const w = {};
+  const mode = readJson(path.join(stateDir(), 'profile.json'), {}).applyMode; // a fill needs no yes, and nothing is submitted in fill_only or open_only
   for (const j of Object.values(state.jobs)) {
     if (graph().terminal.includes(j.status)) continue;
     if (j.fillReady) w[`fill:${j.key}`] = `${j.fillReady.at}|${j.company}`;
     else if (j.parked) w[`park:${j.key}`] = `${j.parked.key}|${j.parked.reasons.join(',')}|${j.company}`;
-    else if (j.status === 'apply_ready' && !state.approvals[j.key] && j.employerPosting) w[`yes:${j.key}`] = `${j.hash}|${j.company}`;
+    else if (j.status === 'apply_ready' && !state.approvals[j.key] && j.employerPosting && !j.fillOnly && !['fill_only', 'open_only'].includes(mode)) w[`yes:${j.key}`] = `${j.hash}|${j.company}`;
   }
   const mail = pendingEmails(state);
   if (mail.length) w[`email:${mail.length}`] = sha(canonical(mail.map((c) => c.id))).slice(0, 10);
