@@ -51,6 +51,7 @@ export function emptyState() {
     hn: { seen: [], thread: null, lastRead: 0, lastAt: null, remaining: 0 },
     search: { session: null, webPending: null },
     emails: null,
+    watcherEver: false,
     tenjinSetup: null,
   };
 }

@@ -381,10 +381,9 @@ test('subagent runs are logged where their result is recorded, and the report sh
   assert.doesNotMatch(report.renderReport(s, empty, { now: Date.parse(s.runs[0].at) + 3 * 86400000 }), /Subagent runs in the last day/);
 });
 
-test('the Monitor command still runs: watch with --holder is the watcher, watch list is the board list', () => {
+test('watch: with no sub-command it is the watcher, watch list is the board list', () => {
   const text = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'scripts', 'jobs.mjs'), 'utf8');
   assert.equal((text.match(/^  async watch\(/gm) || []).length, 1, 'one watch command, not two');
-  assert.match(text, /if \(flags\.holder\)/);
   reset();
   assert.ok(runJobs(home, ['watch', 'list']).json.found);
 });

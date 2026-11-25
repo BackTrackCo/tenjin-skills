@@ -15,8 +15,8 @@ import * as em from './lib/email.mjs';
 import * as rs from './lib/resume.mjs';
 import { buildRoundRequest, parseRoundResult } from './lib/writing.mjs';
 import { webPlan } from './lib/websearch.mjs';
-import { claimLease } from './lib/lease.mjs';
-import { readProfile, tick, watcherCodeHash } from './lib/watcher.mjs';
+import { claimLease, leaseFresh, touchLease, watcherStatus } from './lib/lease.mjs';
+import { readProfile, runWatcher, tick, watcherCodeHash } from './lib/watcher.mjs';
 import { applyUpdate, checkRelease, gatesHash, recordRelease } from './lib/release.mjs';
 import { applyNext, confirmDryRun, recordConsent, recordDryRun, recordWritingConsent, revokeConsent } from './lib/apply.mjs';
 import { addAnswer, approveWriting, loadAnswers } from './lib/answers.mjs';
@@ -41,6 +41,13 @@ export function readySheets(st) {
   return Object.values(st.jobs).filter((j) => j.status === 'apply_ready' && j.sheet && j.employerPosting && !st.approvals[j.key]).sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1)).map((j) => ({ key: j.key, company: j.company, title: j.title, fitLine: j.fitLine || '', newAnswers: (j.sheet.fields || []).filter((f) => f.tag === 'new_writing').map((f) => ({ label: f.label, value: f.value })) }));
 }
 const out = (o, code = 0) => {
+  // After a start, every J command says when the watcher is not running: it must be started again (SKILL.md).
+  if (o && typeof o === 'object' && !Array.isArray(o) && process.argv[2] !== 'watch' && process.argv[2] !== 'arm') {
+    try {
+      const st = loadState();
+      if (st.watcherEver && !watcherStatus(st).running) o = { ...o, watcher: 'stopped' };
+    } catch {}
+  }
   process.stdout.write(JSON.stringify(o, null, 2) + '\n');
   process.exitCode = code;
 };
@@ -188,12 +195,14 @@ const commands = {
     return out(loadOverlay().lessons);
   },
 
+  // Arm: reclaim a stale lease and say what to start. The watcher itself is `J watch`, started with the Bash tool's
+  // run_in_background and started again after each round; its exit is what wakes the session.
   async arm() {
-    const holder = Math.random().toString(36).slice(2, 10);
-    const r = await claimLease({ holder });
-    if (!r.ok) return out({ armed: false, heldBy: r.heldBy, note: 'another session holds the lease; attended work still works' });
-    const monitor = `node "${path.join(SKILL_DIR, 'scripts', 'jobs.mjs')}" watch --holder ${holder}`;
-    return out({ armed: true, monitor, note: 'Run this with Monitor, persistent if the tool offers it, else timeout_ms 1800000 and run arm again at the deadline message.', view: view(loadState(), { limit: 10 }) });
+    const now = Date.now();
+    const st = loadState();
+    if (st.lease && leaseFresh(st.lease, now) && watcherStatus(st, now).running) return out({ armed: false, running: true, heldBy: st.lease.holder, note: 'a watcher is already running (this session after a compaction, or another session); if it is another, work attended' });
+    updateState((s) => { if (s.lease) s.lease = null; s.watcherEver = true; });
+    return out({ armed: true, watch: 'start J watch with the Bash tool, run_in_background true; start it again after each round and whenever a J command reports watcher: stopped', view: view(loadState(), { limit: 10 }) });
   },
   async work(_, flags) {
     await prepareInCode({ fetch: globalThis.fetch, profile: readProfile() });
@@ -655,16 +664,11 @@ const commands = {
   },
   // Watched boards the skill found itself, and the person's removals. A removed company is never added again.
   async watch([sub, name], flags) {
-    if (flags.holder) {
-      // the Monitor command: the watcher loop, one tick a minute
-      const seen = { sig: null };
-      const startHash = watcherCodeHash();
-      for (let first = true; ; first = false) {
-        const r = await tick({ holder: flags.holder, fetchImpl: globalThis.fetch, runner: asyncRun, firstTick: first, seen, startHash });
-        for (const l of r.lines) process.stdout.write(l + '\n');
-        if (r.stop) return;
-        await new Promise((res) => setTimeout(res, 60000));
-      }
+    if (!sub) {
+      // the watcher: a background command that exits when work is due
+      const r = await runWatcher({ fetchImpl: globalThis.fetch, runner: asyncRun });
+      process.exitCode = r.exit;
+      return;
     }
     if (sub === 'list') return out({ found: loadState().found || [], pasted: readProfile().watch || [], removed: loadState().removedBoards || [] });
     if (sub !== 'remove' || !name) return out({ error: 'watch list | remove <company or board>' }, 2);
@@ -854,6 +858,7 @@ async function main() {
   if (batch.isBatchDenied(cmd, pos[0]) && batch.isActive()) return out({ error: `${cmd} ${pos[0] || ''} is refused while a batch is open; close it in an attended session first`.replace('  ', ' ') }, 4);
   try {
     await commands[cmd](pos, flags);
+    if (cmd !== 'watch') touchLease();
     // The person's next turn lifts the "not sent" stop on notify-only wakes (only a person runs these).
     if (['report', 'approve', 'submitted', 'ask', 'answer', 'fact', 'start', 'resume', 'consent', 'fill'].includes(cmd)) updateState((st) => { if (st.watcher && st.watcher.notifyResult === 'not_sent') st.watcher.notifyResult = null; });
     // The person's answer is news: items left alone come back for it.

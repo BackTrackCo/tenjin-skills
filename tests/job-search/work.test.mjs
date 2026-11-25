@@ -106,11 +106,17 @@ test('a watcher that lost its lease says so and stops', async () => {
   assert.equal(r.stop, true);
 });
 
-test('arm prints one Monitor command, and a second session cannot arm while the lease is fresh', () => {
+test('arm arms once: a live watcher of another session holds the lease, and a stale lease or a dead process is reclaimed', () => {
   reset();
   const a = runJobs(home, ['arm']);
   assert.equal(a.json.armed, true);
-  assert.match(a.json.monitor, /jobs\.mjs" watch --holder \w+/);
-  const b = runJobs(home, ['arm']);
-  assert.equal(b.json.armed, false);
+  assert.match(a.json.watch, /J watch/);
+  assert.equal(a.json.monitor, undefined, 'no Monitor command');
+  const live = () => store.updateState((s) => { s.lease = { holder: 'w1', heartbeat: new Date().toISOString(), lastTick: new Date().toISOString(), pid: process.pid }; });
+  live();
+  assert.equal(runJobs(home, ['arm']).json.armed, false, 'a live watcher holds it');
+  store.updateState((s) => { s.lease.lastTick = new Date(Date.now() - 3 * 60000).toISOString(); s.lease.heartbeat = s.lease.lastTick; });
+  assert.equal(runJobs(home, ['arm']).json.armed, true, 'a lease older than twice the tick interval is reclaimed');
+  store.updateState((s) => { s.lease = { holder: 'w2', heartbeat: new Date().toISOString(), lastTick: new Date().toISOString(), pid: 2147483000 }; });
+  assert.equal(runJobs(home, ['arm']).json.armed, true, 'a dead process is reclaimed');
 });

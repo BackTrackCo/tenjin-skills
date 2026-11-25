@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { heartbeat } from './lease.mjs';
+import { TICK_MS, claimLease, heartbeat, releaseLease } from './lease.mjs';
 import { checkRelease, recordRelease } from './release.mjs';
 import { SKILL_DIR, readJson, stateDir } from './paths.mjs';
 import { loadState, updateState } from './store.mjs';
@@ -33,7 +33,7 @@ export async function tick(ctx) {
   void ctx.routerClient;
   const lines = [];
   if (!heartbeat(holder, now)) return { lines: ['lease lost: run /job-search again to re-arm'], stop: true };
-  if (startHash && startHash !== watcherCodeHash()) return { lines: [`re-armed: the watcher code changed, run the Monitor command from jobs.mjs arm again`], stop: true };
+  if (startHash && startHash !== watcherCodeHash()) return { lines: [`restart: the watcher code changed, start J watch again`], stop: true };
   const profile = readProfile();
   const state = loadState();
   if ((profile.watch || []).length && sweepDue(state, now, { hour: profile.sweepHour, firstTick, frequency: frequencyOf(profile) })) {
@@ -107,4 +107,31 @@ export async function tick(ctx) {
     state.watcher = { ...(state.watcher || {}), sent: tokens, fingerprint: tokens.join('|'), notify: wl.notify ? (sent ? wl.notify : st.notify || null) : null, notifyMark: sent ? mark : st.notifyMark || null, waiting: sent || !gained || !newNotify ? wsNow : wsPrev };
   });
   return { lines, stop: false };
+}
+
+// The watcher host: a background command that exits when work is due (v0). It ticks as before, prints one line naming the due
+// work only when an actionable wake is due under the wake rules, and the exit is what wakes the session. It never exits
+// because of time, and it keeps ticking with no output on a quiet state. A restarted watcher reads the stored fingerprint, so
+// it does not exit again for the same due set. A second watcher exits at once when another holds the lease.
+export async function runWatcher({ holder = Math.random().toString(36).slice(2, 10), pid = process.pid, fetchImpl, runner, write = (l) => process.stdout.write(`${l}\n`), sleep = (ms) => new Promise((r) => setTimeout(r, ms)), tickMs = TICK_MS, maxTicks = Infinity, ctx = {} } = {}) {
+  const claim = await claimLease({ holder, pid });
+  if (!claim.ok) {
+    write('another session holds the lease; work attended');
+    return { exit: 0, reason: 'lease_held' };
+  }
+  updateState((s) => { s.watcherEver = true; });
+  write('watching; exits when work is due');
+  const startHash = watcherCodeHash();
+  for (let i = 0, first = true; i < maxTicks; i++, first = false) {
+    const r = await tick({ holder, fetchImpl, runner, firstTick: first, seen: { sig: null }, startHash, ...ctx });
+    for (const l of r.lines) write(l);
+    if (r.stop) return { exit: 0, reason: 'stop', lines: r.lines };
+    if (r.lines.length) {
+      releaseLease(holder); // the session restarts it after the round
+      return { exit: 0, reason: 'due', lines: r.lines };
+    }
+    await sleep(tickMs);
+  }
+  releaseLease(holder);
+  return { exit: 0, reason: 'max_ticks' };
 }
