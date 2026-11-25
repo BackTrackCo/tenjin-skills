@@ -15,7 +15,7 @@ export function validateProfile(p) {
   if (has('apply')) need(p.apply && typeof p.apply === 'object' && ['employer', 'linkedin', 'ask'].includes(p.apply.where) && p.apply.source === 'person', 'apply must be {"where": "employer"|"linkedin"|"ask", "source": "person"}');
   if (has('windowDays')) need(num(p.windowDays) && p.windowDays > 0, 'windowDays must be a positive number');
   if (has('sweepHour')) need(Number.isInteger(p.sweepHour) && p.sweepHour >= 0 && p.sweepHour <= 23, 'sweepHour must be a whole number from 0 to 23');
-  for (const k of ['resumePath', 'resumeText']) if (has(k)) need(isStr(p[k]), `${k} must be text`);
+  for (const k of ['resumePath', 'resumeUploadPath', 'resumeText']) if (has(k)) need(isStr(p[k]), `${k} must be text`);
   if (has('watch')) {
     need(Array.isArray(p.watch) && p.watch.every((w) => w && typeof w === 'object' && ((isStr(w.url) && w.url) || (isStr(w.ats) && isStr(w.token)))), 'watch must be a list of {"url": "<careers link>"} (or {"ats", "token"})');
   }

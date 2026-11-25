@@ -29,6 +29,7 @@ import { firstApplicationHosts, renderReport } from './lib/report.mjs';
 import { CHROME_STEPS, maySubmit, stateLine } from './lib/approval.mjs';
 import { openPage, checkOpenUrl, openUrlOf } from './lib/open.mjs';
 import { pushSettings } from './lib/pushsettings.mjs';
+import { copyToUploads, migrateResume, uploadBlockedStep, uploadsDir, uploadsGranted, uploadsLine } from './lib/uploads.mjs';
 import * as qs from './lib/questions.mjs';
 import { FREQUENCIES, frequencyOf, periodStart } from './lib/schedule.mjs';
 import { appendPending, isCareerOpsDir, pipelineLine, readCareerOps } from './lib/careerops.mjs';
@@ -153,7 +154,7 @@ const commands = {
   async batch([sub], flags) {
     if (sub === 'open') {
       const profile = readProfile();
-      const p = batch.openBatch({ mode: flags.unattended ? 'unattended' : 'attended', uploadPath: flags.upload || profile.resumePath });
+      const p = batch.openBatch({ mode: flags.unattended ? 'unattended' : 'attended', uploadPath: flags.upload || profile.resumeUploadPath || profile.resumePath });
       return out({ mode: p.mode, next: 'run apply next' });
     }
     if (sub === 'close') {
@@ -409,7 +410,7 @@ const commands = {
         s.batch = null;
         closed = true;
       }
-      return { parked: kind };
+      return { parked: kind, ...(kind === 'upload_blocked' && flags.unattended !== true && !(s.batch && s.batch.mode === 'unattended') ? { say: uploadBlockedStep() } : {}) };
     });
     return out({ ...r, batchClosed: closed });
   },
@@ -677,6 +678,16 @@ const commands = {
   // off, options that need them carry a note. On clears every Chrome hold, so those jobs go back to the normal flow in this turn.
   // Whether Remote Control looks connected in this session (Claude Code's own session note is there), recorded at each start next to
   // `chrome set`. Code never reads Claude Code's config file.
+  // The uploads folder grant: `granted` records one the model saw in the session (a /add-dir it watched, or a starting folder that
+  // covers it). Code never writes Claude Code's settings.
+  async uploads([sub, v]) {
+    if (sub === 'set' && v === 'granted') return out(updateState((s) => { s.uploads = 'granted'; return { folder: uploadsDir(), granted: true }; }));
+    if (sub === 'status' || !sub) {
+      const granted = uploadsGranted({ recorded: loadState().uploads === 'granted' });
+      return out({ folder: uploadsDir(), granted, ...(granted ? {} : { say: uploadsLine() }) });
+    }
+    return out({ error: 'uploads status | set granted' }, 2);
+  },
   async rc([sub, v]) {
     if (sub !== 'set' || !['on', 'unknown'].includes(v)) return out({ error: 'rc set on|unknown' }, 2);
     return out(updateState((s) => { s.rc = v; return { rc: v, reminder: qs.rcReminder({ rc: v, pushSent: s.pushSent === true, settings: pushSettings() }) }; }));
@@ -982,10 +993,16 @@ const commands = {
     const next = { ...profile, resumeSource: r.source, resumeText: r.resumeText !== undefined ? r.resumeText : r.keepFile ? profile.resumeText : undefined, resumeNeedsText: Boolean(r.needsText), resumeThin: r.thin === true };
     if (r.resumePath) next.resumePath = r.resumePath;
     else if (!r.keepFile) delete next.resumePath;
+    // The file a form takes: a copy in the uploads folder (a link's PDF is saved there directly); the original is not touched.
+    if (r.resumeUploadPath) next.resumeUploadPath = r.resumeUploadPath;
+    else if (r.source === 'file' && r.resumePath) next.resumeUploadPath = copyToUploads(r.resumePath);
+    else if (!r.keepFile) delete next.resumeUploadPath;
     if (r.url) next.resumeUrl = r.url;
     else if (!r.keepFile) delete next.resumeUrl;
     writeJsonAtomic(profileFile(), next);
-    return out({ read: true, source: next.resumeSource, saved: r.resumeTextFile || r.resumePath || null, needsText: next.resumeNeedsText, next: next.resumeNeedsText ? 'read the file with your file reader, then save its text: J resume set --text' : next.resumeThin ? 'a LinkedIn profile has employers but no job titles: confirm the target role with a choice question, your guess first (J ask resume --json {header,question,guess,next,source:"LinkedIn"}); a form that needs more asks for a file or the text' : 'read role, role words, place and remote from the resume' });
+    // Right after a file is saved, and before any fill: one plain line, unless a settings grant already covers the uploads folder.
+    const needLine = Boolean(next.resumeUploadPath) && !uploadsGranted({ recorded: loadState().uploads === 'granted' });
+    return out({ ...(needLine ? { say: uploadsLine() } : {}), read: true, source: next.resumeSource, saved: r.resumeTextFile || r.resumePath || null, needsText: next.resumeNeedsText, next: next.resumeNeedsText ? 'read the file with your file reader, then save its text: J resume set --text' : next.resumeThin ? 'a LinkedIn profile has employers but no job titles: confirm the target role with a choice question, your guess first (J ask resume --json {header,question,guess,next,source:"LinkedIn"}); a form that needs more asks for a file or the text' : 'read role, role words, place and remote from the resume' });
   },
 
   // Items shown to the person in a reply: they leave the notify set until their version changes.
@@ -1052,6 +1069,8 @@ async function main() {
   if (!commands[cmd]) return out({ error: `unknown command: ${cmd}`, commands: Object.keys(commands) }, 2);
   // A command that changes what a submit may do is refused while a batch is open, whoever calls it.
   if (batch.isBatchDenied(cmd, pos[0]) && batch.isActive()) return out({ error: `${cmd} ${pos[0] || ''} is refused while a batch is open; close it in an attended session first`.replace('  ', ' ') }, 4);
+  // An install from before the uploads folder: the first command that sees a saved resume file with no copy there copies it.
+    try { const prof = readProfile(); const m = migrateResume(prof); if (m) writeJsonAtomic(profileFile(), { ...prof, ...m }); } catch {}
   try {
     await commands[cmd](pos, flags);
     if (cmd !== 'watch') touchLease();

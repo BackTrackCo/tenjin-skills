@@ -21,6 +21,7 @@ export const isLinkedIn = (url) => {
   }
 };
 
+import { saveToUploads } from './uploads.mjs';
 const save = (name, data) => {
   const file = path.join(ensureDir(stateDir()), name);
   fs.writeFileSync(file, data, { mode: 0o600 });
@@ -87,7 +88,7 @@ export async function fetchResume(url, fetchImpl = globalThis.fetch, { lookup } 
     if (type.includes('pdf') || /\.pdf($|\?)/i.test(cur)) {
       const buf = Buffer.from(await res.arrayBuffer());
       if (buf.length > MAX_BYTES) return { ask: true, why: 'the file is too large' };
-      return { source: 'link', url, resumePath: save('resume.pdf', buf), needsText: true };
+      { const up = saveToUploads('resume.pdf', buf); return { source: 'link', url, resumePath: up, resumeUploadPath: up, needsText: true }; }
     }
     const html = await res.text();
     if (signInPage(cur, res.status, html)) return { signIn: true };

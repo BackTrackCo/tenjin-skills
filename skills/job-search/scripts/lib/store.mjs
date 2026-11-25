@@ -29,6 +29,7 @@ export function emptyState() {
     notified: {},
     shown: {},
     chrome: null,
+    uploads: null,
     rc: 'unknown',
     pushSent: false,
     rcPushSaid: false,
