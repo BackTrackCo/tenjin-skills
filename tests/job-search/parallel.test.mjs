@@ -81,7 +81,7 @@ test('SKILL.md and apply.md: independent subagents of a wake start in one messag
   const root = path.join(import.meta.dirname, '..', '..', 'skills', 'job-search');
   const skill = fs.readFileSync(path.join(root, 'SKILL.md'), 'utf8');
   assert.ok(skill.length <= 10000, `${skill.length}`);
-  assert.match(skill, /start every independent subagent of a wake in one message as parallel Agent calls/);
+  assert.match(skill, /start every independent subagent of a wake in one message as parallel Agent `model` calls/);
   assert.match(skill, /the one writer call stays single/);
   assert.match(skill, /one job per host at a time \(`J apply next --all`\)/);
   const apply = fs.readFileSync(path.join(root, 'references', 'apply.md'), 'utf8');
