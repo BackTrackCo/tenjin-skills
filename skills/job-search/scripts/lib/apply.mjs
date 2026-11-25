@@ -3,7 +3,7 @@ import { graph } from './graph.mjs';
 import { duplicateWithin, sha } from './dedupe.mjs';
 import { isFillOnly } from './fillonly.mjs';
 import { frequencyOf, periodStart } from './schedule.mjs';
-import { isNeverAutomated } from './platforms.mjs';
+import { hostOf, isNeverAutomated } from './platforms.mjs';
 import { activeLessons, canonical, maxPay, rulesHash, ruleValue } from './overlay.mjs';
 
 export const WRITING_SCOPE = 'application_free_text';
@@ -131,11 +131,16 @@ export function unattendedRuleFailure(job, profile, overlay, now = Date.now()) {
 // ---- apply next -----------------------------------------------------------
 // Pure. ctx: {state, profile, overlay, mode, now, batchOpen}. A job is handed out only in an open batch.
 // Returns {handout} or {refused} plus the jobs that must wait, each with its reason.
+// A handed-out job counts as in flight for 20 minutes (a little longer than the slowest browser step) until it is submitted,
+// filled, stopped or withdrawn. `all` hands out the whole set, one job per host: two jobs on the same host wait for each other, so
+// no site sees many forms at once from one browser; each job keeps its own claim, its own `J may-submit` check and its own stops.
+export const IN_FLIGHT_MS = 20 * 60000;
+export const inFlight = (job, now = Date.now()) => Boolean(job.inFlight && now - Date.parse(job.inFlight.at) < IN_FLIGHT_MS);
 export function applyNext(ctx) {
-  const { state, profile, overlay, mode = 'attended', now = Date.now(), batchOpen, writingRulesText = '' } = ctx;
+  const { state, profile, overlay, mode = 'attended', now = Date.now(), batchOpen, writingRulesText = '', all = false } = ctx;
   const writingOk = writingConsentCurrent(state, writingRulesText);
   const queue = [];
-  const out = (o) => ({ handout: null, refused: null, queue, ...o });
+  const out = (o) => ({ handout: null, handouts: [], refused: null, queue, ...o });
   if (!batchOpen) return out({ refused: 'no_batch' });
   let dry = false;
   if (mode === 'unattended') {
@@ -146,25 +151,38 @@ export function applyNext(ctx) {
   // Positions per period: how many applications an unattended run makes in one period. The rest stay ranked in the
   // queue for the next period and none is dropped. No rule, or "none", means no limit.
   const limit = periodLimit(overlay, { profile, now });
+  let room = Infinity;
   if (mode === 'unattended' && limit !== null) {
     const start = periodStart(now, frequencyOf(profile));
     const done = (state.handouts || []).filter((h) => h.counted && Date.parse(h.at) >= start).length;
     if (done >= limit) return out({ refused: 'period_max', limit, done });
+    room = limit - done;
   }
   const hostLast = new Set(activeLessons(overlay, now).filter((l) => l.effect === 'host_last').map((l) => l.subject));
   const cands = Object.values(state.jobs)
     .filter((j) => ['prepared', 'apply_ready'].includes(j.status) && !j.fillReady)
     .sort((a, b) => Number(hostLast.has(a.ats)) - Number(hostLast.has(b.ats)));
+  const busy = new Set(cands.filter((j) => inFlight(j, now) && j.employerPosting).map((j) => hostOf(j.employerPosting.url)));
+  const handouts = [];
   for (const job of cands) {
+    if (all && inFlight(job, now)) continue; // already handed out, still running
     const why = jobFailure({ job, state, profile, overlay, mode, now, writingOk });
     if (why) {
       queue.push({ key: job.key, reason: why });
       continue;
     }
+    const host = hostOf(job.employerPosting.url);
+    if (all && busy.has(host)) {
+      queue.push({ key: job.key, reason: 'host_busy' }); // waits for its host to free up; never parked
+      continue;
+    }
     const skipFields = mode === 'unattended' && !writingOk && state.consent.unattended.optionalWriting === 'skip' ? (job.sheet.fields || []).filter((f) => f.tag === 'new_writing' && !f.required).map((f) => f.label) : [];
     const fillOnly = isFillOnly(job, overlay, profile);
-    return out({ handout: { key: job.key, url: job.employerPosting.url, sheetHash: job.sheet.hash, mode, dryRun: dry, fillOnly, submit: !dry && !fillOnly, skipFields } });
+    handouts.push({ key: job.key, url: job.employerPosting.url, host, sheetHash: job.sheet.hash, mode, dryRun: dry, fillOnly, submit: !dry && !fillOnly, skipFields });
+    busy.add(host);
+    if (!all || handouts.length >= room) break;
   }
+  if (handouts.length) return out({ handout: handouts[0], handouts });
   return out({});
 }
 

@@ -189,7 +189,7 @@ export const unclaimedDue = (state, items, now = Date.now()) => items.filter((i)
 // Every write to an item raises its state version: the version is a hash of the job's own record, apart from the clocks
 // that a re-verify touches without any news.
 export function itemVersion(job) {
-  const { lastSeen, verifiedAt, firstSeen, statusAt, linkedinShownAt, linkedinAskedV, broughtAt, ...rest } = job;
+  const { lastSeen, verifiedAt, firstSeen, statusAt, linkedinShownAt, linkedinAskedV, broughtAt, inFlight, openedAt, ...rest } = job;
   return sha(canonical(rest)).slice(0, 10);
 }
 // What waits for the person never wakes the model: a sheet that needs their yes (unless they gave it, or the mode is auto),

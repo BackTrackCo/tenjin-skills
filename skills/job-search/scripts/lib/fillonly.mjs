@@ -16,6 +16,7 @@ export function markFillReady(state, key, now = Date.now()) {
   const j = state.jobs[key];
   if (!j) throw new Error(`unknown job: ${key}`);
   j.fillReady = { at: new Date(now).toISOString() };
+  j.inFlight = null;
   return j.fillReady;
 }
 
@@ -24,6 +25,7 @@ export function markSubmitted(state, key, applyOp, now = Date.now()) {
   const j = state.jobs[key];
   if (!j || !(j.fillReady || j.openedAt)) throw new Error('the job is not filled and waiting, and its page was not opened for you');
   const at = new Date(now).toISOString();
+  j.inFlight = null;
   if (j.fillReady) {
     applyOp(state, { op: 'transition', key, to: 'submitted', at });
     j.fillReady = null;

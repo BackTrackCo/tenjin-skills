@@ -19,7 +19,7 @@ import { webPlan } from './lib/websearch.mjs';
 import { claimLease, leaseFresh, touchLease, watcherStatus } from './lib/lease.mjs';
 import { readProfile, runWatcher, tick, watcherCodeHash } from './lib/watcher.mjs';
 import { applyUpdate, checkRelease, gatesHash, recordRelease } from './lib/release.mjs';
-import { applyNext, applyPathOf, confirmDryRun, recordConsent, recordDryRun, recordWritingConsent, revokeConsent } from './lib/apply.mjs';
+import { applyNext, applyPathOf, inFlight, confirmDryRun, recordConsent, recordDryRun, recordWritingConsent, revokeConsent } from './lib/apply.mjs';
 import { addAnswer, approveWriting, loadAnswers } from './lib/answers.mjs';
 import * as batch from './lib/batch.mjs';
 import { hintState, defaultRun, findTenjin } from './lib/tenjin.mjs';
@@ -252,23 +252,29 @@ const commands = {
   },
 
   async apply([sub], flags) {
-    if (sub !== 'next') return out({ error: 'apply next [--unattended]' }, 2);
+    if (sub !== 'next') return out({ error: 'apply next [--unattended] [--all]' }, 2);
     const mode = flags.unattended ? 'unattended' : 'attended';
     batch.touchBatch();
     const state = loadState();
-    const res = applyNext({ state, profile: readProfile(), overlay: loadOverlay(), mode, batchOpen: batch.isActive(Date.now(), state), writingRulesText: readWritingRules() });
+    const res = applyNext({ state, profile: readProfile(), overlay: loadOverlay(), mode, batchOpen: batch.isActive(Date.now(), state), writingRulesText: readWritingRules(), all: flags.all === true });
     let batchClosed = false;
     updateState((s) => {
-      for (const q of res.queue) if (s.jobs[q.key] && !['sheet_not_checked', 'no_recorded_yes', 'no_chrome_tools'].includes(q.reason)) park(s.jobs[q.key], [q.reason]);
-      if (res.handout) { logRun(s, 'browser', 1); refreshClaims(s, 'apply_ready'); }
-      if (res.handout) (s.handouts ||= []).push({ key: res.handout.key, at: new Date().toISOString(), counted: Boolean(res.handout.submit || res.handout.fillOnly) });
-      // An unattended round ends in code: nothing left to submit (empty, held, parked or refused) closes the batch.
-      if (mode === 'unattended' && !res.handout && s.batch && s.batch.mode === 'unattended') {
+      for (const q of res.queue) if (s.jobs[q.key] && !['sheet_not_checked', 'no_recorded_yes', 'no_chrome_tools', 'host_busy'].includes(q.reason)) park(s.jobs[q.key], [q.reason]);
+      for (const h of res.handouts) {
+        logRun(s, 'browser', 1);
+        (s.handouts ||= []).push({ key: h.key, at: new Date().toISOString(), counted: Boolean(h.submit || h.fillOnly) });
+        s.jobs[h.key].inFlight = { at: new Date().toISOString(), host: h.host };
+      }
+      if (res.handouts.length) refreshClaims(s, 'apply_ready');
+      // An unattended round ends in code: nothing left to submit (empty, held, parked or refused) closes the batch, but never
+      // while handed-out jobs are still running in parallel.
+      const running = Object.values(s.jobs).some((j) => ['prepared', 'apply_ready'].includes(j.status) && !j.fillReady && !j.parked && inFlight(j));
+      if (mode === 'unattended' && !res.handouts.length && !running && s.batch && s.batch.mode === 'unattended') {
         s.batch = null;
         batchClosed = true;
       }
     });
-    return out({ ...res, batchClosed }, res.handout ? 0 : 4);
+    return out({ ...res, batchClosed }, res.handouts.length ? 0 : 4);
   },
 
   // The person's yes, recorded per job and exact sheet hash. Many at once: `--all` (every listed sheet) or `--no-new` (only
@@ -280,7 +286,7 @@ const commands = {
     if (flags.withdraw === true) {
       const gone = flags.all === true ? Object.keys(st.approvals) : keys;
       if (!gone.length) return out({ error: 'approve <key> --withdraw | --withdraw --all' }, 2);
-      updateState((s) => { for (const k of gone) { delete s.approvals[k]; if (s.jobs[k]) { s.jobs[k].fillOnly = false; bump(s.jobs[k]); } } });
+      updateState((s) => { for (const k of gone) { delete s.approvals[k]; if (s.jobs[k]) { s.jobs[k].fillOnly = false; s.jobs[k].inFlight = null; bump(s.jobs[k]); } } });
       return out({ withdrawn: gone.length, state: 'Submitted: none. Every yes you took back is waiting for a new approval; nothing will be submitted for it.' });
     }
     // "Ask me each job": the choice joins the approval. LinkedIn means the person applies there; nothing is approved.
@@ -396,6 +402,7 @@ const commands = {
       const job = s.jobs[key];
       if (!job) throw new Error(`unknown job: ${key}`);
       s.stops.push({ key, kind, at: new Date().toISOString(), host: job.ats, company: job.company });
+      job.inFlight = null; // a stop on one job frees its host and leaves the others handed out
       if (kind === 'chrome_disconnected') s.held.push({ reason: 'chrome_disconnected', detail: job.company });
       else if (kind === 'no_chrome_tools') {
         // The browser result reported no Chrome tools. One reason, one notification, nothing submitted, not applied.
