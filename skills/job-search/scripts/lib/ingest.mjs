@@ -1,7 +1,7 @@
 import { graph } from './graph.mjs';
 import { boardTarget, fetchBoard } from './boards.mjs';
 import { employerName } from './employer.mjs';
-import { companyNames, domainMatchesCompany } from './company.mjs';
+import { companyNames, nameMatches } from './company.mjs';
 import { applyOp, bump, normLabel } from './store.mjs';
 import { careersFromLinks, classifyLinks, probeBoards, resolveFromCareersPage } from './employer.mjs';
 import { HN_SITE, isNeverAutomated, isYc, linkedinOf } from './platforms.mjs';
@@ -32,7 +32,7 @@ export function validateIngest(o) {
   if (o.need === 'company_lookup') {
     if (!isStr(o.status) || !DELIVERED.includes(o.status)) return `status "${o.status}" is not a delivered result: write "fulfilled"`;
     if (!isStr(o.jobKey)) return 'company_lookup needs jobKey';
-    if (o.website !== null && o.website !== undefined && typeof o.website !== 'string') return 'website must be text or null';
+    for (const k of ['domain', 'name', 'legalName', 'linkedinUrl']) if (o[k] !== null && o[k] !== undefined && typeof o[k] !== 'string') return `${k} must be text or null`;
     return null;
   }
   if (o.need === 'people_search') {
@@ -355,8 +355,12 @@ function planCompany({ obj, state, plan }) {
     plan.held.push({ reason: 'source_empty', detail: `routed:company_lookup: unknown job ${obj.jobKey}` });
     return plan;
   }
-  const ok = obj.website && domainMatchesCompany(obj.website, companyNames(job)) && !isNeverAutomated(obj.website);
-  plan.company = { key: obj.jobKey, website: ok ? obj.website : null, rejected: obj.website && !ok ? obj.website : null };
+  // The tool returns its best match for the name: the domain is trusted only when the company's name or legal name matches the job's
+  // company name or the board's company name. The registered address is never read as the job's city.
+  const names = companyNames(job);
+  const matches = [obj.name, obj.legalName].some((n) => n && names.some((m) => nameMatches(m, n)));
+  const ok = Boolean(obj.domain) && matches && !isNeverAutomated(`https://${obj.domain}`);
+  plan.company = { key: obj.jobKey, website: ok ? obj.domain : null, rejected: obj.domain && !ok ? obj.domain : null, linkedinUrl: ok ? obj.linkedinUrl || null : null };
   return plan;
 }
 
@@ -365,7 +369,7 @@ function planPeople({ obj, state, plan }) {
     plan.held.push({ reason: 'source_empty', detail: `routed:people_search: unknown job ${obj.jobKey}` });
     return plan;
   }
-  plan.people = { key: obj.jobKey, contacts: obj.contacts };
+  plan.people = { key: obj.jobKey, contacts: obj.contacts, found: obj.found, outside: obj.outside || 0, city: obj.city || '' };
   return plan;
 }
 
@@ -413,6 +417,7 @@ export function persistIngest(plan, now = Date.now()) {
       if (plan.company.website) {
         cj.employerWebsite = plan.company.website;
         cj.employerWebsiteSource = 'company_lookup';
+        if (plan.company.linkedinUrl) cj.companyLinkedinUrl = plan.company.linkedinUrl;
       }
       cj.companyLookedUp = at;
     }
@@ -425,7 +430,7 @@ export function persistIngest(plan, now = Date.now()) {
         } catch {} // a contact the rules refuse is simply not stored
       }
       job.contactsSearched = at;
-      job.contactsStatus = { state: 'searched', found: plan.people.contacts.length, at };
+      job.contactsStatus = { state: 'searched', found: plan.people.found === undefined ? plan.people.contacts.length : plan.people.found, kept: plan.people.contacts.length, outside: plan.people.outside, city: plan.people.city, at };
       state.contactsRequested = (state.contactsRequested || []).filter((k) => k !== job.key);
     }
     for (const pj of plan.jobs) authorContact(state, pj, plan);

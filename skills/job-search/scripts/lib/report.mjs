@@ -243,10 +243,10 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
   const stuckNoPosting = jobs.filter((j) => !j.employerPosting && j.unresolved && !['skipped', 'closed'].includes(j.status)).length;
   if (hints.length && stuckNoPosting) L.push('', hints[0].line);
   // Every job the contacts search did not cover says so with its reason; "returned nothing" only after a search ran.
-  const contactNotes = jobs.filter((j) => j.contactsStatus && !(state.contacts[j.key] || []).length && (state.contactsRequested || []).concat(j.contactsStatus.state === 'searched' ? [j.key] : []).includes(j.key));
+  const contactNotes = jobs.filter((j) => j.contactsStatus && (j.contactsStatus.state === 'searched' ? (j.contactsStatus.outside > 0 || !(state.contacts[j.key] || []).length) : !(state.contacts[j.key] || []).length && (state.contactsRequested || []).includes(j.key)));
   if (contactNotes.length) {
     L.push('', '## Contacts search');
-    for (const j of contactNotes) L.push(`- ${j.title}, ${j.company}: ${j.contactsStatus.state === 'not_searched' ? `not searched: ${j.contactsStatus.reason}` : 'searched, returned nothing'}`);
+    for (const j of contactNotes) L.push(`- ${j.title}, ${j.company}: ${j.contactsStatus.state === 'not_searched' ? `not searched: ${j.contactsStatus.reason}` : j.contactsStatus.found === 0 ? 'searched, returned nothing' : `${j.contactsStatus.found} found${j.contactsStatus.outside ? `, ${j.contactsStatus.outside} outside ${j.contactsStatus.city || 'the city'}` : ''}${j.contactsStatus.kept === 0 ? ', none kept' : ''}`}`);
   }
   const withContacts = jobs.filter((j) => (state.contacts[j.key] || []).length);
   if (withContacts.length) {

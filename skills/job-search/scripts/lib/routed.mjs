@@ -45,7 +45,7 @@ export function jobNeeds(state, profile, overlay, { kinds = ['careers_page', 'pe
     const why = !j ? 'unknown job' : (state.contacts[key] || []).length ? 'a contact is already recorded' : j.contactsSearched ? 'already searched' : (j.routedTried || {}).people_search ? 'tried once and held' : !j.company ? 'no company name' : null;
     if (why) { if (skips) skips.push({ key, reason: why }); continue; }
     const site = websiteOf(j);
-    out.push({ kind: 'people_search', text: fill('people_search', { company: j.company, url: site ? site.url : j.url || '', where: j.city ? ` in ${j.city}` : '' }), fields: { jobKey: key, website: site ? site.url : null, company: j.company, names: companyNames(j), titles: graph().peopleTitles, city: j.city || '', count }, query: null, jobKey: key });
+    out.push({ kind: 'people_search', text: fill('people_search', { company: j.company, url: site ? site.url : j.url || '', where: j.city ? ` in ${j.city}` : '' }), fields: { jobKey: key, website: site ? site.url : null, company: j.company, names: companyNames(j), linkedinUrl: j.companyLinkedinUrl || null, titles: graph().peopleTitles, city: j.city || '', count }, query: null, jobKey: key });
   }
   return out;
 }

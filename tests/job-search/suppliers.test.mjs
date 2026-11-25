@@ -142,7 +142,7 @@ test('people: the mapper sends the company website and titles, a location only w
 test('people: total 0 is a normal empty answer; a person found is a likely contact, not confirmed', async () => {
   const emptyRes = FX['people-search'].step2.envelope.result;
   assert.equal(emptyRes.total, 0);
-  assert.deepEqual(people.adapter(emptyRes, { jobKey: 'k' }), { jobKey: 'k', contacts: [], total: 0 });
+  assert.deepEqual(people.adapter(emptyRes, { jobKey: 'k' }), { jobKey: 'k', contacts: [], total: 0, found: 0, outside: 0, city: '' });
   const hand = people.adapter(FX['people-search'].step2_non_empty.envelope.result, { jobKey: 'k' });
   assert.deepEqual([hand.contacts[0].name, hand.contacts[0].channel, hand.contacts[0].notConfirmed, hand.contacts[0].basis], ['Person J', 'linkedin', true, 'likely']);
   assert.equal(hand.contacts.length, 2);

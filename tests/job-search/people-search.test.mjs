@@ -63,51 +63,97 @@ test('the website comes from what code has, with its source: record, posting, bo
   assert.equal(company.domainMatchesCompany('https://acme.test', ['Acme Robotics', 'acme']), true, 'the board\'s company name counts too');
 });
 
-test('with Tenjin: a free spec, the company lookup run, the domain checked and saved with its source, then the people search by domain', async () => {
+const BYNAME = fixture('router/people-search-by-name.json');
+const lookup = (over = {}) => ({ ...FX.company.step2.envelope, result: JSON.stringify({ ...FX.company.step2.envelope.result, ...over }) });
+
+test('with Tenjin: a free spec, the company lookup run, the domain trusted on a name match and saved with its source, then the people search by domain', async () => {
   reset();
-  add(job(11));
+  add(job(11, { company: 'Vercel' }));
   const f = fake({ answers: [spec(FX.company), run(FX.company.step2.envelope), spec(FX.people), run(FX.people.step2.envelope)] });
   const log = await routed.routeContacts({ keys: null, profile: {}, fetch: fakeFetch({}), client: client(f), now: NOW });
   const j = store.loadState().jobs[job(11).key];
-  assert.deepEqual([j.employerWebsite, j.employerWebsiteSource], ['https://www.acmerobotics.test', 'company_lookup']);
+  assert.deepEqual([j.employerWebsite, j.employerWebsiteSource], ['vercel.com', 'company_lookup'], 'the bare domain, not the full URL');
+  assert.equal(j.companyLinkedinUrl, 'https://www.linkedin.com/company/vercel', 'the company page is kept for a later match');
+  assert.equal(j.city, 'New York', 'the registered address is never read as the job\'s city');
   const calls = f.log().filter((l) => l.call).map((l) => l.call);
   assert.deepEqual(calls[0], { tool: 'companyenrich-properties' }, 'the first call is the free spec, by catalog tool id');
   assert.equal(calls[1].id, FX.company.step1.json.id);
-  assert.deepEqual(calls[1].input, { name: 'Acme Robotics' }, 'only the name: the board link and the city are code context');
-  assert.deepEqual(calls[3].input.query.currentCompanyWebsite, { include: ['acmerobotics.test'] }, 'the people search then filters by the domain');
-  assert.equal(log.find((l) => l.status === 'company_lookup').website, 'https://www.acmerobotics.test');
+  assert.deepEqual(calls[1].input, { name: 'Vercel' }, 'only the name: the board link and the city are code context');
+  assert.deepEqual(calls[3].input.query.currentCompanyWebsite, { include: ['vercel.com'] }, 'the people search then filters by the domain');
+  assert.equal(log.find((l) => l.status === 'company_lookup').website, 'vercel.com');
   assert.equal(log.at(-1).searchedBy, 'website');
 });
 
-test('a lookup domain that does not match the company is not saved; the people search runs by name and city and its results are weak or dropped', async () => {
+test('the lookup answer is one company object: the domain is trusted only when its name or legal name matches the job\'s company', async () => {
+  const ing = await import(`${S}ingest.mjs`);
+  const run1 = async (jobOver, answer) => {
+    reset();
+    const j = job(40, jobOver);
+    add(j);
+    const obj = { need: 'company_lookup', status: 'fulfilled', ...cl.adapter(answer, { jobKey: j.key }) };
+    await ing.ingest({ obj, state: store.loadState(), profile: {}, overlay: empty, fetch: fakeFetch({}), now: NOW });
+    return store.loadState().jobs[j.key];
+  };
+  const real = FX.company.step2.envelope.result;
+  assert.deepEqual(cl.adapter(real, { jobKey: 'k' }), { jobKey: 'k', name: 'Vercel', legalName: 'Vercel Inc', domain: 'vercel.com', linkedinUrl: 'https://www.linkedin.com/company/vercel' });
+  assert.equal((await run1({ company: 'Vercel' }, real)).employerWebsite, 'vercel.com');
+  assert.equal((await run1({ company: 'Vercel, Inc.' }, real)).employerWebsite, 'vercel.com', 'the legal name counts');
+  assert.equal((await run1({ company: 'Acme Robotics' }, real)).employerWebsite, undefined, 'a different company: the domain is not trusted');
+  assert.equal((await run1({ company: 'Acme Robotics', boardCompany: 'Vercel' }, real)).employerWebsite, 'vercel.com', 'the board\'s company name counts');
+  assert.equal((await run1({ company: 'Vercel' }, { ...real, name: 'Zeta Labs', legalName: null })).employerWebsite, undefined);
+  assert.equal(cl.adapter({ ...real, domain: 'https://www.Vercel.com/x' }, { jobKey: 'k' }).domain, 'vercel.com');
+  assert.throws(() => cl.adapter([real], { jobKey: 'k' }), /one company object/);
+});
+
+test('a lookup that does not match the company is not saved; the people search runs by name and city and says how many it found and how many were outside the city', async () => {
   reset();
-  add(job(12));
-  const people2 = ppl([lead(1, 'Acme Robotics'), lead(2, 'Zeta Holdings'), lead(3, '')]);
-  const f = fake({ answers: [spec(FX.company), run(FX.company.step2_mismatch.envelope), spec(FX.people), people2] });
+  add(job(12, { company: 'Vercel' }));
+  const f = fake({ answers: [spec(FX.company), lookup({ name: 'Zeta Labs', legalName: 'Zeta Labs LLC' }), spec(FX.people), { ...BYNAME.step2.envelope, result: JSON.stringify(BYNAME.step2.envelope.result) }] });
   const log = await routed.routeContacts({ keys: null, profile: {}, fetch: fakeFetch({}), client: client(f), now: NOW });
   const st = store.loadState();
   assert.equal(st.jobs[job(12).key].employerWebsite, undefined, 'no domain that fails the name check is saved');
   const calls = f.log().filter((l) => l.call).map((l) => l.call);
-  assert.deepEqual(calls[3].input.query.currentCompanyName, { include: ['Acme Robotics'] });
+  assert.deepEqual(calls[3].input.query.currentCompanyName, { include: ['Vercel'] });
   assert.equal(calls[3].input.query.currentCompanyWebsite, undefined);
   assert.equal(log.at(-1).searchedBy, 'name and city');
   const got = st.contacts[job(12).key];
-  assert.deepEqual(got.map((c) => c.name), ['P1 X', 'P3 X'], 'a person from another company is never recorded');
-  assert.equal(got[0].weak, undefined, 'the company matches the board\'s company name: not weak');
-  assert.equal(got[1].weak, true, 'no company on the lead: weak');
+  assert.equal(got.length, 1, 'the Fort Lee lead is dropped for its place');
+  assert.deepEqual(st.jobs[job(12).key].contactsStatus, { state: 'searched', found: 2, kept: 1, outside: 1, city: 'New York', at: st.jobs[job(12).key].contactsStatus.at });
+  assert.match(report.renderReport(st, empty, { now: NOW, profile: {} }), /Engineer, Vercel: 2 found, 1 outside New York/);
 });
 
-test('the adapter keeps a person only when no known company contradicts, and marks weak what it cannot confirm', () => {
+test('the adapter reads the host of the company website, matches by name or the company\'s LinkedIn page, and marks weak leads', () => {
+  const res = BYNAME.step2.envelope.result;
+  const [a, b] = res.leads;
+  // no city: both leads stay; A is a sales engineering title, B's headline names another company
+  const byName = people.adapter(res, { jobKey: 'k', names: ['Vercel'] });
+  assert.deepEqual(byName.contacts.map((c) => [c.name, c.weak]), [['Person A', true], ['Person B', true]]);
+  assert.deepEqual([byName.found, byName.outside], [2, 0]);
+  // title and headline checks one at a time
+  const only = (lead) => people.adapter({ success: true, total: 1, leads: [lead] }, { jobKey: 'k', names: ['Vercel'] }).contacts[0];
+  assert.equal(only({ ...b, headline: 'Director of Engineering at Vercel' }).weak, undefined, 'a clean lead is not weak');
+  for (const t of ['Field CTO', 'Solutions Architect', 'Head of Sales', 'Account Executive']) assert.equal(only({ ...b, headline: 'x at Vercel', lastJobTitle: t }).weak, true, t);
+  assert.equal(only({ ...b, headline: 'Director of Engineering at Netlify' }).weak, true, 'the headline names a different company than lastCompanyName');
+  assert.equal(only({ ...b, headline: 'Engineering leader' }).weak, undefined, 'a headline with no company says nothing');
+  // the company website is a full URL with a path: only its host is compared
+  const withSite = people.adapter(res, { jobKey: 'k', website: 'vercel.com' });
+  assert.equal(withSite.contacts.length, 2);
+  assert.ok(withSite.contacts.every((c) => c.weak === true) === true, 'A (title) and B (headline) are weak for their own reasons');
+  assert.equal(people.adapter({ success: true, total: 1, leads: [{ ...b, lastCompanyWebsite: 'https://other.example/contact/sales' }] }, { jobKey: 'k', website: 'vercel.com' }).contacts.length, 0, 'another host: another company, never recorded');
+  // a lead is matched through the company's LinkedIn page when a lookup gave it, whatever the name says
+  const li = people.adapter({ success: true, total: 1, leads: [{ ...b, lastCompanyName: 'Vercel Inc.', lastCompanyUrl: 'https://www.linkedin.com/company/vercel/' }] }, { jobKey: 'k', names: ['Somebody Else'], linkedinUrl: 'https://www.linkedin.com/company/vercel' });
+  assert.equal(li.contacts.length, 1);
+  assert.equal(li.contacts[0].weak, true, 'still weak for the headline');
+  // the place filter keeps its drop and counts it
+  const inNy = people.adapter(res, { jobKey: 'k', names: ['Vercel'], city: 'New York' });
+  assert.deepEqual([inNy.contacts.map((c) => c.name), inNy.found, inNy.outside, inNy.city], [['Person B'], 2, 1, 'New York']);
+});
+
+test('a person from another company is never recorded when nothing confirms the company', () => {
   const res = { success: true, total: 2, leads: [lead(1, 'Acme Robotics'), lead(2, 'Other Co')] };
-  const byName = people.adapter(res, { jobKey: 'k', names: ['Acme Robotics'] });
-  assert.deepEqual(byName.contacts.map((c) => [c.name, c.weak]), [['P1 X', undefined]]);
-  const withSite = people.adapter(res, { jobKey: 'k', names: [], website: 'acmerobotics.test' });
-  assert.equal(withSite.contacts.length, 2, 'with a domain the search filter did the matching');
-  assert.ok(withSite.contacts.every((c) => c.weak === undefined));
-  const noInfo = people.adapter(res, { jobKey: 'k' });
-  assert.ok(noInfo.contacts.every((c) => c.weak === true), 'nothing to confirm a company by: weak');
+  assert.deepEqual(people.adapter(res, { jobKey: 'k', names: ['Acme Robotics'] }).contacts.map((c) => c.name), ['P1 X']);
+  assert.ok(people.adapter(res, { jobKey: 'k' }).contacts.every((c) => c.weak === true), 'nothing to confirm a company by: weak');
   assert.throws(() => people.mapper({ titles: ['EM'] }), /no employer website or company name/);
-  assert.deepEqual(cl.adapter({ company: { name: 'Acme', domain: 'acme.test' } }, { jobKey: 'k' }), { jobKey: 'k', website: 'https://acme.test', name: 'Acme' });
 });
 
 test('J contacts route reports every job it did not search; the report says not searched: <reason>, and returned nothing only after a search ran', async () => {
@@ -158,6 +204,7 @@ test('the company lookup request input has only keys from its spec', () => {
   }
   assert.deepEqual(cl.mapper({ company: 'Acme', url: 'u', city: 'c' }), { name: 'Acme' }, 'no url, no location');
   assert.equal(cl.TOOL, 'companyenrich-properties');
-  assert.equal(JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'fixtures', 'router', 'company-lookup.json'), 'utf8'))._note.startsWith('HAND-MADE'), true);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'fixtures', 'router', 'company-lookup.json'), 'utf8'))._note.startsWith('Recorded'), true);
+  assert.equal(cl.RECORDED, true);
   assert.throws(() => cl.mapper({}), /no company name/);
 });
