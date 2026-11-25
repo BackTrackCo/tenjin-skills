@@ -1,5 +1,6 @@
 import { notifyLine, plannedJobs, stillLeft, tenjinHint } from './work.mjs';
-import { dmLink, handleIn, mailto, pending as pendingEmails, emailState } from './email.mjs';
+import { dmLink, emailConsentCurrent, handleIn, mailto, due as pendingEmails, emailState } from './email.mjs';
+import { graph } from './graph.mjs';
 
 export const REASONS = {
   no_apply_link: 'no apply link in the posting',
@@ -45,6 +46,14 @@ const PERSON_HELD = ['chrome_disconnected', 'no_chrome_tools', 'update_waiting',
 
 // The short report (the default): one count line, the jobs the skill plans to apply to, and only the questions and approvals
 // that need the person now. Everything else is behind `J report --all`.
+// A job a sweep closed is no longer waiting on the person. A yes is needed only when the mode asks for one: in fill-only and the auto
+// modes none is, and in "Just open the pages" nothing is submitted.
+const live = (j) => !graph().terminal.includes(j.status);
+const yesNeeded = (state, profile, j) => !state.approvals[j.key] && !j.fillOnly && !['fill_only', 'open_only'].includes((profile || {}).applyMode) && !String((profile || {}).applyMode || '').startsWith('auto');
+const mailLine = (state, profile, overlay, n) => (emailConsentCurrent(state, profile || {}, overlay)
+  ? `${n} intro email draft${n > 1 ? 's' : ''} will be sent to the addresses the posters published (you gave consent for that).`
+  : `${n} intro email draft${n > 1 ? 's' : ''} wait${n > 1 ? '' : 's'} for your yes (addresses the posters published; none goes without it).`);
+
 function renderShort(state, overlay, { since, now, profile }) {
   const jobs = Object.values(state.jobs);
   const L = [`# Job Search report, ${new Date(now).toISOString().slice(0, 10)}`, ''];
@@ -59,13 +68,13 @@ function renderShort(state, overlay, { since, now, profile }) {
   const best = [...new Set(mine.filter((j) => typeof j.fit === 'number').sort((a, b) => b.fit - a.fit).map((j) => j.company))].slice(0, 3);
   const leads = (state.leads || []).filter((l) => l.status === 'new' && !l.joinedJob).length;
   L.push(`${fresh.length} new job${fresh.length === 1 ? '' : 's'}; ${planned.length} planned to apply to${done.length ? `, ${done.length} submitted` : ''}; ${mine.length} for you to apply to yourself${best.length ? ` (best you can apply to yourself: ${best.join(', ')})` : ''}${leads ? `; ${leads} ${leads === 1 ? 'person' : 'people'} hiring` : ''}.`);
-  const stateOf = (j) => (j.status === 'apply_ready' ? (state.approvals[j.key] ? 'approved, applying next' : 'waiting for your yes') : j.status === 'prepared' ? (j.awaitingApproval ? 'prepared, needs your answers' : 'prepared') : 'being prepared');
+  const stateOf = (j) => (j.status === 'apply_ready' ? (state.approvals[j.key] ? 'approved, applying next' : yesNeeded(state, profile, j) ? 'waiting for your yes' : ['fill_only', 'open_only'].includes(profile.applyMode) || j.fillOnly ? 'to be filled, not submitted' : 'applying next') : j.status === 'prepared' ? (j.awaitingApproval ? 'prepared, needs your answers' : 'prepared') : 'being prepared');
   if (planned.length || done.length) {
     L.push('', `## Planned to apply to (${planned.length + done.length})`);
     for (const j of planned) L.push(`- ${j.fit ?? '?'} | ${j.title}, ${j.company}${placeOf(j) ? `, ${placeOf(j)}` : ''}${j.salary ? ` | pay: ${j.salary}` : ''}${(j.warnings || []).length ? ` | warnings: ${j.warnings.join('; ')}` : ''} | ${stateOf(j)}`);
     for (const j of done) L.push(`- ${j.fit ?? '?'} | ${j.title}, ${j.company} | ${j.status}`);
   }
-  const readyYes = jobs.filter((j) => ((j.status === 'apply_ready' && j.sheet) || (j.status === 'prepared' && j.awaitingApproval)) && j.employerPosting && !state.approvals[j.key]).sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1));
+  const readyYes = jobs.filter((j) => ((j.status === 'apply_ready' && j.sheet) || (j.status === 'prepared' && j.awaitingApproval)) && j.employerPosting && live(j) && yesNeeded(state, profile, j)).sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1));
   if (readyYes.length) {
     L.push('', `## Need your yes (${readyYes.length})`);
     for (const j of readyYes) {
@@ -73,9 +82,9 @@ function renderShort(state, overlay, { since, now, profile }) {
       for (const f of ((j.sheet && j.sheet.fields) || []).filter((x) => x.tag === 'new_writing')) L.push(`  - new answer, "${f.label}": ${String(f.value).replace(/\n/g, ' ')}`);
     }
   }
-  const filled = jobs.filter((j) => j.fillReady);
+  const filled = jobs.filter((j) => j.fillReady && live(j));
   if (filled.length) { L.push('', `## Filled, waiting for your submit (${filled.length})`); for (const j of filled) L.push(`- ${j.title}, ${j.company}: the form is filled in an open tab. Press submit in Chrome and tell me, or say "Submit it now" and I submit it.`); }
-  const stuck = jobs.filter((j) => j.parked);
+  const stuck = jobs.filter((j) => j.parked && live(j));
   if (stuck.length) {
     L.push('', '## Waiting on you');
     for (const j of stuck) {
@@ -86,7 +95,7 @@ function renderShort(state, overlay, { since, now, profile }) {
   const held = state.held.filter((h) => PERSON_HELD.includes(h.reason));
   if (held.length) { L.push('', '## Needs you'); for (const h of held) L.push(`- ${h.reason.replace(/_/g, ' ')}${h.detail ? `: ${h.detail}` : ''}`); }
   const mail = pendingEmails(state);
-  if (mail.length) L.push('', `${mail.length} intro email draft${mail.length > 1 ? 's' : ''} wait${mail.length > 1 ? '' : 's'} for your yes (addresses the posters published; none goes without it).`);
+  if (mail.length) L.push('', mailLine(state, profile, overlay, mail.length));
   const consent = (state.consentLog || []).filter((c) => !c.acked);
   if (consent.length) { L.push('', '## Consent changes (check that each one was yours)'); for (const c of consent) L.push(`- ${c.at.slice(0, 16).replace('T', ' ')}: ${c.what}.`); }
   if (planned.length) L.push('', CONTACTS_LINE);
@@ -164,7 +173,7 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
     L.push('', `## First application on a new site (${firstHosts.length})`);
     for (const h of firstHosts) L.push(`- first application on ${h.host}: ${h.title}, ${h.company}`);
   }
-  const readyYes = jobs.filter((j) => j.status === 'apply_ready' && j.sheet && j.employerPosting && !state.approvals[j.key]).sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1));
+  const readyYes = jobs.filter((j) => j.status === 'apply_ready' && j.sheet && j.employerPosting && live(j) && yesNeeded(state, profile, j)).sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1));
   if (readyYes.length) {
     L.push('', `## Ready for your yes (${readyYes.length})`);
     for (const j of readyYes) {
@@ -172,7 +181,7 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
       for (const f of (j.sheet.fields || []).filter((x) => x.tag === 'new_writing')) L.push(`  - new answer, "${f.label}": ${String(f.value).replace(/\n/g, ' ')}`);
     }
   }
-  const filled = jobs.filter((j) => j.fillReady);
+  const filled = jobs.filter((j) => j.fillReady && live(j));
   L.push('', `## Filled, waiting for your submit (${filled.length})`);
   for (const j of filled) L.push(`- ${j.title}, ${j.company}: the form is filled in an open tab. Press submit in Chrome and tell me, or say "Submit it now" and I submit it.`);
   const held = state.held.filter((h) => h.reason === 'source_empty');
@@ -200,7 +209,7 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
     L.push('', '## Updates');
     for (const u of state.updateLines.slice(-3)) L.push(`- ${u}`);
   }
-  const stuck = jobs.filter((j) => j.parked || (j.status === 'apply_ready' && !state.approvals[j.key]));
+  const stuck = jobs.filter((j) => live(j) && (j.parked || (j.status === 'apply_ready' && yesNeeded(state, profile, j))));
   if (stuck.length) {
     L.push('', '## Waiting on you');
     for (const j of stuck) {
@@ -215,7 +224,7 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
     for (const l of leads) L.push(`- ${l.author || l.handle || l.email}${l.employer ? `, ${l.employer}` : ''}${l.role ? `, ${l.role}` : ''}: ${l.url}${l.intro ? `. ${introNote(l.intro, l.channel === 'x' ? l.handle : null, l.channel === 'email' ? l.email : null, l.emailFromPost)}${l.channel === 'email' && l.source === 'x' && l.handle ? ` DM link, if you prefer to write there: ${dmLink(l.handle, '').profile}` : ''}` : ''}`);
   }
   const mail = pendingEmails(state);
-  if (mail.length) L.push('', `${mail.length} intro email draft${mail.length > 1 ? 's' : ''} wait${mail.length > 1 ? '' : 's'} for your yes (addresses the posters published; none goes without it).`);
+  if (mail.length) L.push('', mailLine(state, profile, overlay, mail.length));
   const sentMail = (emailState(state).log || []).filter((m) => now - Date.parse(m.at) < 86400000);
   if (sentMail.length) L.push('', `Emails in the last day: ${sentMail.map((m) => `${m.how} to ${m.to}`).join('; ')}.`);
   const oc = state.postOutcomes || {};

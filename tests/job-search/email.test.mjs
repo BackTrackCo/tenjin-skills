@@ -168,7 +168,7 @@ test('pending drafts are an item that waits for the person, until the email cons
   assert.match(work.notifyLine(store.loadState(), empty, NOW).line, /1 intro email draft to approve/);
   store.updateState((s) => em.recordEmailConsent(s, {}, empty));
   assert.equal(item().waitsForPerson, false);
-  assert.match(report.renderReport(store.loadState(), empty, { now: NOW }), /1 intro email draft waits for your yes/);
+  assert.match(report.renderReport(store.loadState(), empty, { now: NOW }), /1 intro email draft will be sent to the addresses the posters published \(you gave consent for that\)/, 'under the consent no yes is needed, and the report says so');
 });
 
 test('an X lead\'s DM is the person\'s: code gives the profile link and the text, and nothing opens or fetches x.com', async () => {

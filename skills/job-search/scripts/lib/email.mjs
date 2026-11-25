@@ -37,6 +37,12 @@ export function pending(state) {
   const e = emailState(state);
   return candidates(state).filter((c) => !FINAL.includes((e.drafts[c.id] || {}).status));
 }
+// The drafts that are work or a wait for the person: one to an address already approached within 90 days can never be sent, so it
+// is not an item that comes back (the handout queue still names it).
+export function due(state, now = Date.now()) {
+  const e = emailState(state);
+  return pending(state).filter((c) => !(e.sent[lower(c.to)] && now - Date.parse(e.sent[lower(c.to)]) < REPEAT_DAYS * DAY));
+}
 
 export function addBatch(state, now = Date.now()) {
   const e = emailState(state);
@@ -75,13 +81,16 @@ export function nextEmail(state, { profile, overlay, unattended = false, now = D
   const via = e.connector === 'send' || e.connector === 'drafts' ? e.connector : 'none';
   for (const c of candidates(state)) {
     const d = e.drafts[c.id];
-    if (!d || FINAL.includes(d.status)) continue;
+    if (!d) { queue.push({ id: c.id, reason: 'not_in_batch' }); continue; } // never added by `J email batch`: say so
+    if (FINAL.includes(d.status)) continue;
     // a draft-only connector sends nothing, so an unattended run may make the drafts; a send needs a yes or the consent
     const allowed = d.status === 'approved' || (unattended && (consent || via === 'drafts'));
     if (!allowed) {
       queue.push({ id: c.id, reason: unattended ? 'no_email_consent' : 'not_approved' });
       continue;
     }
+    // handed out and not yet marked sent: the same draft is not handed out again for half an hour
+    if (d.handedAt && now - Date.parse(d.handedAt) < 30 * 60000) { queue.push({ id: c.id, reason: 'handed_out' }); continue; }
     const problem = recipientProblem(state, c, overlay, profile, { unattended, now });
     if (problem) {
       queue.push({ id: c.id, reason: problem });

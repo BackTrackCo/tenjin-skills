@@ -113,6 +113,6 @@ export function recordRelease(result, now = Date.now()) {
     state.held = state.held.filter((h) => h.reason !== 'update_waiting' && h.reason !== 'update_failed');
     if (result.status === 'update_waiting') state.held.push({ reason: 'update_waiting', detail: result.tag });
     if (result.status === 'update_failed') state.held.push({ reason: 'update_failed', detail: result.line });
-    if (result.line) (state.updateLines ||= []).push(result.line);
+    if (result.line && !(state.updateLines || []).includes(result.line)) (state.updateLines ||= []).push(result.line);
   });
 }

@@ -8,7 +8,7 @@ import { SKILL_DIR, ensureDir, readJson, stateDir, writeJsonAtomic } from './lib
 import { applyOp, applyOps, bump, companyTitleKey, loadState, oldStateError, readOldStateFields, updateState, view } from './lib/store.mjs';
 
 import { addRule, deriveLessons, loadOverlay, removeRule } from './lib/overlay.mjs';
-import { markShown, refreshClaims, releaseClaims, itemVersion, LEAVE_REASONS, ITEM_LEAVE_REASONS, advanceSearch, askFirst, tenjinHint, itemKind, leaveItem, leaveRecord, park, unpark, workList } from './lib/work.mjs';
+import { markShown, roundOpen, refreshClaims, releaseClaims, itemVersion, LEAVE_REASONS, ITEM_LEAVE_REASONS, advanceSearch, askFirst, tenjinHint, itemKind, leaveItem, leaveRecord, park, unpark, workList } from './lib/work.mjs';
 import { applyRoundDrafts, checkJobSheet, prepareInCode, writableFields } from './lib/prepare.mjs';
 import { logRun } from './lib/runlog.mjs';
 import * as em from './lib/email.mjs';
@@ -50,7 +50,7 @@ const out = (o, code = 0) => {
   if (o && typeof o === 'object' && !Array.isArray(o) && process.argv[2] !== 'watch' && process.argv[2] !== 'arm') {
     try {
       const st = loadState();
-      if (st.watcherEver && !watcherStatus(st).running) o = { ...o, watcher: 'stopped' };
+      if (st.watcherEver && !watcherStatus(st).running && !roundOpen(st)) o = { ...o, watcher: 'stopped' };
     } catch {}
   }
   process.stdout.write(JSON.stringify(o, null, 2) + '\n');
@@ -522,9 +522,10 @@ const commands = {
       const r = parseRoundResult(fs.readFileSync(flags.result, 'utf8'));
       return out(updateState((s) => {
         const sheets = applyRoundDrafts(s, r.answers, profile);
-        const leads = saveLeadIntros(s, r.leads);
+        const leads = saveLeadIntros(s, r.leads, { strict: false });
+        let refused = s.__refusedLeadIntros || 0;
+        delete s.__refusedLeadIntros;
         let intros = 0;
-        let refused = 0;
         for (const [jk, byName] of Object.entries(r.intros)) {
           for (const [name, v] of Object.entries(byName)) {
             try {
@@ -571,6 +572,8 @@ const commands = {
       }
       for (const c of st.consentLog || []) c.acked = true;
       markShown(st); // the person is shown the waiting items now: no push repeats them
+      // the short report does not list the update lines, so they stay unshown for the full report and the push
+      if (!all) for (const k of Object.keys(st.shown || {})) if (k.startsWith('update:')) delete st.shown[k];
     });
     process.stdout.write(text + '\n');
     // The reply ends with one line on what Tenjin adds. It is not part of the report file. No price.
@@ -609,10 +612,10 @@ const commands = {
       r = await ingest({ obj, state, profile: readProfile(), overlay: loadOverlay(), fetch: globalThis.fetch });
     } catch (e) {
       // The file could not be read as the shape the need takes: say what to rewrite, and let the item come back for it.
-      if (obj) updateState((s) => releaseClaims(s, (key) => key === obj.jobKey || (Array.isArray(obj.batch) && key.startsWith('posts:')) || key === `need:${obj.need}` || (obj.need === 'web_search' && (key === 'web' || key === 'search'))));
+      if (obj) updateState((s) => releaseClaims(s, ingestClaims(obj)));
       return out({ error: `the result file was not ingested (${e.message}): rewrite it in the shape the need takes, with no empty or non-object entries` }, 2);
     }
-    if (obj) updateState((s) => releaseClaims(s, (key) => key === obj.jobKey || (Array.isArray(obj.batch) && key.startsWith('posts:')) || key === `need:${obj.need}` || (obj.need === 'web_search' && (key === 'web' || key === 'search'))));
+    if (obj) updateState((s) => releaseClaims(s, ingestClaims(obj)));
     if (obj && !r.held.length) updateState((s) => logRun(s, obj.need === 'web_search' ? 'web_search' : obj.need === 'careers_page' ? 'careers' : Array.isArray(obj.batch) ? 'post_review' : obj.need === 'people_search' ? 'contacts' : 'search', 1));
     return out(r, r.held.length && !r.added && !r.applyYourself && !r.posts ? 4 : 0);
   },
@@ -1024,7 +1027,8 @@ const commands = {
           s.jobs[k].left = leaveRecord(s, s.jobs[k], overlay, flags.reason, profile);
         } else leaveItem(s, k, flags.reason, profile);
       }
-      releaseClaims(s, (key) => keys.includes(key) || keys.includes(`contacts:${key}`) || keys.some((k) => k === `contacts:${key}`));
+      // only the claim for what was left: a job's contacts item, not the job's other items
+      releaseClaims(s, (key, reason) => keys.includes(key) || (reason === 'contacts_requested' && keys.includes(`contacts:${key}`)));
       return { left: keys.length, reason: flags.reason, ...(keys.some((k) => itemKind(k) === 'contacts') && flags.unattended !== true ? { askTenjin: askFirst(s, 'contacts') } : {}) };
     }));
   },
@@ -1157,13 +1161,22 @@ const commands = {
 };
 
 // A lead's intro must fit its channel. Never sent.
-function saveLeadIntros(s, r) {
+// The claims an ingested result ends: its own item only. A careers result ends that job's employer-page claim, a people search its contacts
+// claim; no other claim on the same job is touched.
+const ingestClaims = (obj) => (key, reason) => (key === obj.jobKey && ((obj.need === 'careers_page' && reason === 'employer_page') || (obj.need === 'people_search' && reason === 'contacts_requested') || (obj.need === 'company_lookup' && reason === 'employer_page'))) || (Array.isArray(obj.batch) && key.startsWith('posts:')) || key === `need:${obj.need}` || (obj.need === 'web_search' && (key === 'web' || key === 'search'));
+
+function saveLeadIntros(s, r, { strict = true } = {}) {
   let n = 0;
+  s.__refusedLeadIntros = 0;
   for (const l of s.leads || []) {
     const v = r[l.url];
     if (!v) continue;
     const text = String(v.text).trim();
-    if (l.channel === 'email' ? !String(v.subject || '').trim() || text.split(/\s+/).length > 120 : text.length > 300) throw new Error(`the intro for ${l.url} does not fit its channel`);
+    if (l.channel === 'email' ? !String(v.subject || '').trim() || text.split(/\s+/).length > 120 : text.length > 300) {
+      if (strict) throw new Error(`the intro for ${l.url} does not fit its channel`);
+      s.__refusedLeadIntros++; // in a round, one bad intro is counted and the rest still land
+      continue;
+    }
     l.intro = { channel: l.channel, subject: l.channel === 'email' ? v.subject : null, text, writtenAt: new Date().toISOString() };
     n++;
   }

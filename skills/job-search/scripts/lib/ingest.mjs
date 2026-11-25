@@ -288,15 +288,15 @@ function planPosts({ obj, state, plan }) {
         if (!post.author) return `post ${o.url} has no author in its record`;
         // An address published word for word in an X post counts like one in an HN comment; with a handle and an address
         // both, the channel is email, and the report still shows the DM link next to it with no second draft.
-        if (l.email && !text.includes(l.email)) return `lead ${o.url}: the email is not word for word in the post`;
+        if (l.email && !emailsIn(text).includes(l.email)) return `lead ${o.url}: the email is not word for word in the post`;
         channel = l.email ? 'email' : 'x';
         if (handle && handle.toLowerCase() !== String(post.author).replace(/^@/, '').toLowerCase()) return `lead ${o.url}: the handle must be the post's author from the record`;
       } else if (l.email || handle) {
-        if (l.email && !text.includes(l.email)) return `lead ${o.url}: the email is not word for word in the post`;
+        if (l.email && !emailsIn(text).includes(l.email)) return `lead ${o.url}: the email is not word for word in the post`;
         if (!l.email && handle && !text.includes(handle)) return `lead ${o.url}: the handle is not word for word in the post`;
         channel = l.email ? 'email' : 'other';
       } else return `lead ${o.url}: an HN comment needs an email or a handle that appears in it`;
-      plan.leads.push({ url: o.url, key: leadKey(o.url), source: isX ? 'x' : 'hn', channel, author: post.author || '', handle: isX ? String(post.author).replace(/^@/, '') : handle, email: l.email || null, emailFromPost: Boolean(l.email) && text.includes(l.email), employer: o.employer || l.employer || '', role: o.role || l.role || '', place: o.place || l.place || '', excerpt: text.slice(0, 280), status: 'new', foundAt: new Date().toISOString(), intro: null, joinedJob: null });
+      plan.leads.push({ url: o.url, key: leadKey(o.url), source: isX ? 'x' : 'hn', channel, author: post.author || '', handle: isX ? String(post.author).replace(/^@/, '') : handle, email: l.email || null, emailFromPost: Boolean(l.email) && emailsIn(text).includes(l.email), employer: o.employer || l.employer || '', role: o.role || l.role || '', place: o.place || l.place || '', excerpt: text.slice(0, 280), status: 'new', foundAt: new Date().toISOString(), intro: null, joinedJob: null });
     }
     plan.outcomes.push({ url: o.url, outcome: o.outcome, reason: o.reason || null });
   }

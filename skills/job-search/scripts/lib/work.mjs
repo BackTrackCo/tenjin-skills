@@ -3,7 +3,7 @@ import { updateState, loadState } from './store.mjs';
 import { loadOverlay, activeLessons, ruleValue } from './overlay.mjs';
 import { readJson, stateDir } from './paths.mjs';
 import { frequencyOf, periodStart, searchIsDue } from './schedule.mjs';
-import { applyPathOf, periodLimit } from './apply.mjs';
+import { applyPathOf, consentStatus, periodLimit } from './apply.mjs';
 import { openUrlOf } from './open.mjs';
 import { hintLines, offerItems, outdatedLine, pricesCheckedAt, paceText, searchRoundNote } from './prices.mjs';
 import { employerName } from './employer.mjs';
@@ -13,7 +13,7 @@ import { canonical } from './overlay.mjs';
 import { cleanupStale, isActive, batchMode } from './batch.mjs';
 import { postFacts } from './postinfo.mjs';
 import { tenjinAsk as tenjinAskQuestion } from './questions.mjs';
-import { emailConsentCurrent, pending as pendingEmails } from './email.mjs';
+import { emailConsentCurrent, due as pendingEmails } from './email.mjs';
 import path from 'node:path';
 
 export const POST_BATCH = 25;
@@ -95,8 +95,8 @@ export function advanceSearch(state, profile) {
 export const LEAVE_REASONS = ['low_score', 'no_match', 'no_careers_page', 'sign_in', 'other_system', 'not_a_job', 'duplicate'];
 // The other work-list keys take their own reasons. A search item (the round, the free web search, a need code could not
 // run) comes back at the next period; a contacts item comes back on news about its job. A post batch is never left.
-export const ITEM_LEAVE_REASONS = { search: ['no_web_search'], contacts: ['none_found'] };
-export const itemKind = (key) => (key === 'search' || key === 'web' || String(key).startsWith('need:') ? 'search' : String(key).startsWith('contacts:') ? 'contacts' : String(key).startsWith('posts:') ? 'posts' : 'job');
+export const ITEM_LEAVE_REASONS = { search: ['no_web_search'], contacts: ['none_found'], email: ['not_sending'] };
+export const itemKind = (key) => (key === 'search' || key === 'web' || String(key).startsWith('need:') ? 'search' : String(key).startsWith('contacts:') ? 'contacts' : key === 'email' ? 'email' : String(key).startsWith('posts:') ? 'posts' : 'job');
 const RULE_EFFECTS = ['exclude_company', 'exclude_term', 'require_term', 'min_pay', 'place', 'remote', 'employment_type'];
 export const rulesVersion = (overlay) => (overlay.rules || []).filter((r) => RULE_EFFECTS.includes(r.effect)).map((r) => `${r.effect}=${r.value}`).sort().join('|');
 const hostOf = (u) => { try { return new URL(/^https?:/i.test(u) ? u : `https://${u}`).hostname.replace(/^www\./, '').toLowerCase(); } catch { return ''; } };
@@ -139,6 +139,7 @@ export const stillLeft = (state, job, overlay, profile = {}) => Boolean(job.left
 // Items that are not a job. A search item comes back at the next period (its own trigger); a contacts item comes back when
 // its job changes or the person answers.
 export const itemInputs = (state, key, profile, now) => {
+  if (itemKind(key) === 'email') return sha(canonical(pendingEmails(state).map((c) => c.id))).slice(0, 16);
   if (itemKind(key) === 'contacts') {
     const job = state.jobs[key.slice(9)];
     return sha(canonical({ v: job ? itemVersion(job) : null, answers: state.answerV || 0 })).slice(0, 16);
@@ -171,14 +172,22 @@ export function claimItems(state, items, now = Date.now()) {
 // Drop claims for items that are no longer due, and end claims past the limit: an item still due then wakes once.
 export function settleClaims(state, items, now = Date.now()) {
   const due = new Set(items.map(ckey));
+  const base = Object.fromEntries(items.map((i) => [ckey(i), String(i.v || '').replace(/~\d+$/, '')]));
   for (const [k, c] of Object.entries(state.claims || {})) {
-    if (!due.has(k)) delete state.claims[k];
+    if (!due.has(k)) { delete state.claims[k]; delete (state.claimBase || {})[k]; }
     else if (now - Date.parse(c.at) >= CLAIM_MS) {
       delete state.claims[k];
-      (state.claimEpochs ||= {})[k] = (state.claimEpochs[k] || 0) + 1;
+      // An item still open wakes the model once when its claim times out. Timing out again with nothing new about the item wakes
+      // nobody: an item the model cannot progress does not come back every twenty minutes.
+      if ((state.claimBase || {})[k] !== base[k]) {
+        (state.claimEpochs ||= {})[k] = (state.claimEpochs[k] || 0) + 1;
+        (state.claimBase ||= {})[k] = base[k];
+      }
     }
   }
 }
+// A round is open while any claimed item has not been handled: the session starts the watcher last, after it.
+export const roundOpen = (state, now = Date.now()) => Object.values(state.claims || {}).some((c) => now - Date.parse(c.at) < CLAIM_MS);
 export function releaseClaims(state, match) {
   for (const k of Object.keys(state.claims || {})) if (match(k.split('|')[0], k.split('|')[1])) delete state.claims[k];
 }
@@ -199,7 +208,13 @@ export function itemVersion(job) {
 export function waitsForPerson(state, profile, item, overlay = { rules: [] }) {
   if (item.reason === 'fill_ready' || item.reason === 'follow_up_due' || item.reason === 'site_applied' || item.reason === 'site_ready' || item.reason === 'open_ready') return true;
   if (item.reason === 'email_due') return !emailConsentCurrent(state, profile, overlay);
-  if (item.reason === 'apply_ready') return !(String(profile.applyMode || '').startsWith('auto') || profile.applyMode === 'fill_only' || (state.jobs[item.key] || {}).fillOnly || state.approvals[item.key]);
+  if (item.reason === 'apply_ready') {
+    const job = state.jobs[item.key] || {};
+    if (job.noChromeTools) return true; // held on its own reason: nothing for the model to do until Chrome is back
+    const auto = String(profile.applyMode || '').startsWith('auto');
+    if (auto && !consentStatus(state, profile, overlay).ok) return true; // an auto mode with no current consent waits for the person
+    return !(auto || profile.applyMode === 'fill_only' || job.fillOnly || state.approvals[item.key]);
+  }
   return false;
 }
 
@@ -348,7 +363,7 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
     else if (j.status === 'submitted' && !j.followUpAsked && now - Date.parse(j.statusAt) > graph().followUpDays * DAY) add(j, 'follow_up_due');
   }
   const mail = pendingEmails(state);
-  if (mail.length) items.push({ key: 'email', reason: 'email_due', title: `${mail.length} intro email${mail.length > 1 ? 's' : ''} to published addresses`, company: '', gate: GATES.email_due, count: mail.length });
+  if (mail.length && !itemStillLeft(state, 'email', profile, now)) items.push({ key: 'email', reason: 'email_due', title: `${mail.length} intro email${mail.length > 1 ? 's' : ''} to published addresses`, company: '', gate: GATES.email_due, count: mail.length });
   for (const key of state.contactsRequested || []) {
     const cj = state.jobs[key];
     if (!cj || (state.contacts[key] || []).length || itemStillLeft(state, `contacts:${key}`, profile, now)) continue;
@@ -419,13 +434,13 @@ export function waitingSetRaw(state) {
     if (graph().terminal.includes(j.status)) continue;
     if (j.fillReady) w[`fill:${j.key}`] = `${j.fillReady.at}|${j.company}`;
     else if (j.parked) w[`park:${j.key}`] = `${j.parked.key}|${j.parked.reasons.join(',')}|${j.company}`;
-    else if (j.status === 'apply_ready' && !state.approvals[j.key] && j.employerPosting && !j.fillOnly && !['fill_only', 'open_only'].includes(mode)) w[`yes:${j.key}`] = `${j.hash}|${j.company}`;
+    else if (j.status === 'apply_ready' && !state.approvals[j.key] && j.employerPosting && !j.fillOnly && !['fill_only', 'open_only'].includes(mode) && !String(mode || '').startsWith('auto')) w[`yes:${j.key}`] = `${j.hash}|${j.company}`;
   }
   const mail = pendingEmails(state);
   if (mail.length) w[`email:${mail.length}`] = sha(canonical(mail.map((c) => c.id))).slice(0, 10);
   for (const h of state.held) if (PERSON_HELD.includes(h.reason)) w[`held:${h.reason}:${h.detail || ''}`] = h.reason;
   // An update line goes to the report and the notify set, never a wake of its own.
-  (state.updateLines || []).forEach((l, i) => { w[`update:${i}:${l}`] = l; });
+  for (const l of state.updateLines || []) w[`update:${sha(l).slice(0, 8)}`] = l;
   // Every consent change and writing approval is visible: one notification, and a line in the next report.
   for (const c of state.consentLog || []) if (!c.acked) w[`consent:${c.at}`] = c.what;
   return w;
@@ -441,7 +456,7 @@ export function notifyLine(state, overlay, now = Date.now(), { unattended = fals
     const [a, b] = q.split('-').map(Number);
     const h = new Date(now).getHours();
     const inQuiet = a <= b ? h >= a && h < b : h >= a || h < b;
-    if (inQuiet) return { line: null, next: state.notified }; // keep unnotified, so it pushes after quiet hours
+    if (inQuiet) return { line: null, quiet: true, next: state.notified }; // keep unnotified, so it pushes after quiet hours
   }
   const yes = fresh.filter((k) => k.startsWith('yes:')).length;
   const filled = fresh.filter((k) => k.startsWith('fill:')).length;
@@ -453,7 +468,7 @@ export function notifyLine(state, overlay, now = Date.now(), { unattended = fals
   const parts = [];
   if (filled) parts.push(`${filled} filled, waiting for your submit (fill ready)`);
   if (yes) parts.push(`${yes} application${yes > 1 ? 's wait' : ' waits'} for your yes`);
-  if (mails.length) parts.push(`${mails[0].slice(6)} intro email draft${mails[0].slice(6) === '1' ? '' : 's'} to ${emailConsentCurrent(state, {}, overlay) ? 'send' : 'approve'}`);
+  if (mails.length) parts.push(`${mails[0].slice(6)} intro email draft${mails[0].slice(6) === '1' ? '' : 's'} to ${emailConsentCurrent(state, readJson(path.join(stateDir(), 'profile.json'), {}), overlay) ? 'send' : 'approve'}`);
   if (stops.length) {
     const j = state.jobs[stops[0].slice(5)];
     parts.push(`${stops.length} stop${stops.length > 1 ? 's need' : ' needs'} you${stops.length === 1 && j ? ` at ${j.company}` : ''} (${j && j.parked ? (j.parked.reasons[0] === 'needs_facts' && (j.missingFacts || []).length ? `needs facts: ${j.missingFacts.map((f) => f.replace(/_/g, ' ')).join(', ')}` : j.parked.reasons[0].replace(/_/g, ' ')) : 'parked'})`);
@@ -478,6 +493,7 @@ export function workList({ now = Date.now(), commit = false, unattended = false 
     const wl = buildWorkList(state, overlay, now, readJson(path.join(stateDir(), 'profile.json'), {}), { unattendedOpen: unattendedBatchOpen(), unattended });
     const n = notifyLine(state, overlay, now, { unattended });
     wl.notify = n.line;
+    wl.notifyQuiet = Boolean(n.quiet);
     if (commit) {
       state.notified = n.next;
       for (const j of Object.values(state.jobs)) if (j.left && !stillLeft(state, j, overlay, readJson(path.join(stateDir(), 'profile.json'), {}))) j.left = null; // news came: due again

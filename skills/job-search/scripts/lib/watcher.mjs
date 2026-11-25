@@ -103,7 +103,8 @@ export async function tick(ctx) {
   const mark = `${s1.sweep.lastAt || ''}|${(s1.routed || {}).lastSearchAt || ''}|${(s1.hn || {}).lastAt || ''}|${(s1.yc || {}).lastAt || ''}`;
   const wsNow = waitingSet(s1);
   const wsPrev = st.waiting || {};
-  const gained = Object.keys(wsNow).some((k) => wsPrev[k] !== wsNow[k]); // a set that only shrinks changes nothing
+  // a set that only shrinks changes nothing, and an update line never wakes the session on its own (it rides on the next wake)
+  const gained = Object.keys(wsNow).some((k) => !k.startsWith('update:') && wsPrev[k] !== wsNow[k]);
   // The push's own answer decides (J notify result): "not sent" stops notify-only wakes until the person's next turn; an
   // answer that cannot tell leaves them only for items that block work (a stop, a held item, a consent to give).
   const res = st.notifyResult || null;
@@ -118,7 +119,7 @@ export async function tick(ctx) {
   }
   const sent = newNotify && (fresh.length || notifyOnly);
   updateState((state) => {
-    state.watcher = { ...(state.watcher || {}), sent: tokens, fingerprint: tokens.join('|'), notify: wl.notify ? (sent ? wl.notify : st.notify || null) : null, notifyMark: sent ? mark : st.notifyMark || null, waiting: sent || !gained || !newNotify ? wsNow : wsPrev };
+    state.watcher = { ...(state.watcher || {}), sent: tokens, fingerprint: tokens.join('|'), notify: wl.notify ? (sent ? wl.notify : st.notify || null) : null, notifyMark: sent ? mark : st.notifyMark || null, waiting: sent ? wsNow : wl.notifyQuiet ? wsPrev : !gained || !newNotify ? wsNow : wsPrev };
   });
   return { lines, stop: false };
 }

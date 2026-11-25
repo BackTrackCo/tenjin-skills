@@ -14,7 +14,7 @@ const reset = (jobs = []) => store.updateState((s) => { Object.assign(s, store.e
 test('the work-list has items, held, inventory, rules, lessons; an empty one says so and still exits 0', () => {
   reset();
   const empty = work.workList({ now: NOW });
-  assert.deepEqual(Object.keys(empty).sort(), ['bring', 'empty', 'held', 'heldForPeriod', 'inventory', 'items', 'lessons', 'notify', 'rules']);
+  assert.deepEqual(Object.keys(empty).sort(), ['bring', 'empty', 'held', 'heldForPeriod', 'inventory', 'items', 'lessons', 'notify', 'notifyQuiet', 'rules']);
   assert.equal(empty.empty, true);
   const r = runJobs(home, ['work']);
   assert.equal(r.code, 0, 'an empty list is not an error: a new user sees no failure');

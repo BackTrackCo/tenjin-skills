@@ -138,7 +138,9 @@ test('items that wait for the person never wake the model; they keep their one n
   assert.match(woke[0], /1 apply_ready/);
   // in an auto mode a ready sheet is work the model can act on
   reset([sheet({})]);
-  runJobs(home, ['profile', 'set', JSON.stringify({ applyMode: 'auto_no_new' })]);
+  runJobs(home, ['profile', 'set', JSON.stringify({ applyMode: 'auto_no_new', unattended: { roles: ['engineer'], places: ['Berlin'], minScore: 0, hosts: ['*'] } })]);
+  assert.equal(work.workList({ now: NOW }).items[0].waitsForPerson, true, 'an auto mode with no consent on file waits for the person');
+  assert.equal(runJobs(home, ['consent', 'record', 'unattended', '--optional-writing', 'skip']).code, 0);
   assert.equal(work.workList({ now: NOW }).items[0].waitsForPerson, false);
 });
 
