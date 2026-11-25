@@ -1,15 +1,17 @@
 import { graph } from './graph.mjs';
 
-// What each Tenjin capability costs, as estimates: the recorded provider price plus the routing fee (15%), rounded up to a tenth of
-// a cent, kept in graph.json under `prices` with the date they were checked. Every figure in a hint or the ask is built from this
-// data, so a price change flows into the text. A call by catalog tool id is assumed to carry the fee until confirmed.
+// What each Tenjin capability costs, as estimates: the recorded provider price, plus the routing fee (15%) for a routed query only,
+// rounded up to a tenth of a cent, kept in graph.json under `prices` with the date they were checked and how each need goes (`via`:
+// a routed query, or a catalog tool id, which carries no routing fee). Every figure in a hint or the ask is built from this data, so
+// a price change flows into the text.
 const price = (need) => graph().prices.needs[need].estimateCents;
 const tenths = (cents) => Math.round(cents * 10);
 
-// The estimate from a recorded provider price in USD: price plus the fee share, rounded up to a tenth of a cent, in integers.
-export function estimateCentsFromUsd(usd, share = graph().prices.routingFeeShare) {
+// The estimate from a recorded provider price in USD: the price, plus the fee share for a routed query (none for a tool-id call),
+// rounded up to a tenth of a cent, in integers.
+export function estimateCentsFromUsd(usd, via = 'routed_query') {
   const micro = Math.round(usd * 1e6); // millionths of a dollar
-  const pct = Math.round((1 + share) * 100);
+  const pct = via === 'tool_id' ? 100 : Math.round((1 + graph().prices.routingFeeShare) * 100);
   return Math.ceil((micro * pct) / 100 / 1000) / 10; // tenths of a cent, rounded up
 }
 

@@ -227,33 +227,40 @@
     "checkedAt": "2026-11-25",
     "routingFeeShare": 0.15,
     "variantsPerRound": 2,
-    "note": "estimate = recorded provider price plus 15%, rounded up to a tenth of a cent; a call by catalog tool id is assumed to carry the fee until confirmed",
+    "note": "estimate = the recorded provider price, plus the 15% routing fee for a routed query only, rounded up to a tenth of a cent; a call by catalog tool id carries no routing fee (confirmed from the router's own call records, 2026-11-25)",
     "needs": {
       "board_search": {
+        "via": "tool_id",
         "providerUsd": 0.004,
-        "estimateCents": 0.5
+        "estimateCents": 0.4
       },
       "job_postings": {
+        "via": "routed_query",
         "providerUsd": 0.003,
         "estimateCents": 0.4
       },
       "x_hiring_posts": {
+        "via": "routed_query",
         "providerUsd": 0.005,
         "estimateCents": 0.6
       },
       "careers_page": {
+        "via": "routed_query",
         "providerUsd": 0.005,
         "estimateCents": 0.6
       },
       "people_search": {
+        "via": "routed_query",
         "providerUsd": 0.01,
         "estimateCents": 1.2
       },
       "company_lookup": {
+        "via": "tool_id",
         "providerUsd": 0.01225,
-        "estimateCents": 1.5
+        "estimateCents": 1.3
       },
       "linkedin_profile": {
+        "via": "routed_query",
         "providerUsd": 0.02,
         "estimateCents": 2.3
       }
