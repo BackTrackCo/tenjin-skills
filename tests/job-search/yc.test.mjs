@@ -17,7 +17,10 @@ const { graph } = await import(`${S}/graph.mjs`);
 
 const rd = (f) => fs.readFileSync(path.join(FIX, 'yc', f), 'utf8');
 const ROLE = rd('role-software-engineer.html');
-const COMPANY = rd('company-synthetic.html');
+const COMPANY_FX = rd('company-placeholder.html');
+// The recorded shape with a placeholder company, filled with the company the test asks about.
+const companyPage = (name, site) => COMPANY_FX.replaceAll('Example Co', name).replaceAll('https://www.example-co.test', site);
+const SITES = { '/companies/karat-financial': ['Karat Financial', 'https://www.karat-financial.test'], '/companies/medplum': ['Medplum', 'https://www.medplum.test'], '/companies/wasmer': ['Wasmer', 'https://www.wasmer.test'], '/companies/bountiful': ['Bountiful', 'https://www.bountiful.test'] };
 const ROBOTS = rd('robots.txt');
 const O = 'https://www.ycombinator.com';
 const NOW = Date.parse('2026-11-25T12:00:00Z');
@@ -34,9 +37,8 @@ function ycFetch(over = {}) {
     if (url.startsWith(O)) {
       const p = new URL(url).pathname;
       if (over[p] !== undefined) return typeof over[p] === 'number' ? page('', over[p]) : page(over[p]);
-      if (p === '/robots.txt') return page(ROBOTS);
       if (p.startsWith('/jobs/role/')) return page(ROLE);
-      if (p.startsWith('/companies/') && !p.includes('/jobs/')) return page(COMPANY);
+      if (SITES[p]) return page(companyPage(...SITES[p]));
       return page('', 404);
     }
     if (url.startsWith('https://boards-api.greenhouse.io/v1/boards/medplum/')) return { ok: true, status: 200, json: async () => GHMED, text: async () => '' };
@@ -49,8 +51,8 @@ function ycFetch(over = {}) {
 const paced = () => { const s = []; const fn = async (ms) => { s.push(ms); }; fn.log = s; return fn; };
 
 test('only the four public paths are fetched, logged out; every other YC path and host is refused', async () => {
-  for (const ok of [`${O}/robots.txt`, `${O}/jobs/role/software-engineer`, `${O}/jobs/role/software-engineer/san-francisco`, `${O}/companies/medplum`, `${O}/companies/medplum/jobs/nAbajSt-software-engineer`]) assert.doesNotThrow(() => net.assertAllowed(ok, { yc: true }), ok);
-  for (const bad of [`${O}/companies?batch=W20`, `${O}/jobs`, `${O}/library?x=1`, `${O}/verify/abc`, `${O}/companies/medplum/people`, `${O}/jobs/role/a/b/c`, `${O}/jobs/role/software-engineer?x=1`, 'https://www.workatastartup.com/jobs/1', 'https://account.ycombinator.com/authenticate', 'https://news.ycombinator.com/item?id=1', 'http://www.ycombinator.com/jobs/role/designer', 'https://ycombinator.com/jobs/role/designer']) assert.throws(() => net.assertAllowed(bad, { yc: true }), /not a readable Y Combinator page/, bad);
+  for (const ok of [`${O}/jobs/role/software-engineer`, `${O}/jobs/role/software-engineer/san-francisco`, `${O}/companies/medplum`, `${O}/companies/medplum/jobs/nAbajSt-software-engineer`]) assert.doesNotThrow(() => net.assertAllowed(ok, { yc: true }), ok);
+  for (const bad of [`${O}/robots.txt`, `${O}/companies?batch=W20`, `${O}/jobs`, `${O}/library?x=1`, `${O}/verify/abc`, `${O}/companies/medplum/people`, `${O}/jobs/role/a/b/c`, `${O}/jobs/role/software-engineer?x=1`, 'https://www.workatastartup.com/jobs/1', 'https://account.ycombinator.com/authenticate', 'https://news.ycombinator.com/item?id=1', 'http://www.ycombinator.com/jobs/role/designer', 'https://ycombinator.com/jobs/role/designer']) assert.throws(() => net.assertAllowed(bad, { yc: true }), /not a readable Y Combinator page/, bad);
   // without the narrow option every YC host stays refused
   for (const u of [`${O}/jobs/role/software-engineer`, 'https://www.workatastartup.com/jobs/1', 'https://account.ycombinator.com/x']) await assert.rejects(net.guardedFetch(u, {}, async () => page('')), /never-automated host refused/);
   const f = ycFetch();
@@ -69,8 +71,18 @@ test('the recorded role page parses from data-page; a page that changed shape do
   assert.equal(yc.parseListing('<html>no data</html>'), null);
   assert.equal(yc.parseListing(ROLE.replace('WaasJobListingsPage&quot;, &quot;props', 'Other&quot;, &quot;props')), null);
   assert.equal(yc.parseListing(ROLE.replaceAll('&quot;jobPostings&quot;', '&quot;postings&quot;')), null);
-  assert.equal(yc.companyWebsite(COMPANY), 'https://www.medplum.com');
-  assert.equal(yc.companyWebsite('<div></div>'), null);
+  const med = companyPage('Medplum', 'https://www.medplum.com');
+  assert.equal(yc.companyWebsite(med, 'Medplum'), 'https://www.medplum.com');
+  assert.equal(yc.companyWebsite(med, 'Someone Else'), null, 'the page must be the company asked for');
+  assert.equal(yc.companyWebsite('<div></div>', 'Medplum'), null);
+  assert.equal(yc.companyWebsite(med.replace('&quot;website&quot;', '&quot;site&quot;'), 'Medplum'), null, 'no props.company.website: no website');
+  assert.equal(yc.companyWebsite(med.replace('https://www.medplum.com', 'https://www.ycombinator.com/x'), 'Medplum'), null);
+  // only props.company.website is read: another website key elsewhere and any founders are ignored
+  const decoy = JSON.stringify({ component: 'ycdc_new/pages/Companies/ShowPage', props: { website: 'https://decoy.test', company: { name: 'Medplum', founders: [{ name: 'Pat Example', website: 'https://pat.test' }] } } });
+  const withFounder = `<div data-page="${decoy.replaceAll('"', '&quot;')}"></div>`;
+  assert.equal(yc.companyWebsite(withFounder, 'Medplum'), null);
+  const src = fs.readFileSync(path.join(ROOT, 'skills', 'job-search', 'scripts', 'lib', 'yc.mjs'), 'utf8');
+  assert.doesNotMatch(src.replace(/\/\/.*$/gm, ''), /founders|linkedin_url|twitter_url|github_url/, 'no person\'s data is read or stored');
   assert.doesNotMatch(ROLE, /hiringManager&quot;: &quot;/, 'no hiring manager name is recorded');
 });
 
@@ -87,14 +99,49 @@ test('the role and the place map to YC slugs in code; no fit reads nothing', () 
   assert.equal(yc.keepPlace('Berlin, Germany', { search: { place: 'Berlin' }, remote: false }), true);
 });
 
-test('robots.txt is read first and obeyed: the longest rule wins', () => {
-  const rules = yc.parseRobots(ROBOTS);
-  for (const p of ['/jobs/role/software-engineer', '/companies/medplum', '/companies/medplum/jobs/x']) assert.equal(yc.robotsAllows(rules, p), true, p);
-  for (const p of ['/verify/x', '/companies?batch=W20', '/library?x=1']) assert.equal(yc.robotsAllows(rules, p), false, p);
-  assert.equal(yc.robotsAllows(yc.parseRobots('User-agent: *\nDisallow: /jobs/'), '/jobs/role/designer'), false);
+// robots.txt is never fetched at run time. The curated paths were checked against the recorded copy, and this test keeps it so:
+// a path added to the list must be allowed by YC's recorded rules (the longest matching rule wins, Allow on a tie).
+const parseRobots = (text) => {
+  const rules = [];
+  let star = false;
+  let inGroup = false;
+  for (const raw of text.split('\n')) {
+    const m = /^([A-Za-z-]+)\s*:\s*(.*)$/.exec(raw.replace(/#.*/, '').trim());
+    if (!m) continue;
+    const k = m[1].toLowerCase();
+    if (k === 'user-agent') { if (!inGroup) star = false; if (m[2].trim() === '*') star = true; inGroup = true; } else {
+      inGroup = false;
+      if (star && (k === 'allow' || k === 'disallow') && m[2].trim()) rules.push({ allow: k === 'allow', pattern: m[2].trim() });
+    }
+  }
+  return rules;
+};
+const robotsAllows = (rules, p) => {
+  let best = null;
+  for (const r of rules) {
+    const re = new RegExp(`^${r.pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\\\$$/, '$')}`);
+    if (re.test(p) && (!best || r.pattern.length > best.pattern.length || (r.pattern.length === best.pattern.length && r.allow))) best = r;
+  }
+  return !best || best.allow;
+};
+test('every curated path pattern, with sample values, is allowed by the recorded robots.txt; the skill never fetches robots.txt', async () => {
+  const rules = parseRobots(ROBOTS);
+  assert.ok(rules.length >= 5, 'the recorded rules parse');
+  const samples = ['/jobs/role/software-engineer', '/jobs/role/software-engineer/san-francisco', '/jobs/role/recruiting-hr/new-york', '/companies/medplum', '/companies/karat-financial', '/companies/medplum/jobs/nAbajSt-software-engineer'];
+  assert.equal(net.YC_PATHS.length, 3, 'the curated list is three patterns: role, company, job');
+  for (const re of net.YC_PATHS) assert.ok(samples.some((p) => re.test(p)), `a sample for ${re}`);
+  for (const p of samples) { assert.ok(net.YC_PATHS.some((re) => re.test(p)), `${p} is curated`); assert.equal(robotsAllows(rules, p), true, `${p} is allowed by robots.txt`); }
+  // the recorded rules do disallow other paths, so the check can fail
+  for (const p of ['/verify/x', '/companies?batch=W20', '/library?x=1']) assert.equal(robotsAllows(rules, p), false, p);
+  const f = ycFetch();
+  reset();
+  await yc.runYc({ fetch: f, profile, sleep: paced(), now: NOW });
+  assert.equal(f.calls.some((c) => c.url.includes('robots')), false, 'no robots.txt request at run time');
+  const src = fs.readFileSync(path.join(ROOT, 'skills', 'job-search', 'scripts', 'lib', 'yc.mjs'), 'utf8');
+  assert.doesNotMatch(src.replace(/\/\/.*$/gm, ''), /robots/i);
 });
 
-test('one request at a time at the fixed pace; robots.txt first; jobs go through the employer-posting steps', async () => {
+test('one request at a time at the fixed pace; jobs go through the employer-posting steps', async () => {
   reset();
   const f = ycFetch();
   const sleep = paced();
@@ -103,7 +150,7 @@ test('one request at a time at the fixed pace; robots.txt first; jobs go through
   const wrapped = async (u, o) => { if (u.startsWith(O)) { inFlight++; maxFlight = Math.max(maxFlight, inFlight); } try { return await f(u, o); } finally { if (u.startsWith(O)) inFlight--; } };
   const r = await yc.runYc({ fetch: wrapped, profile, sleep, now: NOW });
   const paths = f.yc().map((c) => new URL(c.url).pathname);
-  assert.deepEqual(paths, ['/robots.txt', '/jobs/role/software-engineer', '/jobs/role/software-engineer/san-francisco', '/companies/karat-financial', '/companies/medplum', '/companies/wasmer', '/companies/bountiful']);
+  assert.deepEqual(paths, ['/jobs/role/software-engineer', '/jobs/role/software-engineer/san-francisco', '/companies/karat-financial', '/companies/medplum', '/companies/wasmer', '/companies/bountiful']);
   assert.equal(maxFlight, 1, 'one at a time');
   assert.equal(yc.ycPaceMs(), 5000);
   assert.equal(graph().ycRead.paceMs, 5000);
@@ -138,18 +185,6 @@ test('a page that fails or changed shape is skipped with one line and not retrie
   assert.ok(r2.lines.some((l) => /^yc: \/companies\/wasmer skipped \(http 500\)/.test(l)));
   assert.equal(g.yc().filter((c) => c.url.endsWith('/companies/wasmer')).length, 1);
   assert.equal(Object.values(store.loadState().jobs).some((j) => j.company === 'Wasmer'), true);
-  // robots.txt that cannot be read: nothing else is read
-  reset();
-  const h = ycFetch({ '/robots.txt': 503 });
-  const r3 = await yc.runYc({ fetch: h, profile, sleep: paced(), now: NOW });
-  assert.deepEqual(h.yc().map((c) => c.url), [`${O}/robots.txt`]);
-  assert.match(r3.lines[0], /robots\.txt not read/);
-  // a page robots.txt disallows is not fetched
-  reset();
-  const k = ycFetch({ '/robots.txt': 'User-agent: *\nDisallow: /companies/' });
-  const r4 = await yc.runYc({ fetch: k, profile, sleep: paced(), now: NOW });
-  assert.equal(k.yc().some((c) => c.url.includes('/companies/')), false);
-  assert.ok(r4.lines.some((l) => /robots\.txt disallows it/.test(l)));
 });
 
 test('the time budget leaves the rest for the next run', async () => {

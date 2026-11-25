@@ -61,8 +61,7 @@ export async function assertPublicName(host, lookup = (h, o) => dns.promises.loo
 
 // The one narrow exception to the never-automated list: code may read a few public Y Combinator pages, logged out, for discovery
 // only. These paths on one host and nothing else (no query, no other Y Combinator host).
-const YC_PATHS = [
-  /^\/robots\.txt$/,
+export const YC_PATHS = [
   /^\/jobs\/role\/[a-z0-9-]+(\/[a-z0-9-]+)?$/,
   /^\/companies\/[a-z0-9-]+$/,
   /^\/companies\/[a-z0-9-]+\/jobs\/[A-Za-z0-9-]+$/,

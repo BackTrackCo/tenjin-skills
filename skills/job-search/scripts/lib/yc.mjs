@@ -6,7 +6,8 @@ import { loadState, updateState } from './store.mjs';
 import { INTERVAL_MS, frequencyOf } from './schedule.mjs';
 
 // The public Y Combinator job pages, read in code for discovery only, logged out, through guardedFetch and nothing else:
-// the role page (and its place page), the company page, robots.txt. The browser never opens a YC host and nothing is filled
+// the role page (and its place page) and the company page. The paths were checked against YC's robots.txt when they were chosen
+// (a recorded copy is in the tests); robots.txt is never fetched at run time. The browser never opens a YC host and nothing is filled
 // or applied there. A job found here goes through the employer-posting steps like any posting; the pages' relative dates are
 // never used, and the employer's board says whether the job is open.
 const ORIGIN = () => `https://${graph().ycRead.host}`;
@@ -62,23 +63,14 @@ export function parseListing(html) {
   return { postings: postings.map((j) => ({ title: j.title, company: j.companyName, url: j.url, companyUrl: j.companyUrl, location: j.location, type: typeof j.type === 'string' ? j.type : '' })), places };
 }
 
-// The employer's website from a company page: the first website value in its data, or null.
-export function companyWebsite(html) {
+// The employer's website from a company page: exactly props.company.website, when props.company.name is the company asked for.
+// Nothing else on the page is read, and no person's data (the founders) is ever read or stored.
+export function companyWebsite(html, name = null) {
   const d = dataPage(html);
-  const seen = new Set();
-  const dfs = (o) => {
-    if (!o || typeof o !== 'object' || seen.has(o)) return null;
-    seen.add(o);
-    for (const [k, v] of Object.entries(o)) {
-      if (['website', 'websiteUrl', 'website_url'].includes(k) && typeof v === 'string' && /^https?:\/\//i.test(v) && !/ycombinator\.com|workatastartup\.com/i.test(v)) return v;
-    }
-    for (const v of Object.values(o)) {
-      const r = dfs(v);
-      if (r) return r;
-    }
-    return null;
-  };
-  return d ? dfs(d.props) : null;
+  const c = d && d.props && d.props.company;
+  if (!c || typeof c !== 'object' || typeof c.website !== 'string' || !/^https?:\/\//i.test(c.website) || /ycombinator\.com|workatastartup\.com/i.test(c.website)) return null;
+  if (name !== null && String(c.name || '').trim().toLowerCase() !== String(name).trim().toLowerCase()) return null;
+  return c.website;
 }
 
 // The place: a YC place page for the person's city when it lists one, else the role page filtered by the posting's own text.
@@ -96,37 +88,6 @@ export function keepPlace(location, profile) {
   return loc.includes(city) || (profile.remote !== false && /\bremote\b/.test(loc));
 }
 
-// robots.txt, the rules of the "*" group. The longest matching rule wins, Allow on a tie, no rule allows.
-export function parseRobots(text) {
-  const rules = [];
-  let star = false;
-  let inGroup = false;
-  for (const raw of String(text || '').split('\n')) {
-    const line = raw.replace(/#.*/, '').trim();
-    const m = /^([A-Za-z-]+)\s*:\s*(.*)$/.exec(line);
-    if (!m) continue;
-    const k = m[1].toLowerCase();
-    if (k === 'user-agent') {
-      if (!inGroup) star = false;
-      if (m[2].trim() === '*') star = true;
-      inGroup = true;
-    } else {
-      inGroup = false;
-      if (star && (k === 'allow' || k === 'disallow') && m[2].trim()) rules.push({ allow: k === 'allow', pattern: m[2].trim() });
-    }
-  }
-  return rules;
-}
-const ruleRe = (p) => new RegExp(`^${p.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\\\$$/, '$')}`);
-export function robotsAllows(rules, path) {
-  let best = null;
-  for (const r of rules) {
-    if (!ruleRe(r.pattern).test(path)) continue;
-    if (!best || r.pattern.length > best.pattern.length || (r.pattern.length === best.pattern.length && r.allow)) best = r;
-  }
-  return !best || best.allow;
-}
-
 export function toPosting(j, website) {
   const first = j.location.split('/')[0].split(',')[0].trim();
   const url = `${ORIGIN()}${j.url}`;
@@ -135,7 +96,7 @@ export function toPosting(j, website) {
 
 export const ycDue = (state, profile, now) => Boolean(profile.search && profile.search.role && profile.yc !== false && ycRoleSlug(profile) && (!state.yc || !state.yc.lastAt || (state.yc.remaining || 0) > 0 || now - Date.parse(state.yc.lastAt) >= INTERVAL_MS[frequencyOf(profile)] - 4 * 3600000));
 
-// One run. One request at a time with the fixed pace between them; robots.txt first and obeyed; a page that fails or changes
+// One run. One request at a time with the fixed pace between them; a page that fails or changes
 // shape is skipped with one line, never retried; the time budget leaves the rest for the next run.
 export async function runYc({ fetch, profile, state = loadState(), sleep = sleepMs, clock = Date.now, budgetMs = DEFAULT_YC_BUDGET_MS, now = Date.now(), ingestImpl = null }) {
   const lines = [];
@@ -149,8 +110,7 @@ export async function runYc({ fetch, profile, state = loadState(), sleep = sleep
   });
   const skip = (detail) => { if (!lines.includes(detail)) lines.push(detail); };
   const finish = (r, extra) => { save({ lastAt: new Date(now).toISOString(), remaining: 0, ...extra }); return { ...r, lines, requests }; };
-  const get = async (path, rules) => {
-    if (rules && !robotsAllows(rules, path)) return { ok: false, reason: 'robots.txt disallows it' };
+  const get = async (path) => {
     if (requests > 0) await sleep(ycPaceMs());
     requests++;
     let res;
@@ -168,14 +128,8 @@ export async function runYc({ fetch, profile, state = loadState(), sleep = sleep
   };
   const slug = ycRoleSlug(profile);
   if (!slug) return finish({ fetched: 0, kept: 0, remaining: 0 }, {});
-  const rob = await get('/robots.txt', null);
-  if (!rob.ok) {
-    skip(`yc: robots.txt not read (${rob.reason}), so the Y Combinator pages were not read`);
-    return finish({ fetched: 0, kept: 0, remaining: 0 }, {});
-  }
-  const rules = parseRobots(rob.text);
   const rolePath = `/jobs/role/${slug}`;
-  const page = await get(rolePath, rules);
+  const page = await get(rolePath);
   let listing = page.ok ? parseListing(page.text) : null;
   if (!listing) {
     skip(`yc: ${rolePath} skipped (${page.ok ? 'the page changed shape' : page.reason})`);
@@ -184,7 +138,7 @@ export async function runYc({ fetch, profile, state = loadState(), sleep = sleep
   const ps = placeSlug(listing.places, profile);
   if (ps) {
     const pp = `${rolePath}/${ps}`;
-    const p2 = await get(pp, rules);
+    const p2 = await get(pp);
     const l2 = p2.ok ? parseListing(p2.text) : null;
     if (l2) listing = l2;
     else skip(`yc: ${pp} skipped (${p2.ok ? 'the page changed shape' : p2.reason}); the role page is used`);
@@ -219,12 +173,12 @@ export async function runYc({ fetch, profile, state = loadState(), sleep = sleep
   for (const [companyUrl, jobs] of byCompany) {
     if (clock() - started >= budgetMs) break;
     if (!(companyUrl in sites)) {
-      const c = await get(companyUrl, rules);
+      const c = await get(companyUrl);
       if (!c.ok) {
         skip(`yc: ${companyUrl} skipped (${c.reason}); its jobs are read without the company's website`);
         sites[companyUrl] = null;
       } else {
-        sites[companyUrl] = companyWebsite(c.text);
+        sites[companyUrl] = companyWebsite(c.text, jobs[0].company);
         if (!sites[companyUrl]) skip(`yc: ${companyUrl} gave no website for the employer`);
       }
     }
