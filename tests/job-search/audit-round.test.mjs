@@ -297,7 +297,7 @@ test('J contacts route runs the router\'s people search in code, drops people ou
   reset([job], { contactsRequested: [job.key] });
   const f = fake({ answers: [{ ...P.step1.json, __text: P.step1.text }, { ...P.step2_non_empty.envelope, result: JSON.stringify(P.step2_non_empty.envelope.result) }] });
   const log = await routed.routeContacts({ keys: [job.key], profile: {}, fetch: fakeFetch({}), client: client(f), now: NOW });
-  assert.deepEqual(log, [{ job: job.key, ok: true, contacts: 1 }]);
+  assert.deepEqual(log, [{ job: job.key, ok: true, contacts: 1, searchedBy: 'website' }]);
   const s = store.loadState();
   assert.deepEqual(s.contacts[job.key].map((c) => c.name), ['Person J']);
   assert.equal(s.routed.lastSearchAt, null, 'the search clock is not touched');
