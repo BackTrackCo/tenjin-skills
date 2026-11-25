@@ -60,7 +60,7 @@ Code holds a source for this run, and the report names it, when the file fails t
 
 ## Finding the employer's own posting
 
-A posting found on a job platform (LinkedIn, Indeed, Glassdoor, ZipRecruiter and similar) or on X is never automated, neither read, fetched nor filled: those terms ban automated use (the person's own browser can open its page for them, `open_ready`). Include `employerWebsite` in each posting when the result shows it. Code does the rest, free:
+A posting found on a job platform (LinkedIn, Indeed, Glassdoor, ZipRecruiter and similar) or on X is never automated, neither read, fetched nor filled: those terms ban automated use (`J open` can open its page in the person's own Chrome for them, `open_ready`; nothing is done on the page). Include `employerWebsite` in each posting when the result shows it. Code does the rest, free:
 
 1. An apply link on Greenhouse, Lever or Ashby is the employer's posting (`apply_link`, `exact`).
 2. Otherwise code guesses the employer's board from the name and website (three candidates, at most nine requests) and accepts only a board that is the employer's and a job that matches by title, place and date (`board_probe`, `confirmed`). Two matches or none give no match.

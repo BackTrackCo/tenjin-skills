@@ -31,9 +31,9 @@ const GATES = {
   review_due: 'The posting changed. Review again.',
   contacts_requested: 'Free ways only (the router\'s people search is `J contacts route`, in code). Find a contact with a source link, or `J leave contacts:<key> --reason none_found`.',
   prepare_due: 'The sheet needs new writing, or its questions need the browser first (Lever, Ashby). Round writer call: `J write-prompt --round`, then `J write-result --round`. Facts only from the profile.',
-  linkedin_ready: 'The person applies on LinkedIn: `J linkedin show <key>` prints the job\'s own LinkedIn link and the prepared answers; show both in the reply. Never open, fetch or fill LinkedIn.',
+  site_ready: 'The person applies on a job site: in an attended turn `J site show <key>` opens the job\'s page there in their Chrome (`J open`), with no question, and prints the link, the prepared answers and the job\'s other job-site links; show them in the reply. In a turn the watcher woke it opens nothing and holds the job as `open_ready`. Never read, fetch, fill or click anything on the site.',
   open_ready: 'Open the page for the person: `J open <key...>` (attended turns only) opens each job\'s page in their own browser; then show each job\'s sheet as text so they can copy the answers. Nothing is filled or submitted; the outcome is their word (`J submitted <key>`).',
-  linkedin_applied: 'A LinkedIn link was shown: ask once, `J ask applied --key <key>`, then `J linkedin applied <key> yes|not_yet|skip`. Applied is recorded only on the person\'s word.',
+  site_applied: 'A job-site page was opened: ask once, `J ask applied --key <key>`, then `J site applied <key> yes|not_yet|skip`. Applied is recorded only on the person\'s word.',
   apply_ready: 'Attended: show the sheet, wait for a yes. Never submit without it.',
   follow_up_due: 'Ask the person for the status. Do not contact the employer.',
 };
@@ -191,13 +191,13 @@ export const unclaimedDue = (state, items, now = Date.now()) => items.filter((i)
 // Every write to an item raises its state version: the version is a hash of the job's own record, apart from the clocks
 // that a re-verify touches without any news.
 export function itemVersion(job) {
-  const { lastSeen, verifiedAt, firstSeen, statusAt, linkedinShownAt, linkedinAskedV, broughtAt, inFlight, openedAt, ...rest } = job;
+  const { lastSeen, verifiedAt, firstSeen, statusAt, siteShownAt, siteAskedV, broughtAt, inFlight, openedAt, ...rest } = job;
   return sha(canonical(rest)).slice(0, 10);
 }
 // What waits for the person never wakes the model: a sheet that needs their yes (unless they gave it, or the mode is auto),
 // a filled form waiting for their submit, a follow-up that asks them. Each keeps its one notification.
 export function waitsForPerson(state, profile, item, overlay = { rules: [] }) {
-  if (item.reason === 'fill_ready' || item.reason === 'follow_up_due' || item.reason === 'linkedin_applied' || item.reason === 'open_ready') return true;
+  if (item.reason === 'fill_ready' || item.reason === 'follow_up_due' || item.reason === 'site_applied' || item.reason === 'site_ready' || item.reason === 'open_ready') return true;
   if (item.reason === 'email_due') return !emailConsentCurrent(state, profile, overlay);
   if (item.reason === 'apply_ready') return !(String(profile.applyMode || '').startsWith('auto') || profile.applyMode === 'fill_only' || (state.jobs[item.key] || {}).fillOnly || state.approvals[item.key]);
   return false;
@@ -220,12 +220,12 @@ export function inPeriodSet(state, job, profile, overlay, now = Date.now()) {
 const PLAN_STATES = ['reviewed', 'shortlisted', 'prepared', 'apply_ready'];
 export function plannedJobs(state, profile, overlay, now = Date.now()) {
   const floor = (profile.unattended || {}).minScore;
-  // A job the person applies to on LinkedIn is planned too: its link is shown with the prepared answers.
-  const ok = (j) => ((j.employerPosting && ['exact', 'confirmed'].includes(j.employerPosting.confidence) && j.openConfirmed === true) || (j.linkedinUrl && applyPathOf(j, profile) === 'linkedin')) && !j.left && !(typeof floor === 'number' && !(typeof j.fit === 'number' && j.fit >= floor));
+  // A job the person applies to on a job site is planned too: its page is opened with the prepared answers.
+  const ok = (j) => ((j.employerPosting && ['exact', 'confirmed'].includes(j.employerPosting.confidence) && j.openConfirmed === true) || ((j.siteLinks || []).length && applyPathOf(j, profile) === 'site')) && !j.left && !(typeof floor === 'number' && !(typeof j.fit === 'number' && j.fit >= floor));
   const all = Object.values(state.jobs).filter((j) => PLAN_STATES.includes(j.status) && ok(j)).sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1));
   const limit = periodLimit(overlay, { profile, now });
   if (limit === null) return all;
-  const began = (j) => j.status !== 'reviewed' || Boolean(j.linkedinShownAt);
+  const began = (j) => j.status !== 'reviewed' || Boolean(j.siteShownAt);
   const started = all.filter(began);
   return [...started, ...all.filter((j) => !began(j)).slice(0, Math.max(0, limit - started.length))];
 }
@@ -329,12 +329,12 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
       items.push({ key: j.key, reason: 'employer_page', title: j.title, company: j.company, website: j.employerWebsite || null, reverify: true, careersUrl: j.employerPosting.url, gate: GATES.employer_page });
       continue;
     }
-    // A job the person applies to on LinkedIn: show its link and the prepared answers, then ask once whether they applied.
-    if (j.linkedinUrl && applyPathOf(j, profile) === 'linkedin' && ['reviewed', 'shortlisted', 'prepared', 'apply_ready', 'submitted'].includes(j.status)) {
+    // A job the person applies to on a job site: open its page and show the prepared answers, then ask once whether they applied.
+    if ((j.siteLinks || []).length && applyPathOf(j, profile) === 'site' && ['reviewed', 'shortlisted', 'prepared', 'apply_ready', 'submitted'].includes(j.status)) {
       if (j.status === 'submitted') { /* applied: nothing more */ }
-      else if (!j.linkedinShownAt && (j.sheet || !j.employerPosting)) { add(j, 'linkedin_ready'); continue; }
-      else if (j.linkedinShownAt && j.linkedinAskedV !== itemVersion(j)) { add(j, 'linkedin_applied'); continue; }
-      else if (j.linkedinShownAt) continue;
+      else if (!j.siteShownAt && (j.sheet || !j.employerPosting)) { add(j, 'site_ready'); continue; }
+      else if (j.siteShownAt && j.siteAskedV !== itemVersion(j)) { add(j, 'site_applied'); continue; }
+      else if (j.siteShownAt) continue;
     }
     if (j.status === 'new') {
       if (!(j.reviewedHash && j.reviewedHash === j.hash)) add(j, j.reviewedHash ? 'review_due' : 'new_job');
@@ -377,12 +377,12 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
     const start = periodStart(now, frequencyOf(profile));
     const brought = Object.values(state.jobs).filter((j) => j.broughtAt && Date.parse(j.broughtAt) >= start).length;
     let room = Math.max(0, limit - brought);
-    const fresh = items.filter((i) => (i.reason === 'apply_ready' || i.reason === 'linkedin_ready' || i.reason === 'open_ready') && !state.jobs[i.key].broughtAt).sort((a, b) => (state.jobs[b.key].fit ?? -1) - (state.jobs[a.key].fit ?? -1));
+    const fresh = items.filter((i) => (i.reason === 'apply_ready' || i.reason === 'site_ready' || i.reason === 'open_ready') && !state.jobs[i.key].broughtAt).sort((a, b) => (state.jobs[b.key].fit ?? -1) - (state.jobs[a.key].fit ?? -1));
     const allowed = new Set(fresh.slice(0, room).map((i) => i.key));
     for (const i of fresh) if (!allowed.has(i.key)) heldForPeriod++;
-    for (let k = items.length - 1; k >= 0; k--) if ((items[k].reason === 'apply_ready' || items[k].reason === 'linkedin_ready' || items[k].reason === 'open_ready') && !state.jobs[items[k].key].broughtAt && !allowed.has(items[k].key)) items.splice(k, 1);
+    for (let k = items.length - 1; k >= 0; k--) if ((items[k].reason === 'apply_ready' || items[k].reason === 'site_ready' || items[k].reason === 'open_ready') && !state.jobs[items[k].key].broughtAt && !allowed.has(items[k].key)) items.splice(k, 1);
     bring.push(...allowed);
-  } else bring.push(...items.filter((i) => (i.reason === 'apply_ready' || i.reason === 'linkedin_ready' || i.reason === 'open_ready') && !state.jobs[i.key].broughtAt).map((i) => i.key));
+  } else bring.push(...items.filter((i) => (i.reason === 'apply_ready' || i.reason === 'site_ready' || i.reason === 'open_ready') && !state.jobs[i.key].broughtAt).map((i) => i.key));
   return {
     bring,
     heldForPeriod,

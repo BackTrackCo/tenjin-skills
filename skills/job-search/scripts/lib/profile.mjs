@@ -14,9 +14,16 @@ const OLD_FIELDS = {
   careerOps: 'that compatibility feature no longer exists',
 };
 export function oldFields(p) {
-  return p && typeof p === 'object' ? Object.keys(OLD_FIELDS).filter((k) => p[k] !== undefined).map((k) => ({ field: k, why: OLD_FIELDS[k] })) : [];
+  if (!p || typeof p !== 'object') return [];
+  const list = Object.keys(OLD_FIELDS).filter((k) => p[k] !== undefined).map((k) => ({ field: k, why: OLD_FIELDS[k] }));
+  if (p.apply && p.apply.where === 'linkedin') list.push({ field: 'apply.where', why: 'the "linkedin" value is now "site" (the job-site option), set it with J profile set \'{"apply": {"where": "site", "source": "person"}}\'', nested: true });
+  return list;
 }
-export const oldFieldError = (list) => `profile.json has ${list.length > 1 ? 'old fields' : 'an old field'} the skill no longer reads: ${list.map((o) => `${o.field} (${o.why})`).join('; ')}. Remove ${list.length > 1 ? 'them' : 'it'} with J profile set '${JSON.stringify(Object.fromEntries(list.map((o) => [o.field, null])))}'.`;
+export const oldFieldError = (list) => {
+  const plain = list.filter((o) => !o.nested);
+  const rm = plain.length ? ` Remove ${plain.length > 1 ? 'them' : 'it'} with J profile set '${JSON.stringify(Object.fromEntries(plain.map((o) => [o.field, null])))}'.` : '';
+  return `profile.json has ${list.length > 1 ? 'old fields' : 'an old field'} the skill no longer reads: ${list.map((o) => `${o.field} (${o.why})`).join('; ')}.${rm}`;
+};
 
 export function validateProfile(p) {
   const bad = [];
@@ -28,7 +35,7 @@ export function validateProfile(p) {
   for (const k of ['remote', 'includeOld', 'updates', 'hn', 'yc']) if (has(k)) need(typeof p[k] === 'boolean', `${k} must be true or false`);
   if (has('frequency')) need(['daily', 'twice_daily', 'weekly'].includes(p.frequency), 'frequency must be daily, twice_daily or weekly');
   if (has('applyMode')) need(['attended', 'auto_no_new', 'auto_write', 'fill_only', 'open_only'].includes(p.applyMode), 'applyMode must be attended, auto_no_new, auto_write, fill_only or open_only');
-  if (has('apply')) need(p.apply && typeof p.apply === 'object' && ['employer', 'linkedin', 'ask'].includes(p.apply.where) && p.apply.source === 'person', 'apply must be {"where": "employer"|"linkedin"|"ask", "source": "person"}');
+  if (has('apply')) need(p.apply && typeof p.apply === 'object' && ['employer', 'site', 'ask'].includes(p.apply.where) && p.apply.source === 'person', 'apply must be {"where": "employer"|"site"|"ask", "source": "person"}');
   if (has('windowDays')) need(num(p.windowDays) && p.windowDays > 0, 'windowDays must be a positive number');
   if (has('sweepHour')) need(Number.isInteger(p.sweepHour) && p.sweepHour >= 0 && p.sweepHour <= 23, 'sweepHour must be a whole number from 0 to 23');
   for (const k of ['resumePath', 'resumeUploadPath', 'resumeText']) if (has(k)) need(isStr(p[k]), `${k} must be text`);

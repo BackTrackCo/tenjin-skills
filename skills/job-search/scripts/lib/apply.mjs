@@ -185,22 +185,22 @@ export function applyNext(ctx) {
   return out({});
 }
 
-// Where the person applies this job: 'employer' (the skill applies on the employer's page), 'linkedin' (the person
-// applies on the job's own LinkedIn link, which the skill only shows) or 'ask' (both exist and the person chose to be asked).
-// A job with no LinkedIn link takes the employer site under the apply mode.
+// Where the person applies this job: 'employer' (the skill applies on the employer's page), 'site' (the person applies on the
+// job's own page on a job site, which the skill opens for them and does nothing on) or 'ask' (both exist and the person chose
+// to be asked). A job with no job-site link takes the employer site under the apply mode.
 export function applyPathOf(job, profile = {}) {
-  if (job.applyVia === 'employer' || job.applyVia === 'linkedin') return job.applyVia;
-  if (!job.linkedinUrl) return 'employer';
+  if (job.applyVia === 'employer' || job.applyVia === 'site') return job.applyVia;
+  if (!(job.siteLinks || []).length) return 'employer';
   const where = (profile.apply && profile.apply.where) || 'employer';
-  if (where === 'linkedin') return 'linkedin';
-  if (where === 'ask') return job.employerPosting ? 'ask' : 'linkedin';
+  if (where === 'site') return 'site';
+  if (where === 'ask') return job.employerPosting ? 'ask' : 'site';
   return 'employer';
 }
 
 export function jobFailure({ job, state, profile, overlay, mode, now, writingOk = false }) {
   if (profile.applyMode === 'open_only') return 'open_only_mode'; // the page is opened for the person, never filled or submitted
   const path = applyPathOf(job, profile);
-  if (path === 'linkedin') return 'linkedin_path'; // shown to the person, never opened
+  if (path === 'site') return 'site_path'; // opened for the person, who applies there
   if (path === 'ask') return 'where_needs_answer'; // the choice joins the approval call; nothing is handed out before it
   // Only the employer's own posting, found exactly or confirmed, on any host off the deny list, is ever handed out.
   const ep = job.employerPosting;

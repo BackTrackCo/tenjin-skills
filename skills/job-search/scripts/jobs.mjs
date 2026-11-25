@@ -272,14 +272,14 @@ const commands = {
       updateState((s) => { for (const k of gone) { delete s.approvals[k]; if (s.jobs[k]) { s.jobs[k].fillOnly = false; s.jobs[k].inFlight = null; bump(s.jobs[k]); } } });
       return out({ withdrawn: gone.length, state: 'Submitted: none. Every yes you took back is waiting for a new approval; nothing will be submitted for it.' });
     }
-    // "Ask me each job": the choice joins the approval. LinkedIn means the person applies there; nothing is approved.
+    // "Ask me each job": the choice joins the approval. A job site means the person applies there; nothing is approved.
     if (flags.via !== undefined) {
-      if (keys.length !== 1 || !['employer', 'linkedin'].includes(flags.via)) return out({ error: 'approve <key> --via employer|linkedin takes one job' }, 2);
+      if (keys.length !== 1 || !['employer', 'site'].includes(flags.via)) return out({ error: 'approve <key> --via employer|site takes one job' }, 2);
       const job = st.jobs[keys[0]];
       if (!job) return out({ error: `unknown job: ${keys[0]}` }, 2);
-      if (flags.via === 'linkedin' && !job.linkedinUrl) return out({ error: 'that job has no LinkedIn link' }, 2);
+      if (flags.via === 'site' && !(job.siteLinks || []).length) return out({ error: 'that job has no job-site link' }, 2);
       updateState((s) => { s.jobs[keys[0]].applyVia = flags.via; bump(s.jobs[keys[0]]); });
-      if (flags.via === 'linkedin') return out({ key: keys[0], via: 'linkedin', next: 'J linkedin show <key>, then show the link and the answers; you never open LinkedIn' });
+      if (flags.via === 'site') return out({ key: keys[0], via: 'site', next: 'J site show <key>: it opens the job\'s page in the person\'s Chrome and prints the answers; you do nothing on the site' });
       st = loadState();
     }
     // A fact the form needed and the profile lacked is answered in the approval itself: `--facts '{"name":"value"}'` saves it,
@@ -308,7 +308,7 @@ const commands = {
     if (!list.length) return out({ error: 'approve <key...> | --all | --no-new (nothing to approve)' }, 2);
     for (const k of list) if (st.jobs[k] && applyPathOf(st.jobs[k], readProfile()) === 'ask') {
       if (flags.all === true || flags['no-new'] === true) { list = list.filter((x) => applyPathOf(st.jobs[x], readProfile()) !== 'ask'); break; }
-      return out({ error: `${k} is on LinkedIn and on an employer site: ask which with J ask approval --key ${k}, then J approve ${k} --via employer|linkedin` }, 4);
+      return out({ error: `${k} is on a job site and on an employer site: ask which with J ask approval --key ${k}, then J approve ${k} --via employer|site` }, 4);
     }
     if (!list.length) return out({ error: 'every listed job waits for its where choice (J ask approval --key <job>)' }, 4);
     for (const k of list) if (!st.jobs[k] || !st.jobs[k].sheet || !st.jobs[k].sheet.passed) return out({ error: `${k} has no complete sheet yet: answer its missing facts (J ask approval <key>)` }, 4);
@@ -616,41 +616,58 @@ const commands = {
     return out(await runHn({ fetch: globalThis.fetch, profile: readProfile(), state: loadState(), budgetMs }));
   },
   // Fill-only: per job, or with a fill_only rule. Fill, read back, never submit, leave the tab open.
-  // The person applies on LinkedIn. The skill only shows the job's own link and the prepared answers; it never opens,
-  // fetches or fills LinkedIn. `applied` is recorded only on the person's word.
-  async linkedin([sub, key, answer]) {
+  // The person applies on a job site (LinkedIn, Indeed, YC or another). In an attended turn the skill opens the job's page there
+  // with J open (Chrome, the operating system's open command), prints the prepared answers and lists the job's other job-site
+  // links; it never reads, fetches, fills or clicks anything on the site. A turn the watcher woke opens nothing: the job holds as
+  // open_ready. `applied` is recorded only on the person's word.
+  async site([sub, key, answer]) {
     const profile = readProfile();
     if (sub === 'show') {
+      const woken = batch.isActive() && batch.batchMode() === 'unattended';
+      const before = loadState().jobs[key];
+      if (!before || !(before.siteLinks || []).length) return out({ error: 'that job has no job-site link' }, 2);
+      if (applyPathOf(before, profile) !== 'site') return out({ error: 'that job goes to the employer\'s site under your choice' }, 2);
+      const first = before.siteLinks[0];
+      const opened = woken ? { ok: false } : openPage(first.url);
       const res = updateState((s) => {
         const job = s.jobs[key];
-        if (!job || !job.linkedinUrl) throw new Error('that job has no LinkedIn link');
-        if (applyPathOf(job, profile) !== 'linkedin') throw new Error('that job goes to the employer\'s site under your choice');
-        job.linkedinShownAt = job.linkedinShownAt || new Date().toISOString();
-        job.broughtAt = job.broughtAt || job.linkedinShownAt;
+        if (!woken) {
+          job.siteShownAt = job.siteShownAt || new Date().toISOString();
+          job.broughtAt = job.broughtAt || job.siteShownAt;
+          if (opened.ok) job.openedAt = new Date().toISOString();
+          bump(job);
+        }
         const answers = job.sheet ? (job.sheet.fields || []).map((f) => ({ label: f.label, value: f.tag === 'upload' ? 'your resume' : f.value, tag: f.tag })) : [];
-        return { key, company: job.company, title: job.title, link: job.linkedinUrl, answers, facts: job.sheet ? undefined : profile.facts || {}, note: job.sheet ? 'answers from the employer posting\'s questions; LinkedIn\'s own questions are yours to answer' : 'no employer form was found: the facts above and a short note you draft from the resume, facts only from the profile' };
+        return {
+          key, company: job.company, title: job.title, site: first.site, link: first.url,
+          opened: opened.ok, ...(woken ? { held: 'open_ready', line: 'A turn the watcher woke opens nothing: the job holds, and the next attended turn opens its page.' } : {}),
+          ...(opened.line ? { line: opened.line } : {}), ...(!woken && !opened.ok ? { why: opened.why } : {}),
+          otherLinks: job.siteLinks.slice(1), answers, facts: job.sheet ? undefined : profile.facts || {},
+          note: job.sheet ? `answers from the employer posting's questions; ${first.site}'s own questions are yours to answer` : 'no employer form was found: the facts the profile holds are listed; the site\'s own questions are yours to answer',
+        };
       });
       return out(res);
     }
     if (sub === 'applied') {
-      if (!['yes', 'not_yet', 'skip'].includes(answer)) return out({ error: 'linkedin applied <key> yes|not_yet|skip' }, 2);
+      if (!['yes', 'not_yet', 'skip'].includes(answer)) return out({ error: 'site applied <key> yes|not_yet|skip' }, 2);
       return out(updateState((s) => {
         const job = s.jobs[key];
-        if (!job || !job.linkedinShownAt) throw new Error('its LinkedIn link was not shown yet');
+        if (!job || !job.siteShownAt) throw new Error('its job-site page was not shown yet');
+        const site = ((job.siteLinks || [])[0] || {}).site || 'a job site';
         if (answer === 'yes') {
           const at = new Date().toISOString();
           job.status = 'submitted';
           job.statusAt = at;
-          job.applied = { source: 'person', via: 'linkedin', at };
+          job.applied = { source: 'person', via: 'site', site, at };
           s.applications.push({ key: job.key, companyKey: companyTitleKey(job), at, source: 'person' });
           bump(job);
         } else if (answer === 'skip') {
-          applyOp(s, { op: 'transition', key, to: 'skipped', reason: 'the person skipped it after the LinkedIn link' });
-        } else job.linkedinAskedV = itemVersion(job);
+          applyOp(s, { op: 'transition', key, to: 'skipped', reason: `the person skipped it after its ${site} page` });
+        } else job.siteAskedV = itemVersion(job);
         return { key, recorded: answer };
       }));
     }
-    return out({ error: 'linkedin show <key> | applied <key> yes|not_yet|skip' }, 2);
+    return out({ error: 'site show <key> | applied <key> yes|not_yet|skip' }, 2);
   },
   // The last check right before the submit click: the browser subagent presses submit only on yes.
   async 'may-submit'([key, hash]) {
@@ -690,7 +707,7 @@ const commands = {
       return { chrome: v, cleared, ...(v === 'off' ? { steps: CHROME_STEPS } : {}) };
     }));
   },
-  // "Just open the pages": the OS's own open command, in the person's default browser, with the job's exact URL. Attended turns only.
+  // J open: the OS's own open command, in the person's Chrome (the default browser only as the fallback), with the job's exact URL. Attended turns only.
   async open(keys) {
     if (!keys.length) return out({ error: 'open <key...>' }, 2);
     if (batch.isActive() && batch.batchMode() === 'unattended') return out({ error: 'pages open only in an attended turn' }, 4);
@@ -704,7 +721,7 @@ const commands = {
       const bad = checkOpenUrl(url);
       if (bad) { res.push({ key: k, opened: false, why: bad }); continue; }
       const r = openPage(url);
-      res.push({ key: k, url, opened: r.ok, ...(r.ok ? {} : { why: r.why }), sheet: job.sheet ? (job.sheet.fields || []).map((f) => ({ label: f.label, value: f.tag === 'upload' ? 'your resume' : f.value, tag: f.tag })) : [] });
+      res.push({ key: k, url, opened: r.ok, ...(r.ok ? {} : { why: r.why }), ...(r.line ? { line: r.line } : {}), sheet: job.sheet ? (job.sheet.fields || []).map((f) => ({ label: f.label, value: f.tag === 'upload' ? 'your resume' : f.value, tag: f.tag })) : [] });
       if (r.ok) updateState((s) => { s.jobs[k].openedAt = new Date().toISOString(); s.jobs[k].broughtAt = s.jobs[k].broughtAt || s.jobs[k].openedAt; bump(s.jobs[k]); });
     }
     return out({ opened: res.filter((x) => x.opened).length, results: res, next: 'show each opened job\'s sheet as text; the outcome is the person\'s word: J submitted <key>' });
@@ -828,8 +845,8 @@ const commands = {
       if (!profile.applyMode || !profile.frequency || !(st.start && st.start.positionsAt) || !(profile.apply && profile.apply.where)) missing.push('start_questions');
       return out({ missing, next: missing[0] === 'resume' ? 'Job Search is set up and watching, and this is the first run, so I need one thing to start: can you share your resume? Drop the file here, paste a link, or paste the text. I\'ll take your role, location and remote preference from it, then ask four quick choices and run the first search.' : missing.length ? 'J ask start, then J start record' : 'run the free search and the report', start: st.start || null });
     }
-    if (sub !== 'record') return out({ error: 'start status | record --mode m --frequency f --catch-up n --per-day n|none (or --positions n|none|skip, or --no-limit) --where employer|linkedin|ask [--words text]' }, 2);
-    if (flags.where !== undefined && !['employer', 'linkedin', 'ask'].includes(flags.where)) return out({ error: 'where must be employer, linkedin or ask' }, 2);
+    if (sub !== 'record') return out({ error: 'start status | record --mode m --frequency f --catch-up n --per-day n|none (or --positions n|none|skip, or --no-limit) --where employer|site|ask [--words text]' }, 2);
+    if (flags.where !== undefined && !['employer', 'site', 'ask'].includes(flags.where)) return out({ error: 'where must be employer, site or ask' }, 2);
     if (!['attended', 'auto_no_new', 'auto_write', 'fill_only', 'open_only'].includes(flags.mode || 'attended')) return out({ error: 'mode must be attended, auto_no_new, auto_write, fill_only or open_only' }, 2);
     if (flags.frequency && !FREQUENCIES.includes(flags.frequency)) return out({ error: 'frequency must be daily, twice_daily or weekly' }, 2);
     const mode = flags.mode || 'attended';
@@ -868,7 +885,7 @@ const commands = {
     if (kind === 'approve-pick') return out({ groups: qs.approvePickQuestions(readySheets(loadState()), { chromeOff: loadState().chrome === 'off' }) });
     if (kind === 'applied') {
       const job = loadState().jobs[flags.key];
-      if (!job || !job.linkedinShownAt) return out({ error: 'ask applied --key <job>: its LinkedIn link was not shown yet' }, 2);
+      if (!job || !job.siteShownAt) return out({ error: 'ask applied --key <job>: its job-site page was not shown yet' }, 2);
       return out(qs.appliedQuestion(job));
     }
     if (kind === 'eeo') return out({ error: 'EEO is never a choice question and never goes through the question tool: ask the plain question J eeo question --key <job> prints, then save the answer with J eeo set' }, 2);

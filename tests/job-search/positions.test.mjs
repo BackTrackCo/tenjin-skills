@@ -31,7 +31,7 @@ test('the start: the resume is a plain question, then one call with four questio
   assert.deepEqual(p.questions[1].options.map((o) => o.label), ['Every day (Recommended)', 'Twice a day', 'Once a week']);
   assert.deepEqual(p.questions[2].options.map((o) => o.label), ['50 now, 10 daily (Recommended)', '100 now, 20 daily', '20 now, 5 daily', 'No limit']);
   assert.deepEqual(p.questions[0].options.map((o) => o.label), ['Ask me each time (Recommended)', 'Auto apply', 'Fill only, I submit', 'Just open the pages']);
-  assert.deepEqual(p.questions[3].options.map((o) => o.label), ['Employer\'s site (Recommended)', 'LinkedIn, I apply', 'Ask me each job']);
+  assert.deepEqual(p.questions[3].options.map((o) => o.label), ['Employer\'s site (Recommended)', 'A job site, I apply', 'Ask me each job']);
   assert.match(q.autoModeQuestion().questions[0].options[0].description, /the answer is drafted and that job waits for your yes/);
   assert.deepEqual(q.autoModeQuestion().questions[0].options.map((o) => o.label), ['Auto apply, approve new answers', 'Fully auto apply']);
   assert.match(p.questions[1].options[0].description, /runs in code at the router's price, with no Claude usage for the searches/);

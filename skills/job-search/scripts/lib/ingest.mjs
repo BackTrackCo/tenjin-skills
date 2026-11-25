@@ -4,7 +4,7 @@ import { employerName } from './employer.mjs';
 import { companyNames, nameMatches } from './company.mjs';
 import { applyOp, bump, normLabel } from './store.mjs';
 import { careersFromLinks, classifyLinks, probeBoards, resolveFromCareersPage } from './employer.mjs';
-import { HN_SITE, isNeverAutomated, isYc, linkedinOf } from './platforms.mjs';
+import { HN_SITE, isNeverAutomated, isYc, linkedinOf, siteLinksOf } from './platforms.mjs';
 import { parseBoardUrl } from './boards.mjs';
 import { mergeJobs, normalizeUrl, sha } from './dedupe.mjs';
 import { effectiveProfile } from './overlay.mjs';
@@ -244,13 +244,13 @@ export async function planIngest({ obj: given, state, profile, overlay, fetch, n
     }
     if (tooOld) screen.warnings.push(`posted ${String(p.postedAt).slice(0, 10)}, still open`);
     if (ep) {
-      plan.jobs.push({ ...boardJob, openConfirmed: true, company: boardJob.company && boardJob.company !== ep.token ? boardJob.company : p.employer, salary: boardJob.salary || salaryText(p.salary), posted: boardJob.posted || p.postedAt, warnings: screen.warnings, via, employerPosting: ep, employerWebsite: p.employerWebsite || null, ...(p.employerWebsite ? { employerWebsiteSource: 'posting' } : {}), fromPost: p.sourceUrl, ...(linkedinOf(p.applyLinks) ? { linkedinUrl: linkedinOf(p.applyLinks) } : {}) });
+      plan.jobs.push({ ...boardJob, siteLinks: siteLinksOf(p.applyLinks), openConfirmed: true, company: boardJob.company && boardJob.company !== ep.token ? boardJob.company : p.employer, salary: boardJob.salary || salaryText(p.salary), posted: boardJob.posted || p.postedAt, warnings: screen.warnings, via, employerPosting: ep, employerWebsite: p.employerWebsite || null, ...(p.employerWebsite ? { employerWebsiteSource: 'posting' } : {}), fromPost: p.sourceUrl });
       continue;
     }
     // Unresolved: kept as a job so review can run; it never reaches the apply queue without an exact or confirmed posting.
     const key = p.applyLinks.length ? p.applyLinks[0].url : p.sourceUrl;
     const yc = p.applyLinks.map((l) => l.url).find((u) => /workatastartup\.com/.test(u)) || p.applyLinks.map((l) => l.url).find(isYc) || null;
-    plan.jobs.push({ url: key, ats: null, board: null, title: p.title, company: p.employer, city: p.city, region: p.region, country: p.country, remote: p.remote, posted: p.postedAt, type: p.employmentType, salary: salaryText(p.salary), desc: p.description, applyLinks: p.applyLinks.map((l) => l.url), place: `${p.city}|${p.region}`, warnings: [...screen.warnings, 'not confirmed open'], via, employerPosting: null, unresolved, fromPost: p.sourceUrl, otherSystem: cl.other, workAtStartupUrl: unresolved === 'yc_platform_only' ? yc : null, platformLinks: cl.platform, employerWebsite: p.employerWebsite || null, ...(p.employerWebsite ? { employerWebsiteSource: 'posting' } : {}), sourceUrl: p.sourceUrl, openConfirmed: false, ...(linkedinOf(p.applyLinks) ? { linkedinUrl: linkedinOf(p.applyLinks) } : {}) });
+    plan.jobs.push({ url: key, ats: null, board: null, title: p.title, company: p.employer, city: p.city, region: p.region, country: p.country, remote: p.remote, posted: p.postedAt, type: p.employmentType, salary: salaryText(p.salary), desc: p.description, applyLinks: p.applyLinks.map((l) => l.url), siteLinks: siteLinksOf(p.applyLinks), place: `${p.city}|${p.region}`, warnings: [...screen.warnings, 'not confirmed open'], via, employerPosting: null, unresolved, fromPost: p.sourceUrl, otherSystem: cl.other, workAtStartupUrl: unresolved === 'yc_platform_only' ? yc : null, platformLinks: cl.platform, employerWebsite: p.employerWebsite || null, ...(p.employerWebsite ? { employerWebsiteSource: 'posting' } : {}), sourceUrl: p.sourceUrl, openConfirmed: false });
     plan.unresolved++;
   }
   return plan;
@@ -438,7 +438,7 @@ export function persistIngest(plan, now = Date.now()) {
       const j = state.jobs[plan.careers.key];
       const r = plan.careers.result;
       j.careersChecked = true;
-      if (plan.careers.linkedinUrl && !j.linkedinUrl) j.linkedinUrl = plan.careers.linkedinUrl;
+      if (plan.careers.linkedinUrl) j.siteLinks = siteLinksOf([...(j.siteLinks || []).map((x) => x.url), plan.careers.linkedinUrl]);
       bump(j); // the careers-page result is news about this job
       if (plan.careers.closed) {
         j.status = 'closed';

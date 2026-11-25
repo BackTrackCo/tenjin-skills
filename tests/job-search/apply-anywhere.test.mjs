@@ -5,6 +5,12 @@ import path from 'node:path';
 import { fakeFetch, mkJob, runJobs, tmpHome } from './helpers/env.mjs';
 
 const home = tmpHome();
+// No test opens a real browser: the open command is a script that does nothing.
+{
+  const dir = fs.mkdtempSync(path.join(process.env.TMPDIR || '/tmp', 'noop-open-'));
+  fs.writeFileSync(path.join(dir, 'open'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  process.env.JOB_SEARCH_OPEN_BIN = path.join(dir, 'open');
+}
 const store = await import('../../skills/job-search/scripts/lib/store.mjs');
 const work = await import('../../skills/job-search/scripts/lib/work.mjs');
 const ap = await import('../../skills/job-search/scripts/lib/apply.mjs');
@@ -151,8 +157,8 @@ test('B3: J rules add --from-choice keeps the option label as the person\'s word
 // ---- where the person prefers to apply ---------------------------------------------------------
 test('the start records where to apply as the person\'s setting; no answer means the employer\'s site', () => {
   reset();
-  assert.equal(runJobs(home, ['start', 'record', '--mode', 'attended', '--frequency', 'daily', '--no-limit', '--where', 'linkedin']).code, 0);
-  assert.deepEqual(runJobs(home, ['profile', 'get']).json.apply, { where: 'linkedin', source: 'person' });
+  assert.equal(runJobs(home, ['start', 'record', '--mode', 'attended', '--frequency', 'daily', '--no-limit', '--where', 'site']).code, 0);
+  assert.deepEqual(runJobs(home, ['profile', 'get']).json.apply, { where: 'site', source: 'person' });
   assert.equal(runJobs(home, ['start', 'record', '--where', 'nowhere']).code, 2);
   runJobs(home, ['start', 'record', '--mode', 'attended']);
   assert.deepEqual(runJobs(home, ['profile', 'get']).json.apply, { where: 'employer', source: 'person' });
@@ -160,48 +166,48 @@ test('the start records where to apply as the person\'s setting; no answer means
 });
 
 const li = 'https://www.linkedin.com/jobs/view/12345';
-const liJob = (i, over = {}) => mkJob({ key: `https://boards.greenhouse.io/acme/jobs/${i}`, status: 'apply_ready', fit: 88, company: `Co${i}`, linkedinUrl: li, verifiedAt: new Date().toISOString(), sheet: { hash: 'h', passed: true, eeoMissing: false, fields: [{ label: 'Email', value: 'a@b.test', tag: 'fact', required: true }] }, v: 1, ...over });
+const liJob = (i, over = {}) => mkJob({ key: `https://boards.greenhouse.io/acme/jobs/${i}`, status: 'apply_ready', fit: 88, company: `Co${i}`, siteLinks: [{ site: 'LinkedIn', url: li }], verifiedAt: new Date().toISOString(), sheet: { hash: 'h', passed: true, eeoMissing: false, fields: [{ label: 'Email', value: 'a@b.test', tag: 'fact', required: true }] }, v: 1, ...over });
 
-test('under the LinkedIn choice apply next never hands the job out; the link is shown with the answers', () => {
+test('under the job-site choice apply next never hands the job out; the page is opened with the answers', () => {
   const j = liJob(41);
   reset([j]);
-  const profile = { eeoText: 'Decline every voluntary demographic question (test placeholder).', apply: { where: 'linkedin', source: 'person' } };
-  assert.equal(ap.applyPathOf(j, profile), 'linkedin');
+  const profile = { eeoText: 'Decline every voluntary demographic question (test placeholder).', apply: { where: 'site', source: 'person' } };
+  assert.equal(ap.applyPathOf(j, profile), 'site');
   const s = store.loadState();
   s.approvals[j.key] = { sheetHash: 'h' };
-  assert.equal(ap.applyNext({ state: s, profile, overlay: empty, mode: 'attended', now: Date.now(), batchOpen: true }).queue[0].reason, 'linkedin_path');
+  assert.equal(ap.applyNext({ state: s, profile, overlay: empty, mode: 'attended', now: Date.now(), batchOpen: true }).queue[0].reason, 'site_path');
   runJobs(home, ['profile', 'set', JSON.stringify(profile)]);
   const item = work.workList({ now: Date.now() }).items.find((i) => i.key === j.key);
-  assert.equal(item.reason, 'linkedin_ready');
-  const shown = runJobs(home, ['linkedin', 'show', j.key]);
+  assert.equal(item.reason, 'site_ready');
+  const shown = runJobs(home, ['site', 'show', j.key]);
   assert.equal(shown.json.link, li);
   assert.deepEqual(shown.json.answers.map((a) => a.label), ['Email']);
-  assert.equal(work.workList({ now: Date.now() }).items.find((i) => i.key === j.key).reason, 'linkedin_applied', 'asked once after the link was shown');
+  assert.equal(work.workList({ now: Date.now() }).items.find((i) => i.key === j.key).reason, 'site_applied', 'asked once after the link was shown');
 });
 
-test('a job with no LinkedIn link takes the employer site, and the employer choice never shows a link', () => {
+test('a job with no job-site link takes the employer site, and the employer choice never shows a link', () => {
   const none = mkJob({ status: 'apply_ready' });
-  assert.equal(ap.applyPathOf(none, { apply: { where: 'linkedin', source: 'person' } }), 'employer');
+  assert.equal(ap.applyPathOf(none, { apply: { where: 'site', source: 'person' } }), 'employer');
   assert.equal(ap.applyPathOf(liJob(42), { apply: { where: 'employer', source: 'person' } }), 'employer');
   assert.equal(ap.applyPathOf(liJob(43), {}), 'employer', 'no answer means the employer\'s site');
   assert.equal(ap.applyPathOf(liJob(44), { apply: { where: 'ask', source: 'person' } }), 'ask');
-  assert.equal(ap.applyPathOf(liJob(45, { employerPosting: null }), { apply: { where: 'ask', source: 'person' } }), 'linkedin', 'only LinkedIn exists: no choice to ask');
+  assert.equal(ap.applyPathOf(liJob(45, { employerPosting: null }), { apply: { where: 'ask', source: 'person' } }), 'site', 'only a job site exists: no choice to ask');
 });
 
 test('"Did you apply?" is a question; applied is recorded only on the person\'s word, source person', () => {
   const j = liJob(46);
   reset([j]);
-  runJobs(home, ['profile', 'set', JSON.stringify({ apply: { where: 'linkedin', source: 'person' } })]);
-  runJobs(home, ['linkedin', 'show', j.key]);
+  runJobs(home, ['profile', 'set', JSON.stringify({ apply: { where: 'site', source: 'person' } })]);
+  runJobs(home, ['site', 'show', j.key]);
   const q = runJobs(home, ['ask', 'applied', '--key', j.key]).json;
   assert.deepEqual(q.questions[0].options.map((o) => o.label), ['Yes', 'Not yet', 'Skip this job']);
   assert.equal(store.loadState().jobs[j.key].status, 'apply_ready', 'nothing is recorded by showing the link');
-  runJobs(home, ['linkedin', 'applied', j.key, 'not_yet']);
+  runJobs(home, ['site', 'applied', j.key, 'not_yet']);
   assert.equal(work.workList({ now: Date.now() }).items.some((i) => i.key === j.key), false, 'not yet: not asked again until the job changes');
   store.updateState((s) => { s.jobs[j.key].fit = 91; });
-  assert.equal(work.workList({ now: Date.now() }).items.find((i) => i.key === j.key).reason, 'linkedin_applied', 'a changed job asks again');
-  assert.equal(runJobs(home, ['linkedin', 'applied', j.key, 'maybe']).code, 2);
-  runJobs(home, ['linkedin', 'applied', j.key, 'yes']);
+  assert.equal(work.workList({ now: Date.now() }).items.find((i) => i.key === j.key).reason, 'site_applied', 'a changed job asks again');
+  assert.equal(runJobs(home, ['site', 'applied', j.key, 'maybe']).code, 2);
+  runJobs(home, ['site', 'applied', j.key, 'yes']);
   const after = store.loadState();
   assert.equal(after.jobs[j.key].status, 'submitted');
   assert.deepEqual([after.jobs[j.key].applied.source, after.applications.at(-1).source], ['person', 'person']);
@@ -214,8 +220,8 @@ test('"Ask me each job" puts the choice in the approval call, and a plain approv
   const q = runJobs(home, ['ask', 'approval', '--key', j.key]).json;
   assert.deepEqual(q.questions[0].options.map((o) => o.label), ['Employer\'s site (I apply)', 'Fill it, I submit', 'LinkedIn (you apply)', 'Skip this job']);
   assert.equal(runJobs(home, ['approve', j.key]).code, 4, 'no approval before the where is chosen');
-  assert.equal(runJobs(home, ['approve', j.key, '--via', 'linkedin']).json.via, 'linkedin');
-  assert.equal(ap.applyPathOf(store.loadState().jobs[j.key], { apply: { where: 'ask' } }), 'linkedin');
+  assert.equal(runJobs(home, ['approve', j.key, '--via', 'site']).json.via, 'site');
+  assert.equal(ap.applyPathOf(store.loadState().jobs[j.key], { apply: { where: 'ask' } }), 'site');
   const k = liJob(48);
   store.updateState((s) => { s.jobs[k.key] = k; });
   assert.equal(runJobs(home, ['approve', k.key, '--via', 'employer']).code, 0);
@@ -223,28 +229,28 @@ test('"Ask me each job" puts the choice in the approval call, and a plain approv
   assert.ok(store.loadState().approvals[k.key]);
 });
 
-test('a LinkedIn job counts toward period_max once its link and answers are brought', () => {
+test('a job-site job counts toward period_max once its link and answers are brought', () => {
   const jobs = [liJob(51, { fit: 90 }), liJob(52, { fit: 80 }), liJob(53, { fit: 70 })];
   reset(jobs);
-  runJobs(home, ['profile', 'set', JSON.stringify({ apply: { where: 'linkedin', source: 'person' } })]);
+  runJobs(home, ['profile', 'set', JSON.stringify({ apply: { where: 'site', source: 'person' } })]);
   runJobs(home, ['rules', 'add', '--effect', 'period_max', '--value', '2', '--words', 'two a period']);
   const wl = work.workList({ now: Date.now(), commit: true });
-  assert.deepEqual(wl.items.filter((i) => i.reason === 'linkedin_ready').map((i) => i.key), [jobs[0].key, jobs[1].key]);
+  assert.deepEqual(wl.items.filter((i) => i.reason === 'site_ready').map((i) => i.key), [jobs[0].key, jobs[1].key]);
   assert.equal(wl.heldForPeriod, 1);
-  assert.equal(work.workList({ now: Date.now() }).items.filter((i) => i.reason === 'linkedin_ready').length, 2, 'brought ones stay, the third waits for the next period');
+  assert.equal(work.workList({ now: Date.now() }).items.filter((i) => i.reason === 'site_ready').length, 2, 'brought ones stay, the third waits for the next period');
 });
 
-test('the LinkedIn link is read from the posting\'s apply options and never fetched', async () => {
+test('the job-site link is read from the posting\'s apply options and never fetched', async () => {
   const p = { title: 'Platform Engineer', employer: 'Acme', employerWebsite: null, city: 'Berlin', region: '', country: '', remote: false, employmentType: '', postedAt: new Date(NOW).toISOString().slice(0, 10), salary: null, applyLinks: [{ url: li, publisher: 'LinkedIn' }], description: 'x', sourceUrl: 'https://www.example-jobs.test/p/1' };
   const obj = { need: 'job_postings', status: 'fulfilled', query: { role: 'engineer', place: 'Berlin', remote: false, since: null }, postings: [p] };
   const f = fakeFetch({});
   await ing.ingest({ obj, state: store.loadState(), profile: {}, overlay: empty, fetch: f, now: NOW });
   const job = Object.values(store.loadState().jobs).find((j) => j.company === 'Acme');
-  assert.equal(job.linkedinUrl, li);
+  assert.deepEqual(job.siteLinks, [{ site: 'LinkedIn', url: li }]);
   assert.ok(!f.calls.some((u) => /linkedin\.com/.test(u)), 'LinkedIn is never fetched');
 });
 
-test('SKILL.md and apply.md: gate 4 is the deny list, LinkedIn is only shown, rules come from choices', () => {
+test('SKILL.md and apply.md: gate 4 is the deny list, a job site page is opened for the person, rules come from choices', () => {
   const skill = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'SKILL.md'), 'utf8');
   assert.ok(skill.length <= 10000, `SKILL.md is ${skill.length} characters`);
   assert.match(skill, /except the deny list: LinkedIn, Indeed/);
@@ -252,9 +258,9 @@ test('SKILL.md and apply.md: gate 4 is the deny list, LinkedIn is only shown, ru
   assert.doesNotMatch(skill, /on Greenhouse, Lever or Ashby, found/);
   assert.match(fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'references', 'questions.md'), 'utf8'), /J rules add --from-choice/, 'the rule lives in questions.md only');
   assert.doesNotMatch(skill, /from-choice/);
-  assert.match(skill, /J linkedin show <key>/);
+  assert.match(skill, /J site show <key>/);
   const apply = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'references', 'apply.md'), 'utf8');
   assert.match(apply, /the host is on the deny list, the form needs an account, a bot check appeared, or no employer posting was found/);
-  assert.match(apply, /never opens, fetches or fills it/);
+  assert.match(apply, /does nothing on that site/);
   assert.match(apply, /Employer's site \(I apply\)/);
 });

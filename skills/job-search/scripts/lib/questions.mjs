@@ -67,8 +67,8 @@ export function startQuestions({ chromeOff = false, rc = 'unknown', pushSent = f
       ]),
       q('Where', 'Where do you prefer to apply?', [
         { label: 'Employer\'s site (Recommended)', description: 'I apply on the employer\'s own application page where I can, in the mode you chose.' },
-        { label: 'LinkedIn, I apply', description: 'For a job that is on LinkedIn, I prepare the answers and show you its LinkedIn link; you apply there, so it connects to your account. I never open LinkedIn.' },
-        { label: 'Ask me each job', description: 'For a job that is on LinkedIn and on an employer site, I ask which one with the application.' },
+        { label: 'A job site, I apply', description: 'For a job on LinkedIn, Indeed, YC or another job site, I open the job\'s page there in your browser and give you the answers; you apply there. I do nothing on that site.' },
+        { label: 'Ask me each job', description: 'For a job that is on a job site and on an employer site, I ask which one with the application.' },
       ]),
     ],
     reminder: rcReminder({ rc, pushSent, settings }),
@@ -199,8 +199,8 @@ export function emailModeQuestion() {
 // (the fields, any new answer in full, the warnings). A fact the form needs that the profile lacks is asked in the same call,
 // with its fixed answers and "Skip this job"; one with no fixed answers comes back as a plain question. The answer is saved as
 // a fact (`J approve <key> --facts`), the sheet is completed, and the yes covers the completed sheet.
-// `path` is 'ask' when the job is on LinkedIn and on an employer site and the person chose "Ask me each job": the choice joins
-// the approval call, and a LinkedIn pick means the person applies there (the skill never opens LinkedIn).
+// `path` is 'ask' when the job is on a job site and on an employer site and the person chose "Ask me each job": the choice joins
+// the approval call, and a job-site pick means the person applies there (the skill opens the page and does nothing on it).
 export function approvalQuestions(job, path = 'employer', { chromeOff = false } = {}) {
   // A filled form waiting for the person (`fill_ready`): the person may be on the phone, so the notice offers "Submit it now",
   // checked by `J may-submit` on the unchanged sheet hash, next to "I'll submit in Chrome" and "Not this one".
@@ -222,7 +222,7 @@ export function approvalQuestions(job, path = 'employer', { chromeOff = false } 
     ? chromeQ('Apply', `Where should ${job.title} at ${job.company} go, with the application shown above?`, [
       { label: 'Employer\'s site (I apply)', description: 'Records your yes for this exact application, then I fill it and submit it on the employer\'s page.' },
       fill,
-      { label: 'LinkedIn (you apply)', description: 'I show its LinkedIn link and the answers; you apply there. I never open LinkedIn.' },
+      { label: `${siteName(job)} (you apply)`, description: `I open the job\'s page on ${siteName(job)} in your browser and give you the answers; you apply there. I do nothing on that site.` },
       { label: 'Skip this job', description: 'Do not apply to this job.' },
     ], { chromeOff, needs })
     : chromeQ('Apply', `Apply to ${job.title} at ${job.company} with the application shown above?`, [
@@ -245,12 +245,16 @@ export function approvalQuestions(job, path = 'employer', { chromeOff = false } 
   if (facts.length || plainFacts.length) {
     return { application, step: 'facts first', questions: facts.slice(0, 4), plain: plainFacts, then: 'J ask approval --key <job> again once every fact is saved (J approve <key> --facts <json> saves choices; J fact set <name> <value> saves a plain answer; J agree <key> <label> records a yes to an acknowledgment)', next: 'show the application, ask the fact questions in their own call; the approval comes after, with the completed sheet' };
   }
-  return { application, questions: asks, plain: [], next: 'show the application, then ask this one call; record with J approve <key> [--fill-only|--via employer|linkedin]; say the state line it prints as given' };
+  return { application, questions: asks, plain: [], next: 'show the application, then ask this one call; record with J approve <key> [--fill-only|--via employer|site]; say the state line it prints as given' };
 }
 
-// After a LinkedIn link was shown: did the person apply there? Asked once per version of the job, in an attended turn.
-export function appliedQuestion({ company, title }) {
-  return { questions: [q('Applied', `Did you apply to ${title} at ${company} on LinkedIn?`, [
+// The job site a job was found on first, by name.
+export const siteName = (job) => ((job.siteLinks || [])[0] || {}).site || 'the job site';
+
+// After a job-site page was opened: did the person apply there? Asked once per version of the job, in an attended turn.
+export function appliedQuestion(job) {
+  const { company, title } = job;
+  return { questions: [q('Applied', `Did you apply to ${title} at ${company} on ${siteName(job)}?`, [
     { label: 'Yes', description: 'Record it as applied, on your word.' },
     { label: 'Not yet', description: 'Keep it shown; I ask again only if the job changes.' },
     { label: 'Skip this job', description: 'Do not apply to this job.' },

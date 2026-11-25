@@ -221,8 +221,15 @@ const OLD_STATE_FIELDS = {
   watchTipShown: 'the skill no longer suggests a watch list',
   dropLines: 'boards no longer drop by themselves',
 };
+// Fields on a job record from the LinkedIn-only option: the job-site option keeps siteLinks, siteShownAt and siteAskedV.
+const OLD_JOB_FIELDS = { linkedinUrl: 'now siteLinks, one link per job site', linkedinShownAt: 'now siteShownAt', linkedinAskedV: 'now siteAskedV' };
 export function oldStateFields(raw) {
-  return raw && typeof raw === 'object' ? Object.keys(OLD_STATE_FIELDS).filter((k) => raw[k] !== undefined).map((k) => ({ field: k, why: OLD_STATE_FIELDS[k] })) : [];
+  if (!raw || typeof raw !== 'object') return [];
+  const list = Object.keys(OLD_STATE_FIELDS).filter((k) => raw[k] !== undefined).map((k) => ({ field: k, why: OLD_STATE_FIELDS[k] }));
+  const jobs = Object.values(raw.jobs || {});
+  for (const [k, why] of Object.entries(OLD_JOB_FIELDS)) if (jobs.some((j) => j && j[k] !== undefined)) list.push({ field: `jobs.*.${k}`, why });
+  if (jobs.some((j) => j && j.applyVia === 'linkedin')) list.push({ field: 'jobs.*.applyVia', why: 'the "linkedin" value is now "site"' });
+  return list;
 }
 export const oldStateError = (list) => `state.json has ${list.length > 1 ? 'old fields' : 'an old field'} the skill no longer reads: ${list.map((o) => `${o.field} (${o.why})`).join('; ')}. Remove ${list.length > 1 ? 'them' : 'it'} from state.json, then run the command again.`;
 export function readOldStateFields() {
