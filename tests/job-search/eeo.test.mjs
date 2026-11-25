@@ -146,3 +146,100 @@ test('an old saved EEO shape is never converted: any command but J profile is re
   assert.equal(eeoTextOf({ eeo: 'decline_all' }), null, 'the reader reads only eeoText');
   assert.equal(eeoTextOf({ eeoText: ' my words ' }), 'my words');
 });
+
+const OPT = (f) => ({ ...f, required: false });
+
+test('an optional field the saved text does not answer is asked in the same plain question, marked optional, with the skip said', () => {
+  reset({ eeoText: 'Veteran status: placeholder. (test text)' });
+  const j = job(5);
+  J('sheet', 'build', j.key, '--questions', file([Q('First name'), OPT(GENDER), VET]));
+  const fields = store.loadState().jobs[j.key].sheet.eeoFields;
+  assert.deepEqual(fields.map((f) => [f.label, f.required]), [['Gender', false], ['Veteran status', true]]);
+  const r = J('eeo', 'question', '--key', j.key).json;
+  assert.equal(r.questions, undefined, 'still a plain question');
+  assert.match(r.plain, /Gender \(optional\); Veteran status\./);
+  assert.doesNotMatch(r.plain, /Veteran status \(optional\)/, 'a required field is not marked optional');
+  assert.match(r.plain, /can also be skipped: say skip/);
+  const allRequired = J('eeo', 'question', '--key', job(6).key).json;
+  assert.doesNotMatch(allRequired.plain, /skip/, 'no skip is offered when no field is optional');
+});
+
+test('a skip leaves the optional field empty, is saved with the person\'s text, and a later form does not ask about it again', () => {
+  reset({ eeoText: 'Veteran status: placeholder. (test text)' });
+  const j = job(7);
+  const qf = file([Q('First name'), OPT(GENDER), VET]);
+  J('sheet', 'build', j.key, '--questions', qf);
+  const sk = J('eeo', 'skip', j.key, 'Gender');
+  assert.equal(sk.code, 0, sk.stdout);
+  assert.deepEqual(J('profile', 'get').json.eeoSkipped, ['gender']);
+  assert.equal(J('profile', 'get').json.eeoText, 'Veteran status: placeholder. (test text)', 'the text is kept as it was');
+  J('eeo', 'answer', j.key, 'Veteran status', 'I am not a veteran');
+  J('sheet', 'build', j.key, '--questions', qf);
+  const sheet = store.loadState().jobs[j.key].sheet;
+  assert.equal(sheet.fields.some((f) => f.label === 'Gender'), false, 'left empty');
+  assert.equal(sheet.eeoMissing, false, 'the skipped optional field no longer holds the job');
+  // a later form with the same optional field: not asked again
+  const k = job(8);
+  J('sheet', 'build', k.key, '--questions', qf);
+  assert.deepEqual(store.loadState().jobs[k.key].sheet.eeoFields.map((f) => f.label), ['Veteran status']);
+  // a skip needs no saved text at all
+  reset();
+  const m = job(9);
+  J('sheet', 'build', m.key, '--questions', file([OPT(GENDER)]));
+  assert.equal(J('eeo', 'skip', m.key, 'Gender').code, 0);
+  J('sheet', 'build', m.key, '--questions', file([OPT(GENDER)]));
+  assert.equal(store.loadState().jobs[m.key].sheet.eeoMissing, false);
+});
+
+test('a required field cannot be skipped, and nothing is guessed for it', () => {
+  reset({ eeoText: 'Gender: placeholder. (test text)' });
+  const j = job(10);
+  const qf = file([Q('First name'), GENDER, VET]);
+  J('sheet', 'build', j.key, '--questions', qf);
+  const r = J('eeo', 'skip', j.key, 'Veteran status');
+  assert.equal(r.code, 4);
+  assert.match(r.json.error, /required on this form: it cannot be skipped/);
+  assert.equal(J('profile', 'get').json.eeoSkipped, undefined);
+  // even a saved skip for the same label does not skip a required field on another form
+  J('profile', 'set', JSON.stringify({ eeoSkipped: ['veteran status'] }));
+  const k = job(11);
+  J('sheet', 'build', k.key, '--questions', qf);
+  const sheet = store.loadState().jobs[k.key].sheet;
+  assert.equal(sheet.eeoMissing, true);
+  assert.ok(sheet.eeoFields.some((f) => f.label === 'Veteran status' && f.required === true));
+  assert.equal(J('eeo', 'skip', k.key, 'Nonexistent field').code, 2);
+});
+
+test('the unattended consent needs no EEO text; a woken turn holds the first unanswered EEO form as eeo_missing with one push, and the next attended turn asks the plain question', async () => {
+  const work = await import(`${S}work.mjs`);
+  reset({ unattended: { roles: ['engineer'], places: ['Berlin'], minScore: 70, hosts: ['*'] } });
+  assert.equal(J('consent', 'record', 'unattended', '--optional-writing', 'skip').code, 0, 'no EEO text is needed');
+  const j = job(12);
+  const qf = file([Q('First name'), GENDER]);
+  J('sheet', 'build', j.key, '--questions', qf);
+  const woken = J('sheet', 'check', j.key, '--live', qf, '--unattended');
+  assert.equal(woken.code, 4);
+  assert.deepEqual(store.loadState().jobs[j.key].parked.reasons, ['eeo_missing']);
+  assert.equal(woken.json.ask, undefined, 'nobody is asked in a woken turn');
+  const first = work.workList({ now: Date.now(), commit: true });
+  assert.match(first.notify, /1 stop need you at Acme \(eeo missing\)/, 'the usual push');
+  assert.equal(work.workList({ now: Date.now(), commit: true }).notify, null, 'one push, not a second');
+  // the next attended turn asks the plain question
+  const q = J('eeo', 'question', '--key', j.key).json;
+  assert.match(q.plain, /Gender/);
+  assert.equal(q.questions, undefined);
+});
+
+test('the defaults merge in loadState stays: a state that lacks a newer key is filled, and nothing is renamed or moved', () => {
+  reset();
+  const f = store.stateFile();
+  const old = JSON.parse(fs.readFileSync(f, 'utf8'));
+  delete old.shown;
+  delete old.chrome;
+  old.jobs = { 'https://x.test/1': { key: 'https://x.test/1', title: 'Kept' } };
+  fs.writeFileSync(f, JSON.stringify(old));
+  const s = store.loadState();
+  assert.deepEqual(s.shown, {}, 'a missing key gets its default');
+  assert.equal(s.chrome, null);
+  assert.equal(s.jobs['https://x.test/1'].title, 'Kept', 'what is stored is untouched');
+});

@@ -47,6 +47,7 @@ export function validateProfile(p) {
     }
   }
   if (has('facts')) need(p.facts && typeof p.facts === 'object' && !Array.isArray(p.facts) && Object.values(p.facts).every((v) => ['string', 'number', 'boolean'].includes(typeof v)), 'facts must be an object of text, number or true/false values');
+  if (has('eeoSkipped')) need(strList(p.eeoSkipped), 'eeoSkipped must be a list of field labels the person skipped');
   if (has('eeoText')) need(isStr(p.eeoText), 'eeoText must be the person\'s own text');
   if (has('unattended')) {
     const u = p.unattended;

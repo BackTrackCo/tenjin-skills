@@ -53,9 +53,9 @@ test('apply next refuses without an open batch', () => {
   assert.equal(r.json.refused, 'no_batch');
 });
 
-test('consent is refused until the unattended rules and the EEO choice are set', () => {
+test('consent is refused until the unattended rules are set, and needs no EEO text', () => {
   assert.equal(runJobs(home, ['consent', 'record', 'unattended', '--optional-writing', 'skip']).code, 2);
-  runJobs(home, ['profile', 'set', JSON.stringify({ eeoText: 'Decline every voluntary demographic question (test placeholder).', unattended: { roles: ['engineer'], places: ['Berlin'], minScore: 70, hosts: ['greenhouse'] } })]);
+  runJobs(home, ['profile', 'set', JSON.stringify({ unattended: { roles: ['engineer'], places: ['Berlin'], minScore: 70, hosts: ['greenhouse'] } })]);
   const r = runJobs(home, ['consent', 'record', 'unattended', '--optional-writing', 'skip']);
   assert.equal(r.code, 0);
   assert.match(r.json.rulesHash, /^[0-9a-f]{64}$/);

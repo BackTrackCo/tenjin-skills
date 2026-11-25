@@ -728,6 +728,24 @@ const commands = {
       writeJsonAtomic(profileFile(), next);
       return out({ saved: true, resumed: resumeHeld(next), next: 'match the saved text to each field of the form\'s own options and record each with J eeo answer <key> <field label> <option>; a field it does not answer is asked again as a plain question and added with J eeo add' });
     }
+    // A skip of an optional field: it stays empty, and is saved with the person's text so a later form does not ask about it again.
+    // A required field is never skipped this way.
+    if (sub === 'skip') {
+      const [key, ...lab] = rest;
+      const label = lab.join(' ').trim();
+      if (!key || !label) return out({ error: 'eeo skip <key> <optional field label>' }, 2);
+      const job = loadState().jobs[key];
+      if (!job) return out({ error: `unknown job: ${key}` }, 2);
+      const nl = normLabelFn(label);
+      const field = ((job.sheet && job.sheet.eeoFields) || []).find((f) => normLabelFn(f.label) === nl) || (job.questions || []).find((q) => normLabelFn(q.label) === nl);
+      if (!field) return out({ error: `${label} is not a voluntary demographic field of this form` }, 2);
+      if (field.required) return out({ error: `${label} is required on this form: it cannot be skipped, answer it in your own words or say decline` }, 4);
+      const next = { ...profile, eeoSkipped: [...new Set([...(profile.eeoSkipped || []), nl])] };
+      const bad = validateProfile(next);
+      if (bad.length) return out({ error: bad.join('; ') }, 2);
+      writeJsonAtomic(profileFile(), next);
+      return out({ skipped: label, next: `rebuild and check the sheet: J sheet build ${key} --questions <file>, then J sheet check ${key} --live <file>` });
+    }
     if (sub === 'answer') {
       const [key, label, ...val] = rest;
       const value = val.join(' ').trim();
@@ -744,7 +762,7 @@ const commands = {
         return { recorded: label, next: `rebuild and check the sheet: J sheet build ${key} --questions <file>, then J sheet check ${key} --live <file>` };
       }));
     }
-    return out({ error: 'eeo question [--key job] | set <text> | add <text> | answer <key> <field label> <option>' }, 2);
+    return out({ error: 'eeo question [--key job] | set <text> | add <text> | skip <key> <optional field> | answer <key> <field label> <option>' }, 2);
   },
   async fillonly([key, onoff]) {
     return out(updateState((s) => {

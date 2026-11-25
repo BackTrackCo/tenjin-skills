@@ -123,11 +123,13 @@ export const followUpDetail = ({ company }) => plain(`What did ${company} say? Y
 // The voluntary demographic fields (gender, race or ethnicity, veteran status, disability) are never a choice question: the answers
 // are the person's own text. At the first form that has them the skill asks this one plain question, built here, naming the fields
 // this form asks. The answer is saved as text (`J eeo set`); on later forms the browser step matches it to the form's own options,
-// and a field the text does not answer is asked again, plainly, with only that field (`fields` of one).
+// and a field the text does not answer is asked again, plainly, with only that field (`fields` of one). An optional field is marked optional and can be skipped; a skip is saved, so a later form does not ask about it again.
 export function eeoPlainQuestion({ fields = [], company = '' } = {}) {
-  const names = fields.map((f) => (typeof f === 'string' ? f : f.label)).filter(Boolean);
-  if (!names.length) return plain('The form asks some voluntary demographic questions. Answer each in your own words, or say decline.');
-  return plain(`${company ? `The ${company} form` : 'The form'} asks these voluntary demographic questions: ${names.join('; ')}. Answer each one in your own words, or say decline. I keep your words and match them to each form's own options.`);
+  const names = fields.map((f) => (typeof f === 'string' ? f : `${f.label}${f.required === false ? ' (optional)' : ''}`)).filter(Boolean);
+  const optional = fields.some((f) => typeof f !== 'string' && f.required === false);
+  const skip = optional ? ' A field marked optional can also be skipped: say skip.' : '';
+  if (!names.length) return plain(`The form asks some voluntary demographic questions. Answer each in your own words, or say decline.${skip}`);
+  return plain(`${company ? `The ${company} form` : 'The form'} asks these voluntary demographic questions: ${names.join('; ')}. Answer each one in your own words, or say decline.${skip} I keep your words and match them to each form's own options.`);
 }
 
 export function optionalWritingQuestion() {

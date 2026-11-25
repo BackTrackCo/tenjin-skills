@@ -141,8 +141,12 @@ export function buildSheet({ job, questions, profile, answers = [], drafts = {} 
       // recorded per job and field with `J eeo answer`. A field the text does not answer is never guessed: it is asked again, as a
       // plain question, before the fill.
       const mine = (job.eeoAnswers || {})[nl];
+      // An optional field the person skipped stays empty and is not asked again on a later form; a required field is never skipped.
+      const skipped = q.required !== true && (profile.eeoSkipped || []).includes(nl);
       const offered = !q.options || !q.options.length || q.options.includes(mine);
-      if (mine && offered && eeoTextOf(profile)) {
+      if (skipped) {
+        continue;
+      } else if (mine && offered && eeoTextOf(profile)) {
         value = mine;
         tag = 'fact';
       } else {

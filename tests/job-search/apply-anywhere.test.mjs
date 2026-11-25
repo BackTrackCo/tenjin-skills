@@ -49,7 +49,7 @@ test('apply next hands that job out on a host that is on no list, and never gate
   assert.equal(ap.applyNext({ state: s, profile: { eeoText: 'Decline every voluntary demographic question (test placeholder).' }, overlay: empty, mode: 'attended', now: NOW, batchOpen: true }).queue[0].reason, 'platform_url');
   // unattended rules may name any hiring system, or any
   const u = { roles: ['engineer'], places: ['Berlin'], minScore: 70, hosts: ['*'] };
-  assert.deepEqual(ap.unattendedProblems({ eeoText: 'Decline every voluntary demographic question (test placeholder).', unattended: u }), []);
+  assert.deepEqual(ap.unattendedProblems({ unattended: u }), [], 'no EEO text is needed for the unattended consent');
 });
 
 test('the deny list holds the sites named in the plan, and only the deny list gates the browser', () => {

@@ -1,4 +1,3 @@
-import { eeoTextOf } from './profile.mjs';
 import fs from 'node:fs';
 import { graph } from './graph.mjs';
 import { duplicateWithin, sha } from './dedupe.mjs';
@@ -40,7 +39,6 @@ export function unattendedProblems(profile) {
   if (!Array.isArray(u.places) || !u.places.length) p.push('no place');
   if (typeof u.minScore !== 'number') p.push('no lowest fit score');
   if (!Array.isArray(u.hosts) || !u.hosts.length || u.hosts.some((h) => typeof h !== 'string' || !h.trim())) p.push('no hiring systems (a list, or "*" for any)');
-  if (!eeoTextOf(profile)) p.push('the voluntary demographic answers are not given');
   return p;
 }
 

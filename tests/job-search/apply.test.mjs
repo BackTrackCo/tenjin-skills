@@ -171,10 +171,10 @@ test('unattended refuses to start without an open batch', () => {
   assert.equal(run(s, { mode: 'unattended', batchOpen: false }).refused, 'no_batch');
 });
 
-test('consent needs complete rules and the EEO choice; no rule or lesson can record it', () => {
+test('consent needs complete rules, and no EEO text; no rule or lesson can record it', () => {
   const s = stateWith();
   assert.throws(() => ap.recordConsent(s, { eeoText: 'Decline every voluntary demographic question (test placeholder).' }, empty()), /not set/);
-  assert.throws(() => ap.recordConsent(s, { unattended: U }, empty()), /demographic/);
+  assert.deepEqual(ap.unattendedProblems({ unattended: U }), [], 'the unattended consent needs no EEO text');
   assert.throws(() => ap.recordConsent(s, { eeoText: 'Decline every voluntary demographic question (test placeholder).', unattended: { ...U, hosts: [] } }, empty()), /hiring systems/);
   assert.equal(s.consent.unattended, null);
   for (const effect of ['unattended_consent', 'consent']) assert.throws(() => ov.addRule({ effect, value: true, words: 'yes do it' }), /vocabulary/);
