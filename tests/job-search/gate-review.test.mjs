@@ -239,7 +239,7 @@ test('17: only the resume the person named is uploaded: batch open refuses anoth
   assert.equal(J('batch', 'open', '--upload', '/etc/passwd').code, 4);
   assert.equal(store.loadState().batch, null);
   assert.equal(J('batch', 'open', '--upload', resume).code, 0);
-  assert.equal(J('apply', 'next').json.handout.resume, resume);
+  assert.equal(J('apply', 'next').json.handout.resume, path.join(process.env.CLAUDE_PROJECT_DIR || process.cwd(), '.job-search-upload', 'resume.pdf'));
 });
 
 // ---- 18 -----------------------------------------------------------------------------------------------------------
@@ -303,7 +303,7 @@ test('15: a whole unattended round runs in order and no step is refused', () => 
   step('batch open', ['batch', 'open', '--unattended', '--upload', resume]);
   const next = step('apply next', ['apply', 'next', '--unattended']);
   assert.equal(next.json.handout.submit, true);
-  assert.equal(next.json.handout.resume, resume);
+  assert.match(next.json.handout.resume, /\.job-search-upload\/resume-round\.pdf$/);
   const hash = next.json.handout.sheetHash;
   const live = path.join(home, 'round-live.json');
   fs.writeFileSync(live, JSON.stringify([{ label: 'First Name', required: true }, { label: 'Resume/CV', required: true }]));

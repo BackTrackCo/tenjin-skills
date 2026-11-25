@@ -28,13 +28,13 @@ test('J resume set --file keeps the original path, puts a 0600 copy in a 0700 up
   assert.equal(r.code, 0, r.stdout);
   const prof = J('profile', 'get').json;
   assert.equal(prof.resumePath, f, 'the profile keeps the path');
-  const copy = path.join(stateDir(), 'uploads', 'resume.pdf');
+  const copy = path.join(stateDir(), 'uploads', 'cv.pdf');
   assert.equal(prof.resumeUploadPath, copy);
   assert.equal(fs.readFileSync(copy, 'utf8'), '%PDF-1.4 original');
   assert.equal(fs.statSync(path.dirname(copy)).mode & 0o777, 0o700);
   assert.equal(fs.statSync(copy).mode & 0o777, 0o600);
   assert.equal(fs.readFileSync(f, 'utf8'), '%PDF-1.4 original', 'the original is not touched');
-  assert.deepEqual(fs.readdirSync(path.join(stateDir(), 'uploads')), ['resume.pdf'], 'no state file lives in the uploads folder');
+  assert.deepEqual(fs.readdirSync(path.join(stateDir(), 'uploads')), ['cv.pdf'], 'the copy keeps the original name; no state file lives in the uploads folder');
   assert.ok(fs.existsSync(path.join(stateDir(), 'profile.json')), 'the state files stay in the parent');
   J('batch', 'open');
   assert.equal(store.loadState().batch.uploadPath, copy, 'the browser task uploads the copy');
@@ -69,87 +69,125 @@ test('there is no migration: a saved resume file outside the uploads folder is n
   assert.equal(fs.readFileSync(path.join(stateDir(), 'uploads', 'resume.pdf'), 'utf8'), '%PDF-1.4 saved before');
 });
 
-// ---- the grant check ---------------------------------------------------------------------------------------
-const settings = (d, rel, dirs, extra = {}) => { fs.mkdirSync(path.dirname(path.join(d, rel)), { recursive: true }); fs.writeFileSync(path.join(d, rel), JSON.stringify({ ...extra, permissions: { additionalDirectories: dirs } })); };
-const ctx = () => ({ cfg: tmp('cc-cfg-'), project: tmp('cc-proj-') });
-const granted = (c, extra = {}) => up.uploadsGranted({ env: { CLAUDE_CONFIG_DIR: c.cfg }, home: '/nonexistent', project: c.project, ...extra });
-
-test('the grant check reads only additionalDirectories, from user, project and local settings; the folder or a parent counts', () => {
-  const c = ctx();
-  const dir = up.uploadsDir();
-  assert.equal(granted(c), false, 'no settings: not granted');
-  settings(c.cfg, 'settings.json', ['/somewhere/else']);
-  assert.equal(granted(c), false);
-  settings(c.cfg, 'settings.json', [dir]);
-  assert.equal(granted(c), true, 'the user settings list the folder');
-  settings(c.cfg, 'settings.json', [path.dirname(dir)]);
-  assert.equal(granted(c), true, 'a parent folder counts');
-  const c2 = ctx();
-  settings(c2.project, '.claude/settings.json', [dir]);
-  assert.equal(granted(c2), true, 'the project settings');
-  const c3 = ctx();
-  settings(c3.project, '.claude/settings.local.json', [dir + path.sep]);
-  assert.equal(granted(c3), true, 'the project local settings, with a trailing slash');
-  const c4 = ctx();
-  settings(c4.project, '.claude/settings.json', [`${dir}-other`, '/tmp/x']);
-  assert.equal(granted(c4), false, 'a sibling that only shares the prefix is not a parent');
-  assert.equal(granted(ctx(), { recorded: true }), true, 'a grant the model saw is recorded');
-  const c5 = ctx();
-  settings(c5.cfg, 'settings.json', [], { apiKeyHelper: 'secret' });
-  const src = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'scripts', 'lib', 'uploads.mjs'), 'utf8');
-  assert.doesNotMatch(src, /writeFile\(|appendFile|rename/, 'no code writes Claude Code\'s settings');
-  assert.deepEqual(fs.readdirSync(c5.cfg), ['settings.json'], 'read-only: nothing was written beside it');
-});
-
-test('J resume set says the one plain /add-dir line after saving a file, unless a grant covers the folder or one was recorded', () => {
+// ---- staging in the working folder -------------------------------------------------------------------------
+const proj = () => tmp('cc-proj-');
+const snapshot = (d) => fs.readdirSync(d, { recursive: true }).sort();
+function setup(dir) {
   reset();
-  const cfg = tmp('cc-cfg-');
-  const proj = tmp('cc-proj-');
-  process.env.CLAUDE_CONFIG_DIR = cfg;
-  process.env.CLAUDE_PROJECT_DIR = proj;
+  process.env.CLAUDE_PROJECT_DIR = dir;
+  const f = path.join(tmp('cv-'), 'Ada Lovelace Resume.pdf');
+  fs.writeFileSync(f, '%PDF-1.4 ada');
+  J('resume', 'set', '--file', f);
+  const job = mkJob({ key: 'https://boards.greenhouse.io/acme/jobs/1', status: 'apply_ready', company: 'Acme', sheet: { hash: 'h', passed: true, eeoMissing: false, unanswered: [], forbidden: [], fields: [{ label: 'Resume/CV', value: '<resume>', tag: 'upload', required: true }] } });
+  store.updateState((s) => { s.jobs[job.key] = job; });
+  return job;
+}
+
+test('the staged copy keeps the original name, sits in a hidden folder of the working folder, and is deleted after the upload', () => {
+  const dir = proj();
+  fs.writeFileSync(path.join(dir, 'notes.txt'), 'mine');
+  const job = setup(dir);
   try {
-    const r = J('resume', 'set', '--file', pdf());
-    assert.equal(r.json.say, `So Chrome can attach your resume to forms, type /add-dir ${path.join(stateDir(), 'uploads')} and pick "Yes, and remember this directory". That remembers the folder for this project only.`);
-    assert.equal(J('uploads', 'status').json.granted, false);
-    settings(proj, '.claude/settings.local.json', [path.join(stateDir(), 'uploads')]);
-    assert.equal(J('resume', 'set', '--file', pdf()).json.say, undefined, 'a settings grant covers it');
-    fs.rmSync(path.join(proj, '.claude'), { recursive: true });
-    assert.ok(J('resume', 'set', '--file', pdf()).json.say);
-    assert.equal(J('uploads', 'set', 'granted').json.granted, true);
-    assert.equal(J('resume', 'set', '--file', pdf()).json.say, undefined, 'a recorded grant covers it');
-    assert.equal(J('uploads', 'set', 'nope').code, 2);
-    assert.equal(J('resume', 'set', '--text', 'Pat Example, engineer').json.say, undefined, 'a text resume has no file to upload');
-  } finally { delete process.env.CLAUDE_CONFIG_DIR; delete process.env.CLAUDE_PROJECT_DIR; }
+    const before = snapshot(dir);
+    const r = J('uploads', 'stage', job.key);
+    assert.equal(r.code, 0, r.stdout);
+    assert.equal(r.json.staged, path.join(dir, '.job-search-upload', 'Ada Lovelace Resume.pdf'));
+    assert.equal(r.json.name, 'Ada Lovelace Resume.pdf');
+    assert.equal(fs.readFileSync(r.json.staged, 'utf8'), '%PDF-1.4 ada');
+    assert.equal(fs.statSync(r.json.staged).mode & 0o777, 0o600);
+    assert.deepEqual(snapshot(dir), [...before, '.job-search-upload', '.job-search-upload/Ada Lovelace Resume.pdf'].sort());
+    assert.equal(J('uploads', 'unstage', job.key).code, 0);
+    assert.deepEqual(snapshot(dir), before, 'nothing else in the working folder changed');
+    assert.equal(fs.readFileSync(path.join(dir, 'notes.txt'), 'utf8'), 'mine');
+  } finally { delete process.env.CLAUDE_PROJECT_DIR; }
 });
 
-test('upload_blocked: attended the stop gives the one-line step at once; unattended it asks nothing and one notification goes, the other jobs go on', () => {
-  reset();
-  const a = mkJob({ key: 'https://boards.greenhouse.io/acme/jobs/1', status: 'apply_ready', company: 'Acme' });
-  const b = mkJob({ key: 'https://boards.greenhouse.io/acme/jobs/2', status: 'apply_ready', company: 'Beta' });
-  store.updateState((s) => { s.jobs[a.key] = a; s.jobs[b.key] = b; });
-  const r = J('stop', a.key, '--kind', 'upload_blocked');
-  assert.equal(r.code, 0, r.stdout);
-  assert.equal(r.json.say, up.uploadBlockedStep());
-  assert.match(r.json.say, /\/add-dir .*uploads.*Yes, and remember this directory.*go on/);
-  assert.deepEqual(store.loadState().jobs[a.key].parked.reasons, ['upload_blocked']);
-  // unattended: no say, the batch stays for the other jobs, and one notification names the stop
-  J('batch', 'open', '--unattended');
-  const u = J('stop', b.key, '--kind', 'upload_blocked');
-  assert.equal(u.json.say, undefined, 'no question in an unattended turn');
-  assert.equal(u.json.batchClosed, false, 'the round goes on');
-  J('batch', 'close');
-  const w = (async () => (await import(`${S}work.mjs`)).notifyLine(store.loadState(), { rules: [], lessons: [] }, Date.now()).line)();
-  return w.then((line) => assert.match(line, /stops? needs? you.*upload blocked/));
+test('the handout names the staged path and the steps; a stop, the read-back, may-submit and the outcome all remove the copy', () => {
+  const dir = proj();
+  const job = setup(dir);
+  store.updateState((s) => { s.approvals[job.key] = { sheetHash: 'h' }; });
+  try {
+    J('batch', 'open');
+    const h = J('apply', 'next').json.handout;
+    assert.equal(h.resume, path.join(dir, '.job-search-upload', 'Ada Lovelace Resume.pdf'));
+    assert.equal(h.stage, `J uploads stage ${job.key}`);
+    assert.equal(h.unstage, `J uploads unstage ${job.key}`);
+    for (const later of [['may-submit', job.key, 'h'], ['stop', job.key, '--kind', 'unknown_field'], ['submitted', job.key], ['ops', JSON.stringify([{ op: 'transition', key: job.key, to: 'submitted' }])], ['sheet', 'readback', job.key, '--read', '[]']]) {
+      J('uploads', 'stage', job.key);
+      assert.ok(fs.existsSync(path.join(dir, '.job-search-upload')));
+      J(...later);
+      assert.equal(fs.existsSync(path.join(dir, '.job-search-upload')), false, later.slice(0, 2).join(' '));
+    }
+  } finally { delete process.env.CLAUDE_PROJECT_DIR; }
 });
 
-test('SKILL.md and the docs: the say line, the grant record, the new stop kind, the README line; under 10,000 characters', () => {
+test('a copy is removed after a failure too, and a leftover folder is removed at the next apply step, by its exact name only', () => {
+  const dir = proj();
+  const job = setup(dir);
+  try {
+    fs.mkdirSync(path.join(dir, '.job-search-upload'));
+    fs.writeFileSync(path.join(dir, '.job-search-upload', 'old.pdf'), 'left');
+    fs.mkdirSync(path.join(dir, '.job-search-other'));
+    fs.writeFileSync(path.join(dir, 'keep.txt'), 'keep');
+    J('batch', 'open');
+    J('apply', 'next');
+    assert.equal(fs.existsSync(path.join(dir, '.job-search-upload')), false, 'the leftover folder is gone');
+    assert.deepEqual(snapshot(dir), ['.job-search-other', 'keep.txt'], 'nothing else was touched');
+    J('uploads', 'stage', job.key);
+    J('stop', job.key, '--kind', 'upload_blocked');
+    assert.equal(fs.existsSync(path.join(dir, '.job-search-upload')), false, 'deleted after a failed upload');
+  } finally { delete process.env.CLAUDE_PROJECT_DIR; }
+});
+
+test('a link or a file by that name is refused and never followed; an unwritable folder fills the job without the file and says so once', () => {
+  const dir = proj();
+  const job = setup(dir);
+  const outside = tmp('outside-');
+  try {
+    fs.symlinkSync(outside, path.join(dir, '.job-search-upload'));
+    const a = J('uploads', 'stage', job.key);
+    assert.equal(a.json.staged, null);
+    assert.match(a.json.line, /is a link, so nothing was copied/);
+    assert.deepEqual(fs.readdirSync(outside), [], 'the link was not followed');
+    J('batch', 'open');
+    J('apply', 'next');
+    assert.ok(fs.lstatSync(path.join(dir, '.job-search-upload')).isSymbolicLink(), 'a link is left alone by the cleanup');
+    fs.rmSync(path.join(dir, '.job-search-upload'));
+    fs.writeFileSync(path.join(dir, '.job-search-upload'), 'a file');
+    assert.match(J('uploads', 'stage', job.key).json.line, /is a file/);
+    fs.rmSync(path.join(dir, '.job-search-upload'));
+    // unwritable
+    fs.chmodSync(dir, 0o500);
+    if (process.getuid && process.getuid() !== 0) {
+      const b = J('uploads', 'stage', job.key);
+      assert.equal(b.json.staged, null);
+      assert.match(b.json.line, /cannot be written/);
+      J('uploads', 'stage', job.key);
+      const lines = store.loadState().uploadLines.filter((l) => /cannot be written/.test(l));
+      assert.equal(lines.length, 1, 'one report line');
+      fs.chmodSync(dir, 0o700);
+      assert.match(J('report', '--all').stdout, /Upload: Acme: the resume was not attached/);
+    }
+  } finally { fs.chmodSync(dir, 0o700); delete process.env.CLAUDE_PROJECT_DIR; }
+});
+
+test('no text asks for /add-dir or "go on", and the grant path is gone', () => {
   const root = path.join(import.meta.dirname, '..', '..');
+  const texts = [path.join(root, 'README.md'), path.join(root, 'skills', 'job-search', 'SKILL.md'), ...fs.readdirSync(path.join(root, 'skills', 'job-search', 'references')).map((f) => path.join(root, 'skills', 'job-search', 'references', f)), ...fs.readdirSync(path.join(root, 'skills', 'job-search', 'scripts', 'lib')).map((f) => path.join(root, 'skills', 'job-search', 'scripts', 'lib', f)), path.join(root, 'skills', 'job-search', 'scripts', 'jobs.mjs')];
+  for (const t of texts.filter((x) => fs.statSync(x).isFile())) {
+    const body = fs.readFileSync(t, 'utf8');
+    assert.doesNotMatch(body, /add-dir|additionalDirectories|uploadBlockedStep|uploadsLine|uploadsGranted|uploads set granted|then say go on|say go on/, t);
+  }
   const skill = fs.readFileSync(path.join(root, 'skills', 'job-search', 'SKILL.md'), 'utf8');
   assert.ok(skill.length <= 10000, `${skill.length}`);
-  assert.match(skill, /`J uploads set granted`/);
-  assert.match(skill, /upload_blocked/);
-  const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
-  assert.match(readme, /permissions\.additionalDirectories/);
-  assert.match(readme, /never writes Claude Code's settings/);
-  assert.match(fs.readFileSync(path.join(root, 'skills', 'job-search', 'references', 'setup.md'), 'utf8'), /uploads folder/);
+  assert.match(skill, /J uploads stage/);
+  assert.equal(J('uploads', 'set', 'granted').code, 2);
+});
+
+test('an old uploads grant in state is refused with the field named', () => {
+  reset();
+  store.updateState((s) => { s.uploads = 'granted'; });
+  const r = J('report');
+  assert.equal(r.code, 2);
+  assert.match(r.json.error, /uploads \(the uploads folder grant is gone/);
 });

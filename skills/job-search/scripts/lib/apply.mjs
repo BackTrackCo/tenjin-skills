@@ -4,6 +4,7 @@ import { duplicateWithin, sha } from './dedupe.mjs';
 import { isFillOnly } from './fillonly.mjs';
 import { frequencyOf, periodStart } from './schedule.mjs';
 import { hostOf, isNeverAutomated } from './platforms.mjs';
+import { stagedPathFor } from './uploads.mjs';
 import { activeLessons, canonical, maxPay, rulesHash, ruleValue } from './overlay.mjs';
 
 export const WRITING_SCOPE = 'application_free_text';
@@ -148,7 +149,7 @@ export const AUTO_MODES = ['auto_no_new', 'auto_write'];
 export const IN_FLIGHT_MS = 20 * 60000;
 export const inFlight = (job, now = Date.now()) => Boolean(job.inFlight && now - Date.parse(job.inFlight.at) < IN_FLIGHT_MS);
 export function applyNext(ctx) {
-  const { state, profile, overlay, mode = 'attended', now = Date.now(), batchOpen, writingRulesText = '', all = false } = ctx;
+  const { state, profile, overlay, mode = 'attended', now = Date.now(), batchOpen, writingRulesText = '', all = false, workingFolder: folder } = ctx;
   const writingOk = writingConsentCurrent(state, writingRulesText);
   const queue = [];
   const out = (o) => ({ handout: null, handouts: [], refused: null, queue, ...o });
@@ -192,8 +193,10 @@ export function applyNext(ctx) {
     }
     const skipFields = mode === 'unattended' && !writingOk && state.consent.unattended.optionalWriting === 'skip' ? (job.sheet.fields || []).filter((f) => f.tag === 'new_writing' && !f.required).map((f) => f.label) : [];
     const fillOnly = isFillOnly(job, overlay, profile);
-    const resume = (job.sheet.fields || []).some((f) => f.tag === 'upload') ? (profile.resumeUploadPath || profile.resumePath || null) : null;
-    handouts.push({ key: job.key, url: job.employerPosting.url, host, sheetHash: job.sheet.hash, mode, dryRun: dry, fillOnly, submit: !dry && !fillOnly, skipFields, ...(resume ? { resume } : {}), ...(job.submitNow ? { fromFilled: true } : {}) });
+    // The file a form takes is staged in the working folder just before the upload (`J uploads stage <key>`); the handout names that path.
+    const source = (job.sheet.fields || []).some((f) => f.tag === 'upload') ? (profile.resumeUploadPath || profile.resumePath || null) : null;
+    const resume = source ? stagedPathFor(source, folder) : null;
+    handouts.push({ key: job.key, url: job.employerPosting.url, host, sheetHash: job.sheet.hash, mode, dryRun: dry, fillOnly, submit: !dry && !fillOnly, skipFields, ...(resume ? { resume, stage: `J uploads stage ${job.key}`, unstage: `J uploads unstage ${job.key}` } : {}), ...(job.submitNow ? { fromFilled: true } : {}) });
     busy.add(host);
     if (!all || handouts.length >= room) break;
   }

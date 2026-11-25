@@ -27,7 +27,8 @@ export function emptyState() {
     notified: {},
     shown: {},
     chrome: null,
-    uploads: null,
+    uploadLines: [],
+    staged: {},
     rc: 'unknown',
     pushSent: false,
     rcPushSaid: false,
@@ -220,6 +221,7 @@ const OLD_STATE_FIELDS = {
   removedBoards: 'it only guarded the automatic adds, which are gone',
   watchTipShown: 'the skill no longer suggests a watch list',
   dropLines: 'boards no longer drop by themselves',
+  uploads: 'the uploads folder grant is gone; the file is copied into the working folder just before an upload',
 };
 // Fields on a job record from the LinkedIn-only option: the job-site option keeps siteLinks, siteShownAt and siteAskedV.
 const OLD_JOB_FIELDS = { linkedinUrl: 'now siteLinks, one link per job site', linkedinShownAt: 'now siteShownAt', linkedinAskedV: 'now siteAskedV' };

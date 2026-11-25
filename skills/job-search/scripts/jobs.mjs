@@ -29,7 +29,7 @@ import { firstApplicationHosts, renderReport } from './lib/report.mjs';
 import { CHROME_STEPS, maySubmit, stateLine } from './lib/approval.mjs';
 import { openPage, checkOpenUrl, openUrlOf } from './lib/open.mjs';
 import { pushSettings } from './lib/pushsettings.mjs';
-import { copyToUploads, uploadBlockedStep, uploadsDir, uploadsGranted, uploadsLine } from './lib/uploads.mjs';
+import { copyToUploads, removeStage, stageUpload, workingFolder } from './lib/uploads.mjs';
 import * as qs from './lib/questions.mjs';
 import { FREQUENCIES, frequencyOf, periodStart } from './lib/schedule.mjs';
 import { ingest, joinLeads, leadKey } from './lib/ingest.mjs';
@@ -90,6 +90,18 @@ function tenjinReady() {
   if (r.status === 'ready') return null;
   const hint = tenjinHint(loadState(), 'daily_search', readProfile());
   return { ran: false, tenjin: r.status, hint: hint ? hint.line : null, next: 'nothing was sent to the router; the free searches still run' };
+}
+
+// The staged copy is deleted when the last job that staged it is done with it: after its upload, and again at every later step
+// (the read-back, the last check, the outcome, a stop), so no path leaves a copy behind.
+const STAGE_STALE_MS = 30 * 60000;
+function releaseStage(key) {
+  const left = updateState((s) => {
+    if (key) delete (s.staged || {})[key];
+    for (const [k, at] of Object.entries(s.staged || {})) if (Date.now() - Date.parse(at) > STAGE_STALE_MS) delete s.staged[k];
+    return Object.keys(s.staged || {}).length;
+  });
+  return left ? { unstaged: true, kept: 'another job is still uploading' } : { unstaged: true, ...removeStage() };
 }
 
 const commands = {
@@ -156,6 +168,7 @@ const commands = {
 
   async ops([arg]) {
     const ops = readJsonArg(arg);
+    if (Array.isArray(ops)) for (const o of ops) if (o && o.op === 'transition' && o.key) releaseStage(o.key);
     if (Array.isArray(ops) && ops.some((o) => o && o.op === 'approve') && batch.isActive() && batch.batchMode() === 'unattended') return out({ error: 'ops approve is refused while an unattended batch is open' }, 4);
     const r = applyOps(ops);
     const ranked = (Array.isArray(ops) ? ops : []).filter((o) => o.op === 'rank').length;
@@ -231,6 +244,7 @@ const commands = {
       return out(res, res.ok ? 0 : 4);
     }
     if (sub === 'readback') {
+      releaseStage(key);
       const job = loadState().jobs[key];
       // The read-back compares the form's own values (read_page or the form state), never a screenshot alone. A field that does not
       // confirm is filled again once; if it still fails the job holds as fill_problem and the session shows the field and its value.
@@ -252,12 +266,14 @@ const commands = {
   async apply([sub], flags) {
     if (sub !== 'next') return out({ error: 'apply next [--unattended] [--all]' }, 2);
     const mode = flags.unattended ? 'unattended' : 'attended';
+    // A staging folder left by a crash is removed first, by its exact name; nothing else in the working folder is touched.
+    releaseStage(null);
     // A batch idle past its window stays closed: it is cleaned up here, never revived by this call.
     batch.cleanupStale();
     const state = loadState();
     const open = batch.isActive(Date.now(), state);
     if (open) batch.touchBatch();
-    const res = applyNext({ state, profile: readProfile(), overlay: loadOverlay(), mode, batchOpen: open, writingRulesText: readWritingRules(), all: flags.all === true });
+    const res = applyNext({ state, profile: readProfile(), overlay: loadOverlay(), mode, batchOpen: open, writingRulesText: readWritingRules(), all: flags.all === true, workingFolder: workingFolder() });
     let batchClosed = false;
     updateState((s) => {
       for (const q of res.queue) if (s.jobs[q.key] && !['sheet_not_checked', 'no_recorded_yes', 'no_chrome_tools', 'host_busy', 'parked'].includes(q.reason)) park(s.jobs[q.key], [q.reason]);
@@ -415,6 +431,7 @@ const commands = {
 
   async stop([key], flags) {
     const kind = flags.kind || 'unknown_field';
+    releaseStage(key);
     let closed = false;
     const r = updateState((s) => {
       const job = s.jobs[key];
@@ -440,7 +457,8 @@ const commands = {
         s.batch = null;
         closed = true;
       }
-      return { parked: kind, ...(kind === 'upload_blocked' && flags.unattended !== true && !(s.batch && s.batch.mode === 'unattended') ? { say: uploadBlockedStep() } : {}) };
+      if (kind === 'upload_blocked') { const line = `${job.company}: the resume could not be attached; attach it in the form or try again later`; (s.uploadLines ||= []); if (!s.uploadLines.includes(line)) s.uploadLines.push(line); }
+      return { parked: kind };
     });
     return out({ ...r, batchClosed: closed });
   },
@@ -568,6 +586,7 @@ const commands = {
       st.lastReportAt = new Date().toISOString();
       if (all) {
         st.updateLines = [];
+        st.uploadLines = [];
         st.hostsReported = [...new Set([...(st.hostsReported || []), ...firstApplicationHosts(st).map((h) => h.host)])];
       }
       for (const c of st.consentLog || []) c.acked = true;
@@ -716,6 +735,7 @@ const commands = {
   // The last check right before the submit click: the browser subagent presses submit only on yes.
   async 'may-submit'([key, hash]) {
     if (!key || !hash) return out({ error: 'may-submit <key> <sheet hash>' }, 2);
+    releaseStage(key);
     const r = updateState((s) => {
       const res = maySubmit(s, readProfile(), loadOverlay(), key, hash, batch.isActive(Date.now(), s), { mode: batch.batchMode(s) === 'unattended' ? 'unattended' : 'attended', writingRulesText: readWritingRules() });
       if (res.ok) s.jobs[key].mayAt = new Date().toISOString(); // the one pass: a second check or a second handout is refused
@@ -727,15 +747,30 @@ const commands = {
   // off, options that need them carry a note. On clears every Chrome hold, so those jobs go back to the normal flow in this turn.
   // Whether Remote Control looks connected in this session (Claude Code's own session note is there), recorded at each start next to
   // `chrome set`. Code never reads Claude Code's config file.
-  // The uploads folder grant: `granted` records one the model saw in the session (a /add-dir it watched, or a starting folder that
-  // covers it). Code never writes Claude Code's settings.
-  async uploads([sub, v]) {
-    if (sub === 'set' && v === 'granted') return out(updateState((s) => { s.uploads = 'granted'; return { folder: uploadsDir(), granted: true }; }));
-    if (sub === 'status' || !sub) {
-      const granted = uploadsGranted({ recorded: loadState().uploads === 'granted' });
-      return out({ folder: uploadsDir(), granted, ...(granted ? {} : { say: uploadsLine() }) });
+  // The file a form takes is copied into the working folder just before each upload and deleted right after (no folder grant is
+  // ever asked for). `stage <key>` copies it; `unstage <key>` deletes the copy, and so does every later step of the job.
+  async uploads([sub, key]) {
+    const profile = readProfile();
+    if (sub === 'stage') {
+      const job = loadState().jobs[key];
+      if (!job) return out({ error: `unknown job: ${key}` }, 2);
+      const needsFile = ((job.sheet && job.sheet.fields) || []).some((f) => f.tag === 'upload');
+      const source = profile.resumeUploadPath || profile.resumePath || null;
+      if (!needsFile || !source) return out({ staged: null, note: 'this form takes no file' });
+      const r = stageUpload(source);
+      if (!r.ok) {
+        const line = `${job.company}: the resume was not attached (${r.why}); the form is filled without the file, so attach it in the form`;
+        updateState((s) => { (s.uploadLines ||= []); if (!s.uploadLines.includes(line)) s.uploadLines.push(line); });
+        return out({ staged: null, line });
+      }
+      updateState((s) => { (s.staged ||= {})[key] = new Date().toISOString(); });
+      return out({ staged: r.path, name: r.name, next: `upload exactly this path, then J uploads unstage ${key}` });
     }
-    return out({ error: 'uploads status | set granted' }, 2);
+    if (sub === 'unstage') {
+      if (!key) return out({ error: 'uploads unstage <key>' }, 2);
+      return out(releaseStage(key));
+    }
+    return out({ error: 'uploads stage <key> | unstage <key>' }, 2);
   },
   async rc([sub, v]) {
     if (sub !== 'set' || !['on', 'unknown'].includes(v)) return out({ error: 'rc set on|unknown' }, 2);
@@ -860,6 +895,7 @@ const commands = {
   },
   // The person says they submitted it.
   async submitted([key]) {
+    releaseStage(key);
     return out(updateState((s) => {
       markSubmitted(s, key, applyOp);
       return { submitted: key };
@@ -1121,9 +1157,7 @@ const commands = {
     if (r.url) next.resumeUrl = r.url;
     else if (!r.keepFile) delete next.resumeUrl;
     writeJsonAtomic(profileFile(), next);
-    // Right after a file is saved, and before any fill: one plain line, unless a settings grant already covers the uploads folder.
-    const needLine = Boolean(next.resumeUploadPath) && !uploadsGranted({ recorded: loadState().uploads === 'granted' });
-    return out({ ...(needLine ? { say: uploadsLine() } : {}), read: true, source: next.resumeSource, saved: r.resumeTextFile || r.resumePath || null, needsText: next.resumeNeedsText, next: next.resumeNeedsText ? 'read the file with your file reader, then save its text: J resume set --text' : next.resumeThin ? 'a LinkedIn profile has employers but no job titles: confirm the target role with a choice question, your guess first (J ask resume --json {header,question,guess,next,source:"LinkedIn"}); a form that needs more asks for a file or the text' : 'read role, role words, place and remote from the resume' });
+    return out({ read: true, source: next.resumeSource, saved: r.resumeTextFile || r.resumePath || null, needsText: next.resumeNeedsText, next: next.resumeNeedsText ? 'read the file with your file reader, then save its text: J resume set --text' : next.resumeThin ? 'a LinkedIn profile has employers but no job titles: confirm the target role with a choice question, your guess first (J ask resume --json {header,question,guess,next,source:"LinkedIn"}); a form that needs more asks for a file or the text' : 'read role, role words, place and remote from the resume' });
   },
 
   // Items shown to the person in a reply: they leave the notify set until their version changes.

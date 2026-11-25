@@ -1,10 +1,8 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { ensureDir, stateDir } from './paths.mjs';
 
-// The files a form takes live in their own folder, apart from the state files, so one grant for Claude in Chrome (a Chrome upload
-// counts as a read, and only folders the session may read can be uploaded from) opens the uploads folder and nothing else.
+// The files a form takes live in their own folder, apart from the state files; each is copied into the working folder only for the moment of an upload.
 export const uploadsDir = () => path.join(stateDir(), 'uploads');
 export const ensureUploads = () => {
   const d = ensureDir(uploadsDir());
@@ -12,10 +10,11 @@ export const ensureUploads = () => {
   return d;
 };
 
-// A copy of the file for Chrome, named resume with the original's extension. The original is never touched.
+// A copy of the file for Chrome, under the original's own name (the employer sees the name of the file that is uploaded). The original is never touched.
+const safeName = (n) => String(n || '').replace(/[\\/\u0000-\u001f]/g, '').replace(/^\.+/, '').trim();
 export function copyToUploads(src, name = null) {
   const dir = ensureUploads();
-  const dest = path.join(dir, name || `resume${path.extname(src).toLowerCase()}`);
+  const dest = path.join(dir, safeName(name) || safeName(path.basename(src)) || `resume${path.extname(src).toLowerCase()}`);
   if (path.resolve(src) !== dest) fs.copyFileSync(src, dest);
   fs.chmodSync(dest, 0o600);
   return dest;
@@ -29,27 +28,39 @@ export function saveToUploads(name, data) {
   return dest;
 }
 
-// ---- the grant ----------------------------------------------------------------------------------------------
-// Claude Code's working directories include `permissions.additionalDirectories` from settings. Read-only, and only that one key,
-// from the user settings, the project's settings and its local settings; nothing else is kept and nothing is written.
-function additionalDirs(file) {
+// ---- staging in the working folder ---------------------------------------------------------------------------
+// Chrome uploads only from folders the session may read, so no grant is asked for: just before each upload code copies the file into
+// a hidden folder in the session's own working folder, under its own name (the employer sees it), and deletes the copy and the folder
+// right after. Only that exact folder name is ever touched in the working folder: never read, listed, written or deleted otherwise.
+export const STAGE_DIR = '.job-search-upload';
+export const workingFolder = (env = process.env) => env.CLAUDE_PROJECT_DIR || process.cwd();
+export const stageDirOf = (folder = workingFolder()) => path.join(folder, STAGE_DIR);
+export const stagedPathFor = (src, folder = workingFolder()) => path.join(stageDirOf(folder), path.basename(src));
+const lstatOrNull = (p) => { try { return fs.lstatSync(p); } catch { return null; } };
+
+export function stageUpload(src, { folder = workingFolder() } = {}) {
+  const dir = stageDirOf(folder);
+  const st = lstatOrNull(dir);
+  // A link or a file under that name is never followed or replaced.
+  if (st && !st.isDirectory()) return { ok: false, why: `${STAGE_DIR} in the working folder is a ${st.isSymbolicLink() ? 'link' : 'file'}, so nothing was copied` };
+  if (!src || !fs.existsSync(src)) return { ok: false, why: 'the file to upload is missing' };
   try {
-    const o = JSON.parse(fs.readFileSync(file, 'utf8'));
-    const list = o && o.permissions && Array.isArray(o.permissions.additionalDirectories) ? o.permissions.additionalDirectories : [];
-    return list.filter((x) => typeof x === 'string');
-  } catch {
-    return [];
+    if (!st) fs.mkdirSync(dir, { mode: 0o700 });
+    const dest = stagedPathFor(src, folder);
+    fs.copyFileSync(src, dest);
+    fs.chmodSync(dest, 0o600);
+    return { ok: true, path: dest, name: path.basename(src) };
+  } catch (e) {
+    try { if (!st) fs.rmdirSync(dir); } catch {}
+    return { ok: false, why: `the working folder cannot be written (${e.code || e.message})` };
   }
 }
-const expand = (p, home) => path.resolve(p.startsWith('~') ? path.join(home, p.slice(1)) : p);
-export function uploadsGranted({ env = process.env, home = os.homedir(), project = env.CLAUDE_PROJECT_DIR || process.cwd(), recorded = false } = {}) {
-  if (recorded) return true;
-  const dir = env.CLAUDE_CONFIG_DIR;
-  const files = [dir ? path.join(dir, 'settings.json') : path.join(home, '.claude', 'settings.json'), path.join(project, '.claude', 'settings.json'), path.join(project, '.claude', 'settings.local.json')];
-  const target = path.resolve(uploadsDir());
-  return files.flatMap(additionalDirs).map((p) => expand(p, home)).some((d) => target === d || target.startsWith(d.endsWith(path.sep) ? d : d + path.sep));
-}
 
-// One plain line, not a question.
-export const uploadsLine = () => `So Chrome can attach your resume to forms, type /add-dir ${uploadsDir()} and pick "Yes, and remember this directory". That remembers the folder for this project only.`;
-export const uploadBlockedStep = () => `Chrome refused to upload from the uploads folder: type /add-dir ${uploadsDir()}, pick "Yes, and remember this directory", then say go on. In fill-only or open-only you can also attach the file in the form yourself.`;
+// Removes the staging folder, by that exact name, when it is a real folder. A link or a file by that name is left alone.
+export function removeStage({ folder = workingFolder() } = {}) {
+  const dir = stageDirOf(folder);
+  const st = lstatOrNull(dir);
+  if (!st || !st.isDirectory()) return { removed: false };
+  fs.rmSync(dir, { recursive: true, force: true });
+  return { removed: true };
+}

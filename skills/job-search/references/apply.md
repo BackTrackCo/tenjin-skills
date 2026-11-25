@@ -36,7 +36,7 @@ The fill and the submit run in one browser pass after the yes, never before it (
 
 Give it only the handout's URL, the sheet's fields and the resume path. It uses Claude in Chrome tool calls, in its own tab, and:
 1. Opens the URL. 2. Reads the form fields. 3. Pass 1: returns the live fields as JSON; the main session runs `J sheet check <key> --live <file>`. A field the sheet lacks, a changed field or a redirect to another host stops the job.
-4. Pass 2: fills each field with `form_input` by reference, uploads the resume with `file_upload`, reads the values back, at most one screenshot. The main session runs `J sheet readback <key> --read <file>`; a mismatch stops before submit.
+4. Pass 2: fills each field with `form_input` by reference, stages the resume with `J uploads stage <key>` (its reply names the path, in the working folder under the file's own name; if it says nothing was copied, the form is filled without the file and the report says so once), uploads that path with `file_upload`, then `J uploads unstage <key>` on success or failure, reads the values back, at most one screenshot. The main session runs `J sheet readback <key> --read <file>`; a mismatch stops before submit.
 5. Submits only when `handout.submit` is true (never in a dry run). Returns a short result: status, filled fields as JSON, problems.
 
 If the subagent has no Chrome tools or fails, hold the job (`J ops` transition `stopped`), report it, and do not retry on another model.
@@ -44,7 +44,7 @@ If the subagent has no Chrome tools or fails, hold the job (`J ops` transition `
 After a submit, `J ops` transition `submitted`; record the URL, filled fields and confirmation text. Say "submitted"; say "confirmed" only when the page or a forwarded email confirms.
 
 ## Stops
-When Chrome refuses an upload anyway (`Cannot upload ...`): `J stop <key> --kind upload_blocked`. Attended, its reply has the one-line step: say it at once and go on after the person adds the folder (in fill-only or open-only they can attach the file in the form). Unattended: never a question, one notification, and the other jobs go on. A bot check or unknown field: `J stop <key> --kind ...`. Chrome gone: `J stop <key> --kind chrome_disconnected` and tell the person to reconnect with `/chrome`. Then `J batch close`. An unattended batch also closes in code when `apply next` finds nothing left to submit, or on a captcha or `chrome_disconnected` stop; a batch with no activity for two hours is closed by the next `J work`.
+When a copy or an upload fails (`Cannot upload ...`): `J stop <key> --kind upload_blocked`. It parks only that job, with one report line, and never asks the person anything: the other jobs go on, and in fill-only or open-only the person can attach the file in the form. A bot check or unknown field: `J stop <key> --kind ...`. Chrome gone: `J stop <key> --kind chrome_disconnected` and tell the person to reconnect with `/chrome`. Then `J batch close`. An unattended batch also closes in code when `apply next` finds nothing left to submit, or on a captcha or `chrome_disconnected` stop; a batch with no activity for two hours is closed by the next `J work`.
 
 After the person has dealt with a stop (a captcha solved, a login done), `J unpark <key>` puts the job back in the queue.
 

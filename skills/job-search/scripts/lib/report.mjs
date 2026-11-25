@@ -96,6 +96,7 @@ function renderShort(state, overlay, { since, now, profile }) {
   if (held.length) { L.push('', '## Needs you'); for (const h of held) L.push(`- ${h.reason.replace(/_/g, ' ')}${h.detail ? `: ${h.detail}` : ''}`); }
   const mail = pendingEmails(state);
   if (mail.length) L.push('', mailLine(state, profile, overlay, mail.length));
+  for (const u of state.uploadLines || []) L.push('', `Upload: ${u}.`);
   const consent = (state.consentLog || []).filter((c) => !c.acked);
   if (consent.length) { L.push('', '## Consent changes (check that each one was yours)'); for (const c of consent) L.push(`- ${c.at.slice(0, 16).replace('T', ' ')}: ${c.what}.`); }
   if (planned.length) L.push('', CONTACTS_LINE);
@@ -225,6 +226,7 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
   }
   const mail = pendingEmails(state);
   if (mail.length) L.push('', mailLine(state, profile, overlay, mail.length));
+  for (const u of state.uploadLines || []) L.push('', `Upload: ${u}.`);
   const sentMail = (emailState(state).log || []).filter((m) => now - Date.parse(m.at) < 86400000);
   if (sentMail.length) L.push('', `Emails in the last day: ${sentMail.map((m) => `${m.how} to ${m.to}`).join('; ')}.`);
   const oc = state.postOutcomes || {};
