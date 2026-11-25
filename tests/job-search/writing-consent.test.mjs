@@ -113,7 +113,7 @@ test('writing_needs_yes sends one notification and the job stays out of the queu
   const ov0 = empty;
   const a = work.notifyLine(s, ov0, NOW);
   assert.match(a.line, /Globex/);
-  assert.match(a.line, /writing needs yes/);
+  assert.match(a.line, /a written answer waiting for your yes/);
   s.notified = a.next;
   assert.equal(work.notifyLine(s, ov0, NOW).line, null, 'one notification');
   assert.equal(work.buildWorkList(s, ov0, NOW, {}).items.length, 0);
