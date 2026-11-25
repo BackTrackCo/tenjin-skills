@@ -108,7 +108,7 @@ test('no_chrome_tools: one reason, one notification, nothing submitted, not coun
   assert.equal(s.applications.length, 0);
   assert.equal(s.jobs[j.key].status, 'apply_ready');
   const w1 = runJobs(home, ['work', '--commit']);
-  assert.match(w1.json.notify, /no chrome tools/);
+  assert.match(w1.json.notify, /Claude in Chrome is not available in this session \(Initech\)/);
   assert.equal(runJobs(home, ['work', '--commit']).json.notify, null, 'one notification');
   assert.equal(store.loadState().batch, null, 'a Chrome stop closes the batch, attended too');
   open('attended');
