@@ -4,7 +4,7 @@ import { guardedFetch, isLocalHost } from './net.mjs';
 import { ensureDir, stateDir } from './paths.mjs';
 import { isNeverAutomated } from './platforms.mjs';
 import { readLinkedIn } from './routed.mjs';
-import { tenjinAsk, tenjinHint } from './work.mjs';
+import { askFirst, tenjinAsk, tenjinHint } from './work.mjs';
 
 // The resume, in any form (a file, a link or the text). Read once; a link is not read again unless the person gives a new
 // one. The skill never searches the person's files.
@@ -103,6 +103,8 @@ export async function fetchResume(url, fetchImpl = globalThis.fetch) {
 export async function setFromLink({ url, state, client, fetchImpl = globalThis.fetch }) {
   if (isLinkedIn(url)) {
     if ((state.tenjin || {}).status !== 'ready') {
+      const first = askFirst(state, 'linkedin_resume');
+      if (first) return { read: false, linkedin: true, ...first };
       return { read: false, linkedin: true, hint: tenjinHint(state, 'linkedin_resume'), askTenjin: tenjinAsk(state), ask: 'a PDF export of the profile (LinkedIn: More, Save to PDF) or the text; the link itself is read only through Tenjin' };
     }
     const r = await readLinkedIn({ url, client });

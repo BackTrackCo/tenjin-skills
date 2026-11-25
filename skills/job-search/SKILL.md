@@ -28,6 +28,7 @@ J means `node ${CLAUDE_SKILL_DIR}/scripts/jobs.mjs`. Always write it out in full
 
 Every start, after a compaction or `/resume`: `J tenjin` (only sets the hint state; never stop for it), `J start status`, `J arm` (run the `monitor` command it prints with Monitor, persistent if offered; re-run `J arm` at each deadline message; if another session holds the lease, work attended), then `J work`.
 First run: ask for the resume as a plain question (a file, a link or the text; never search their files) and save it with `J resume set --file|--url|--text`. Read role, role words, place and remote from it into the profile with `J profile set` (`search.sources`: `resume`). Then one AskUserQuestion call, `J ask start` (apply mode, search frequency, positions), `J start record`, and say the one `/rc` reminder line it prints. Then the free search, `J report`.
+Free paths: only from what `J search plan`, `J resume set --url` and `J work` printed; while one prints `ask: tenjin`, ask it (`J ask tenjin`), then `J tenjin ask-done yes|no`.
 Questions: in an attended turn every question with choices goes through AskUserQuestion (`J ask <kind>`), never a list in prose; one moment's questions in one call. Never in an unattended turn: hold the job and notify. Facts and EEO come at their trigger (`needs_facts`, `eeo_missing`): `J ask fact|eeo`, `J fact set` or `J profile set`.
 Model: unless this session is Fable 5.2, say once, never in an unattended turn, that Job Search works best on Fable 5.2 at high effort (`/model fable`, `/effort high`).
 

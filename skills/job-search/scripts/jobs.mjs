@@ -8,7 +8,7 @@ import { SKILL_DIR, ensureDir, readJson, stateDir, writeJsonAtomic } from './lib
 import { applyOp, applyOps, compact, loadState, updateState, view } from './lib/store.mjs';
 import { addLesson, addRule, deriveLessons, loadOverlay, removeRule } from './lib/overlay.mjs';
 import { persist, runSweep } from './lib/sweep.mjs';
-import { LEAVE_REASONS, ITEM_LEAVE_REASONS, advanceSearch, itemKind, leaveItem, leaveRecord, park, unpark, workList } from './lib/work.mjs';
+import { LEAVE_REASONS, ITEM_LEAVE_REASONS, advanceSearch, askFirst, itemKind, leaveItem, leaveRecord, park, unpark, workList } from './lib/work.mjs';
 import { applyRoundDrafts, checkJobSheet, prepareInCode, writableFields } from './lib/prepare.mjs';
 import { logRun } from './lib/runlog.mjs';
 import * as em from './lib/email.mjs';
@@ -26,7 +26,7 @@ import { buildSheet, checkReadBack, checkSheet, parseGreenhouseQuestions } from 
 import { buildContactMessageRequest, buildIntroRequest, buildLeadIntroRequest, buildWritingRequest, parseIntroResult, parseWritingResult, readWritingRules } from './lib/writing.mjs';
 import { renderReport } from './lib/report.mjs';
 import * as qs from './lib/questions.mjs';
-import { FREQUENCIES } from './lib/schedule.mjs';
+import { FREQUENCIES, frequencyOf, periodStart } from './lib/schedule.mjs';
 import { appendPending, isCareerOpsDir, pipelineLine, readCareerOps } from './lib/careerops.mjs';
 import { observations } from './lib/signals.mjs';
 import { ingest, joinLeads, leadKey } from './lib/ingest.mjs';
@@ -78,12 +78,18 @@ const commands = {
       // The ask is made at most once per session; a no is recorded with its date.
       return out(updateState((s) => {
         s.tenjin = { ...(s.tenjin || {}), askedHolder: s.lease ? s.lease.holder : 'none', ...(answer === 'no' ? { declinedAt: new Date().toISOString() } : {}) };
+        // A yes holds the moment as tenjin_setup for this period, until `J tenjin` says ready; then it runs in code.
+        if (answer === 'yes') {
+          s.tenjinSetup = { at: new Date().toISOString(), period: periodStart(Date.now(), frequencyOf(readProfile())) };
+          if (!s.held.some((h) => h.reason === 'tenjin_setup')) s.held.push({ reason: 'tenjin_setup', detail: 'waiting for Tenjin to be ready' });
+        }
         return { asked: true, answer: answer || null };
       }));
     }
     const r = hintState();
     updateState((s) => {
-      s.held = s.held.filter((h) => h.reason !== 'tenjin_missing');
+      s.held = s.held.filter((h) => h.reason !== 'tenjin_missing' && !(h.reason === 'tenjin_setup' && r.status === 'ready'));
+      if (r.status === 'ready') s.tenjinSetup = null;
       if (r.status === 'missing') s.held.push({ reason: 'tenjin_missing', detail: 'missing' });
       s.tenjin = { ...(s.tenjin || {}), status: r.status, version: r.version || null, checkedAt: new Date().toISOString() };
     });
@@ -568,11 +574,14 @@ const commands = {
   },
 
   // After a search round is ingested: code decides whether another round (the next role-word variant) is worth it.
-  async search([sub, kind]) {
+  async search([sub, kind], flags) {
     const profile = readProfile();
     if (sub === 'plan') {
       if (!profile.search || !profile.search.role) return out({ error: 'no search role in the profile' }, 2);
       const st = loadState();
+      // Ask first: while the session's Tenjin ask is due, the ask is printed in place of the free queries.
+      const ask = askFirst(st, 'daily_search', { unattended: flags.unattended === true || batch.isActive() && batch.batchMode() === 'unattended' });
+      if (ask) return out(ask);
       const round = st.search.webPending ? st.search.webPending.round : st.search.session ? st.search.session.round : 0;
       return out(webPlan(profile, round, st.routed.lastSearchAt));
     }
@@ -703,7 +712,7 @@ const commands = {
           s.jobs[k].left = leaveRecord(s, s.jobs[k], overlay, flags.reason, profile);
         } else leaveItem(s, k, flags.reason, profile);
       }
-      return { left: keys.length, reason: flags.reason };
+      return { left: keys.length, reason: flags.reason, ...(keys.some((k) => itemKind(k) === 'contacts') && flags.unattended !== true ? { askTenjin: askFirst(s, 'contacts') } : {}) };
     }));
   },
   // The person said "try again" about a job: it is due work again.

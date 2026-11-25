@@ -9,6 +9,7 @@ import { sha } from './dedupe.mjs';
 import { canonical } from './overlay.mjs';
 import { cleanupStale, isActive, batchMode } from './batch.mjs';
 import { postFacts } from './postinfo.mjs';
+import { tenjinAsk as tenjinAskQuestion } from './questions.mjs';
 import { emailConsentCurrent, pending as pendingEmails } from './email.mjs';
 import path from 'node:path';
 
@@ -168,9 +169,27 @@ export const HINT_LINES = {
 export function tenjinHint(state, moment) {
   const t = state.tenjin || {};
   if (!t.status || t.status === 'ready') return null;
-  const line = t.status === 'outdated' && moment === 'daily_search' ? HINT_LINES.outdated : HINT_LINES[moment];
+  // An outdated Tenjin gets the same hint at every moment, naming the update.
+  const line = t.status === 'outdated' ? `${t.version ? `Tenjin ${t.version}` : 'Tenjin'} is out of date; ${HINT_LINES.outdated.replace(/^Tenjin is out of date; /, '')}` : HINT_LINES[moment];
   return line ? { moment, status: t.status, line } : null;
 }
+// The shared `askDue` state: Tenjin not ready, an attended turn, and the session's one ask not yet answered. Every command
+// that hands out a free path calls askFirst before it, so the ask comes right before the session's first payable moment and
+// never after the free path ran. `J tenjin ask-done yes|no` clears it for the session. An unattended turn never asks: its
+// free path runs and the hint goes in the report.
+export const askDue = (state, { unattended = false } = {}) => tenjinAsk(state, { unattended });
+export function askFirst(state, moment, { unattended = false } = {}) {
+  if (!askDue(state, { unattended })) return null;
+  const hint = tenjinHint(state, moment);
+  if (!hint) return null;
+  return { ask: 'tenjin', moment, hint, question: tenjinAskQuestion({ line: hint.line, status: state.tenjin.status }), next: 'ask it with the question tool, then J tenjin ask-done yes|no' };
+}
+// On a yes the moment holds as `tenjin_setup` for this period, until `J tenjin` says ready; then it runs through the router.
+export const setupActive = (state, profile, now = Date.now()) => {
+  const r = state.tenjinSetup;
+  return Boolean(r && (state.tenjin || {}).status !== 'ready' && r.period === periodStart(now, frequencyOf(profile)));
+};
+
 // At most one ask per session, and none after a recorded no in this session. An unattended run only mentions.
 export function tenjinAsk(state, { unattended = false } = {}) {
   const t = state.tenjin || {};
@@ -182,7 +201,8 @@ export function tenjinAsk(state, { unattended = false } = {}) {
 export function buildWorkList(state, overlay, now = Date.now(), profile = {}, opts = {}) {
   const items = [];
   const inventory = [];
-  if (searchDue(state, profile, now, opts) && !itemStillLeft(state, 'search', profile, now)) {
+  const holdSetup = setupActive(state, profile, now);
+  if (searchDue(state, profile, now, opts) && !holdSetup && !itemStillLeft(state, 'search', profile, now)) {
     const round = searchRound(state, profile, now);
     const last = state.routed.lastSearchAt;
     const since = last ? new Date(Math.max(Date.parse(last) - 86400000, now - 14 * 86400000)) : new Date(now - 14 * 86400000);
@@ -214,7 +234,7 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
       add(j, 'fill_ready');
       continue;
     }
-    if (j.status === 'reviewed' && !j.employerPosting && !j.careersChecked && ['no_board', 'unconfirmed_board', 'no_match', 'no_apply_link', 'yc_platform_only'].includes(j.unresolved) && inPeriodSet(state, j, profile, overlay, now)) {
+    if (!holdSetup && j.status === 'reviewed' && !j.employerPosting && !j.careersChecked && ['no_board', 'unconfirmed_board', 'no_match', 'no_apply_link', 'yc_platform_only'].includes(j.unresolved) && inPeriodSet(state, j, profile, overlay, now)) {
       items.push({ key: j.key, reason: 'employer_page', title: j.title, company: j.company, website: j.employerWebsite || null, gate: GATES.employer_page });
       continue;
     }
@@ -241,7 +261,12 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
     i.waitsForPerson = waitsForPerson(state, profile, i, overlay);
   }
   for (const i of items) {
-    if (i.reason === 'employer_page') i.hint = tenjinHint(state, 'employer_posting');
+    if (i.reason === 'employer_page') {
+      i.hint = tenjinHint(state, 'employer_posting');
+      // the ask comes in place of the free path's task text (attended, Tenjin not ready, the session's ask unanswered)
+      const a = askFirst(state, 'employer_posting', { unattended: opts.unattended === true || unattendedBatchOpen() });
+      if (a) { i.ask = { ask: a.ask, moment: a.moment, hint: a.hint }; delete i.gate; }
+    }
     if (i.reason === 'contacts_requested') i.hint = tenjinHint(state, 'contacts');
   }
   // Positions per period (attended): the sheets brought for the person's yes. A sheet already brought stays; new ones

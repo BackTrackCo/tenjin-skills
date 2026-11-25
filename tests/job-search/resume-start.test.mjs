@@ -136,9 +136,12 @@ test('with Tenjin a LinkedIn link is the linkedin_profile need and never goes to
   assert.match(bad.ask, /PDF export/);
 });
 
-test('without Tenjin a LinkedIn link is a hint moment and an export ask; it is never fetched', async () => {
+test('without Tenjin a LinkedIn link asks first, then is a hint moment with an export ask; it is never fetched', async () => {
   reset({ tenjin: { status: 'missing' } });
   const spy = serve({});
+  const first = await rs.setFromLink({ url: 'https://www.linkedin.com/in/pat', state: store.loadState(), fetchImpl: spy });
+  assert.deepEqual([first.read, first.ask, first.moment], [false, 'tenjin', 'linkedin_resume'], 'the ask comes before the export-or-text fallback');
+  J('tenjin', 'ask-done', 'no');
   const r = await rs.setFromLink({ url: 'https://www.linkedin.com/in/pat', state: store.loadState(), fetchImpl: spy });
   assert.equal(r.read, false);
   assert.match(r.hint.line, /LinkedIn profile link/);

@@ -89,6 +89,7 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
   L.push('', '## Sources held this run');
   if (held.length) for (const h of held) L.push(`- ${h.detail}`);
   else L.push('- none');
+  if (state.held.some((h) => h.reason === 'tenjin_setup')) L.push('', '## Waiting for Tenjin', '- The round runs through the router once Tenjin is ready; until then it is held for this period.');
   const noTenjin = state.held.find((h) => h.reason === 'tenjin_missing');
   const skip = noTenjin ? `no Tenjin (${noTenjin.detail})` : state.routed && state.routed.skipReason;
   if (skip) L.push('', `## The routed search did not run`, `- ${skip}. The watched boards still ran.`);
