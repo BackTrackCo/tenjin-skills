@@ -4,6 +4,8 @@ import { graph } from './graph.mjs';
 // (news.ycombinator.com and workatastartup.com included). Nothing here is ever opened by the browser or fetched.
 // Hacker News is read only through its official API host, hacker-news.firebaseio.com (see hn.mjs).
 export const HN_API_HOST = 'hacker-news.firebaseio.com';
+// Only shown to the person as a post author's source link; never fetched or opened.
+export const HN_SITE = 'news.ycombinator.com';
 
 export function hostOf(url) {
   try {

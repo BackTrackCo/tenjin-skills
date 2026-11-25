@@ -73,7 +73,8 @@ test('stop parks the job, records the stop, two captcha stops on a host make a l
   assert.deepEqual(les.json.map((l) => l.effect).sort(), ['host_attended', 'host_last']);
   const w1 = runJobs(home, ['work', '--commit']);
   assert.match(w1.json.notify, /2 stops need you/);
-  assert.equal(w1.code, 3, 'parked jobs are not work items');
+  assert.equal(w1.code, 0);
+  assert.equal(w1.json.empty, true, 'parked jobs are not work items');
   assert.equal(runJobs(home, ['work', '--commit']).json.notify, null);
 });
 

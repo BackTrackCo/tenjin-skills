@@ -211,7 +211,7 @@ test('platform and YC URLs are never handed out, and no code fetch reaches them'
   assert.equal(plat.isNeverAutomated('https://boards.greenhouse.io/acme'), false);
   // the code's own fetches refuse these hosts too
   for (const url of ['https://www.workatastartup.com/jobs/1', 'https://news.ycombinator.com/item?id=1', 'https://www.ycombinator.com/jobs', 'https://www.glassdoor.com/x', 'https://www.ziprecruiter.com/x', 'https://de.indeed.com/x', 'https://www.linkedin.com/x']) {
-    await assert.rejects(net.guardedFetch(url, {}, async () => ({})), /host not allowed/, url);
+    await assert.rejects(net.guardedFetch(url, {}, async () => ({})), /host not allowed|never-automated host refused/, url);
   }
 });
 

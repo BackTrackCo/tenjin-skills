@@ -1,4 +1,5 @@
 import { notifyLine, stillLeft, tenjinHint } from './work.mjs';
+import { dmLink, handleIn, mailto, pending as pendingEmails, emailState } from './email.mjs';
 
 export const REASONS = {
   no_apply_link: 'no apply link in the posting',
@@ -10,6 +11,18 @@ export const REASONS = {
   sign_in_wall: 'the careers page needs a sign-in',
   yc_platform_only: 'a Y Combinator job with no other posting; apply at the Work at a Startup link',
 };
+
+// An intro is a draft. An email to an address the poster published goes through the Gmail connector after the person's yes
+// (J email); any other email shows a mailto link; an X DM is sent by the person: code gives the profile link and the text.
+function introNote(intro, handle, email, published) {
+  const text = intro.text.replace(/\n/g, ' ');
+  if (handle) {
+    const d = dmLink(handle, text);
+    return `Intro to copy (x). Open ${d.profile}, press Message, paste, and send it yourself: ${text}`;
+  }
+  if (email) return `Intro (email${intro.subject ? `, subject: ${intro.subject}` : ''}) ${published ? 'to an address the poster published: it goes from your Gmail only with your yes' : 'you send yourself'}: ${text} ${mailto({ to: email, subject: intro.subject || '', text: intro.text })}`;
+  return `Intro to copy (${intro.channel}${intro.subject ? `, subject: ${intro.subject}` : ''}), you send it yourself: ${text}`;
+}
 
 // The report is rendered from state and the overlay, never written by the model.
 export function renderReport(state, overlay, { since = null, now = Date.now(), profile = null } = {}) {
@@ -96,8 +109,12 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
   const leads = (state.leads || []).filter((l) => l.status === 'new' && !l.joinedJob);
   if (leads.length) {
     L.push('', `## People hiring (${leads.length})`);
-    for (const l of leads) L.push(`- ${l.author || l.handle || l.email}${l.employer ? `, ${l.employer}` : ''}${l.role ? `, ${l.role}` : ''}: ${l.url}${l.intro ? `. Intro to copy (${l.intro.channel}${l.intro.subject ? `, subject: ${l.intro.subject}` : ''}), you send it yourself: ${l.intro.text.replace(/\n/g, ' ')}` : ''}`);
+    for (const l of leads) L.push(`- ${l.author || l.handle || l.email}${l.employer ? `, ${l.employer}` : ''}${l.role ? `, ${l.role}` : ''}: ${l.url}${l.intro ? `. ${introNote(l.intro, l.channel === 'x' ? l.handle : null, l.channel === 'email' ? l.email : null, l.emailFromPost)}` : ''}`);
   }
+  const mail = pendingEmails(state);
+  if (mail.length) L.push('', `${mail.length} intro email draft${mail.length > 1 ? 's' : ''} wait${mail.length > 1 ? '' : 's'} for your yes (addresses the posters published; none goes without it).`);
+  const sentMail = (emailState(state).log || []).filter((m) => now - Date.parse(m.at) < 86400000);
+  if (sentMail.length) L.push('', `Emails in the last day: ${sentMail.map((m) => `${m.how} to ${m.to}`).join('; ')}.`);
   const oc = state.postOutcomes || {};
   const skipped = ['not_hiring', 'no_fit'].filter((k) => oc[k]);
   if (skipped.length) L.push('', `Hiring posts set aside: ${skipped.map((k) => `${oc[k]} ${k.replace('_', ' ')}${k === 'not_hiring' && (state.postReasons || {}).unreadable ? ` (${state.postReasons.unreadable} unreadable)` : ''}`).join(', ')}.`);
@@ -129,7 +146,7 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
       L.push(`- ${j.title}, ${j.company}`);
       for (const c of state.contacts[j.key]) {
         L.push(`  - ${c.name}${c.title ? `, ${c.title}` : ''}${c.notConfirmed ? ' (not confirmed)' : ''}: ${c.how}. Cares about: ${c.cares}. ${c.sourceUrl}`);
-        if (c.intro) L.push(`    Example intro via ${c.intro.channel}${c.intro.subject ? ` (subject: ${c.intro.subject})` : ''}, a draft you send yourself: ${c.intro.text.replace(/\n/g, ' ')}`);
+        if (c.intro) L.push(`    ${introNote(c.intro, c.channel === 'x' ? handleIn(c.how) : null, c.channel === 'email' ? c.email || c.how : null, c.emailFromPost)}`);
       }
     }
   }

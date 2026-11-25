@@ -9,6 +9,7 @@ import { sha } from './dedupe.mjs';
 import { canonical } from './overlay.mjs';
 import { cleanupStale, isActive, batchMode } from './batch.mjs';
 import { postFacts } from './postinfo.mjs';
+import { emailConsentCurrent, pending as pendingEmails } from './email.mjs';
 import path from 'node:path';
 
 export const POST_BATCH = 25;
@@ -17,6 +18,7 @@ const DAY = 24 * HOUR;
 const GATES = {
   web_search_due: 'Free web searches for this round: `J search plan` prints the exact queries. One Haiku step runs them and returns the raw results; `J ingest` the file (code extracts and sorts the URLs), then `J search web-done`.',
   need_due: 'A routed need that code cannot run (no adapter for its supplier). One Haiku step: state it in plain words through `request` if the tool is there, write the ingest file for it (references/search.md, section 2), `J ingest`, then `J search done <kind>`. No Tenjin tool: `J leave need:<kind> --reason no_web_search`.',
+  email_due: 'Intro emails to addresses the poster published. Attended: `J email batch`, `J ask email`, `J email approve <ids> --skip-rest`. Then `J email next` (add --unattended under the email consent) and send only what it hands out; `J email sent <id>` after each.',
   fill_ready: 'Filled and waiting. Do not submit. The person checks the open tab, presses submit and says so; then `J submitted <key>`.',
   employer_page: 'Passed review, no employer posting yet. Haiku: find and read the employer\'s careers page; write {need:"careers_page", jobKey, careersUrl, status, fullResultPath, boardLinks, otherLinks, signIn}; `J ingest <file>`. Code fetches nothing from the page.',
   search_due: 'Run this search round (references/search.md): free web searches first, then the router needs if Tenjin is there; one ingest file per need with query.round; then `J search next`.',
@@ -137,8 +139,9 @@ export function itemVersion(job) {
 }
 // What waits for the person never wakes the model: a sheet that needs their yes (unless they gave it, or the mode is auto),
 // a filled form waiting for their submit, a follow-up that asks them. Each keeps its one notification.
-export function waitsForPerson(state, profile, item) {
+export function waitsForPerson(state, profile, item, overlay = { rules: [] }) {
   if (item.reason === 'fill_ready' || item.reason === 'follow_up_due') return true;
+  if (item.reason === 'email_due') return !emailConsentCurrent(state, profile, overlay);
   if (item.reason === 'apply_ready') return !(String(profile.applyMode || '').startsWith('auto') || state.approvals[item.key]);
   return false;
 }
@@ -224,6 +227,8 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
     else if (j.status === 'apply_ready') add(j, 'apply_ready');
     else if (j.status === 'submitted' && !j.followUpAsked && now - Date.parse(j.statusAt) > graph().followUpDays * DAY) add(j, 'follow_up_due');
   }
+  const mail = pendingEmails(state);
+  if (mail.length) items.push({ key: 'email', reason: 'email_due', title: `${mail.length} intro email${mail.length > 1 ? 's' : ''} to published addresses`, company: '', gate: GATES.email_due, count: mail.length });
   for (const key of state.contactsRequested || []) {
     const cj = state.jobs[key];
     if (!cj || (state.contacts[key] || []).length || itemStillLeft(state, `contacts:${key}`, profile, now)) continue;
@@ -231,8 +236,8 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
   }
   for (const i of items) {
     const job = state.jobs[i.key];
-    i.v = i.reason === 'web_search_due' ? `${state.search.webPending.round}:${state.search.webPending.at}` : i.reason === 'need_due' ? (() => { const n = state.search.needPending.find((x) => `need:${x.kind}` === i.key); return `${n.round}:${n.at}`; })() : job ? itemVersion(job) : i.reason === 'search_due' ? `${(state.search.session || {}).round ?? 'new'}:${state.routed.lastSearchAt}` : String(i.posts ? i.posts.length : 0);
-    i.waitsForPerson = waitsForPerson(state, profile, i);
+    i.v = i.reason === 'email_due' ? sha(canonical(pendingEmails(state).map((c) => c.id))).slice(0, 10) : i.reason === 'web_search_due' ? `${state.search.webPending.round}:${state.search.webPending.at}` : i.reason === 'need_due' ? (() => { const n = state.search.needPending.find((x) => `need:${x.kind}` === i.key); return `${n.round}:${n.at}`; })() : job ? itemVersion(job) : i.reason === 'search_due' ? `${(state.search.session || {}).round ?? 'new'}:${state.routed.lastSearchAt}` : String(i.posts ? i.posts.length : 0);
+    i.waitsForPerson = waitsForPerson(state, profile, i, overlay);
   }
   for (const i of items) {
     if (i.reason === 'employer_page') i.hint = tenjinHint(state, 'employer_posting');
@@ -273,6 +278,8 @@ export function waitingSet(state) {
     else if (j.parked) w[`park:${j.key}`] = `${j.parked.key}|${j.parked.reasons.join(',')}|${j.company}`;
     else if (j.status === 'apply_ready' && !state.approvals[j.key] && j.employerPosting) w[`yes:${j.key}`] = `${j.hash}|${j.company}`;
   }
+  const mail = pendingEmails(state);
+  if (mail.length) w[`email:${mail.length}`] = sha(canonical(mail.map((c) => c.id))).slice(0, 10);
   for (const h of state.held) if (PERSON_HELD.includes(h.reason)) w[`held:${h.reason}:${h.detail || ''}`] = h.reason;
   // An update line goes to the report and the notify set, never a wake of its own.
   (state.updateLines || []).forEach((l, i) => { w[`update:${i}:${l}`] = l; });
@@ -295,6 +302,7 @@ export function notifyLine(state, overlay, now = Date.now(), { unattended = fals
   }
   const yes = fresh.filter((k) => k.startsWith('yes:')).length;
   const filled = fresh.filter((k) => k.startsWith('fill:')).length;
+  const mails = fresh.filter((k) => k.startsWith('email:'));
   const stops = fresh.filter((k) => k.startsWith('park:'));
   const held = fresh.filter((k) => k.startsWith('held:')).map((k) => k.split(':')[1]);
   const consents = fresh.filter((k) => k.startsWith('consent:'));
@@ -302,6 +310,7 @@ export function notifyLine(state, overlay, now = Date.now(), { unattended = fals
   const parts = [];
   if (filled) parts.push(`${filled} filled, waiting for your submit (fill ready)`);
   if (yes) parts.push(`${yes} application${yes > 1 ? 's' : ''} wait for your yes`);
+  if (mails.length) parts.push(`${mails[0].slice(6)} intro email draft${mails[0].slice(6) === '1' ? '' : 's'} to ${emailConsentCurrent(state, {}, overlay) ? 'send' : 'approve'}`);
   if (stops.length) {
     const j = state.jobs[stops[0].slice(5)];
     parts.push(`${stops.length} stop${stops.length > 1 ? 's' : ''} need you${stops.length === 1 && j ? ` at ${j.company}` : ''} (${j && j.parked ? (j.parked.reasons[0] === 'needs_facts' && (j.missingFacts || []).length ? `needs facts: ${j.missingFacts.map((f) => f.replace(/_/g, ' ')).join(', ')}` : j.parked.reasons[0].replace(/_/g, ' ')) : 'parked'})`);
@@ -335,7 +344,7 @@ export function workList({ now = Date.now(), commit = false, unattended = false 
     return wl;
   };
   res = commit ? updateState(compute) : compute(loadState());
-  res.exit = res.items.length ? 0 : 3;
+  res.empty = res.items.length === 0;
   if (staleBatchClosed) res.staleBatchClosed = true;
   return res;
 }

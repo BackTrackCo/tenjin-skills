@@ -3,7 +3,7 @@ import { boardTarget, fetchBoard } from './boards.mjs';
 import { employerName } from './employer.mjs';
 import { applyOp, bump, normLabel } from './store.mjs';
 import { careersFromLinks, classifyLinks, probeBoards, resolveFromCareersPage } from './employer.mjs';
-import { isNeverAutomated, isYc } from './platforms.mjs';
+import { HN_SITE, isNeverAutomated, isYc } from './platforms.mjs';
 import { loadSkipUrls } from './careerops.mjs';
 import { parseBoardUrl } from './boards.mjs';
 import { mergeJobs, normalizeUrl, sha } from './dedupe.mjs';
@@ -273,7 +273,7 @@ function planPosts({ obj, state, plan }) {
         if (!l.email && handle && !text.includes(handle)) return `lead ${o.url}: the handle is not word for word in the post`;
         channel = l.email ? 'email' : 'other';
       } else return `lead ${o.url}: an HN comment needs an email or a handle that appears in it`;
-      plan.leads.push({ url: o.url, key: leadKey(o.url), source: channel === 'x' ? 'x' : 'hn', channel, author: post.author || '', handle: channel === 'x' ? String(post.author).replace(/^@/, '') : handle, email: l.email || null, employer: o.employer || l.employer || '', role: o.role || l.role || '', place: o.place || l.place || '', excerpt: text.slice(0, 280), status: 'new', foundAt: new Date().toISOString(), intro: null, joinedJob: null });
+      plan.leads.push({ url: o.url, key: leadKey(o.url), source: channel === 'x' ? 'x' : 'hn', channel, author: post.author || '', handle: channel === 'x' ? String(post.author).replace(/^@/, '') : handle, email: l.email || null, emailFromPost: Boolean(l.email) && text.includes(l.email), employer: o.employer || l.employer || '', role: o.role || l.role || '', place: o.place || l.place || '', excerpt: text.slice(0, 280), status: 'new', foundAt: new Date().toISOString(), intro: null, joinedJob: null });
     }
     plan.outcomes.push({ url: o.url, outcome: o.outcome, reason: o.reason || null });
   }
@@ -359,7 +359,7 @@ export function joinLeads(state) {
     if (l.joinedJob || !l.employer || !l.role || ['done', 'not_interested'].includes(l.status)) continue;
     const hits = Object.values(state.jobs).filter((j) => employerName(j.company) === employerName(l.employer) && normLabel(j.title) === normLabel(l.role) && (!l.place || /remote/i.test(l.place) && j.remote || normLabel(j.city || '') === normLabel(String(l.place).split(',')[0])));
     if (hits.length !== 1) continue;
-    (state.contacts[hits[0].key] ||= []).push({ name: l.author || l.handle || 'the poster', title: '', sourceUrl: l.url, how: l.channel === 'email' ? l.email : `DM @${l.handle} on X`, cares: `hiring for ${l.role}`, channel: l.channel, notConfirmed: false, intro: l.intro });
+    (state.contacts[hits[0].key] ||= []).push({ ...(l.channel === 'email' && l.emailFromPost ? { email: l.email, emailFromPost: true } : {}), name: l.author || l.handle || 'the poster', title: '', sourceUrl: l.url, how: l.channel === 'email' ? l.email : `DM @${l.handle} on X`, cares: `hiring for ${l.role}`, channel: l.channel, notConfirmed: false, intro: l.intro });
     l.joinedJob = hits[0].key;
   }
 }
@@ -444,10 +444,13 @@ function authorContact(state, pj, plan) {
   if (!job || (state.contacts[key] || []).some((c) => c.sourceUrl === post.url)) return;
   const handle = handleOf(post);
   const emails = emailsIn(post.text || '');
+  if (isYc(post.url) && !post.author) return;
   const how = handle ? `DM @${handle} on X` : emails.length === 1 ? emails[0] : null;
   if (!how) return;
   try {
-    applyOp(state, { op: 'contact', key, name: post.author || handle || 'the poster', title: '', sourceUrl: post.url, how, cares: `hiring for ${job.title}`, channel: handle ? 'x' : 'email' });
+    applyOp(state, { op: 'contact', key, name: post.author || handle || 'the poster', title: '', sourceUrl: isYc(post.url) ? `https://${HN_SITE}/user?id=${encodeURIComponent(post.author)}` : post.url, how, cares: `hiring for ${job.title}`, channel: handle ? 'x' : 'email' });
+    // set by code only, never by an op: the address appeared word for word in the poster's own post
+    if (!handle) Object.assign(state.contacts[key][state.contacts[key].length - 1], { email: emails[0], emailFromPost: true });
   } catch {}
 }
 

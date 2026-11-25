@@ -50,6 +50,7 @@ export function emptyState() {
     watched: null,
     hn: { seen: [], thread: null, lastRead: 0, lastAt: null, remaining: 0 },
     search: { session: null, webPending: null },
+    emails: null,
   };
 }
 

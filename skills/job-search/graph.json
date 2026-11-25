@@ -31,7 +31,9 @@
     "dice.com",
     "wellfound.com",
     "ycombinator.com",
-    "workatastartup.com"
+    "workatastartup.com",
+    "x.com",
+    "twitter.com"
   ],
   "statuses": [
     "new",
@@ -139,7 +141,8 @@
     "apply_ready",
     "follow_up_due",
     "web_search_due",
-    "need_due"
+    "need_due",
+    "email_due"
   ],
   "heldReasons": [
     "source_empty",

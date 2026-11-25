@@ -11,15 +11,16 @@ const overlay = await import('../../skills/job-search/scripts/lib/overlay.mjs');
 const NOW = Date.parse('2026-11-23T12:00:00Z');
 const reset = (jobs = []) => store.updateState((s) => { Object.assign(s, store.emptyState()); for (const j of jobs) s.jobs[j.key] = j; });
 
-test('the work-list has items, held, inventory, rules, lessons; an empty one exits 3', () => {
+test('the work-list has items, held, inventory, rules, lessons; an empty one says so and still exits 0', () => {
   reset();
   const empty = work.workList({ now: NOW });
-  assert.deepEqual(Object.keys(empty).sort(), ['bring', 'exit', 'held', 'heldForPeriod', 'inventory', 'items', 'lessons', 'notify', 'rules']);
-  assert.equal(empty.exit, 3);
+  assert.deepEqual(Object.keys(empty).sort(), ['bring', 'empty', 'held', 'heldForPeriod', 'inventory', 'items', 'lessons', 'notify', 'rules']);
+  assert.equal(empty.empty, true);
   const r = runJobs(home, ['work']);
-  assert.equal(r.code, 3);
+  assert.equal(r.code, 0, 'an empty list is not an error: a new user sees no failure');
+  assert.equal(r.json.empty, true);
   reset([mkJob()]);
-  assert.equal(work.workList({ now: NOW }).exit, 0);
+  assert.equal(work.workList({ now: NOW }).empty, false);
   assert.equal(runJobs(home, ['work']).code, 0);
 });
 
@@ -36,7 +37,7 @@ test('a parked item never wakes the model again until its key or reasons change'
   reset([j]);
   store.updateState((s) => work.park(s.jobs[j.key], ['captcha']));
   assert.equal(work.workList({ now: NOW }).items.length, 0);
-  assert.equal(work.workList({ now: NOW }).exit, 3);
+  assert.equal(work.workList({ now: NOW }).empty, true);
   assert.equal(work.workList({ now: NOW }).inventory.length, 1);
   // same key, same reasons: no change
   assert.equal(store.updateState((s) => work.park(s.jobs[j.key], ['captcha'])), false);

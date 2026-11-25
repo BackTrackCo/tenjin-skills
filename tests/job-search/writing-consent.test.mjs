@@ -143,7 +143,7 @@ test('revoking writing stops only submits with new writing; revoking unattended 
   assert.deepEqual(r.queue, [{ key: 'k4', reason: 'writing_needs_yes' }]);
   ap.revokeConsent(s, 'unattended');
   assert.equal(next(s).refused, 'no_consent');
-  assert.throws(() => ap.revokeConsent(s, 'everything'), /revoke unattended or writing/);
+  assert.throws(() => ap.revokeConsent(s, 'everything'), /revoke unattended, writing or email/);
 });
 
 test('optional writing fields skip or wait as recorded', () => {

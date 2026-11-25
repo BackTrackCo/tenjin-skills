@@ -152,7 +152,7 @@ test('the intros for a round\'s new leads come from one writer call, fit their c
   assert.notEqual(runJobs(home, ['leads', 'save', '--result', result]).code, 0, 'too long for an X DM');
   const text = report.renderReport(store.loadState(), empty, { now: NOW });
   assert.match(text, /## People hiring \(2\)/);
-  assert.match(text, /ada_dev.*Intro to copy \(x\), you send it yourself: Hi, I build compilers/);
+  assert.match(text, /ada_dev.*Intro to copy \(x\)\. Open https:\/\/x\.com\/ada_dev, press Message, paste, and send it yourself: Hi, I build compilers/);
   assert.equal(store.loadState().held.length, 0, 'no writing_needs_yes, no consent gate');
   assert.equal(store.loadState().leads.filter((l) => l.status === 'new').length, 2);
   // not counted in period_max, which counts applications

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Job Search runtime. Every command prints JSON. Exit 0 ok, 3 clean (empty work-list), 2 error, 4 refused.
+// Job Search runtime. Every command prints JSON. Exit 0 ok (an empty work-list too: the JSON says empty), 2 error, 4 refused.
 import fs, { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +11,7 @@ import { persist, runSweep } from './lib/sweep.mjs';
 import { LEAVE_REASONS, ITEM_LEAVE_REASONS, advanceSearch, itemKind, leaveItem, leaveRecord, park, unpark, workList } from './lib/work.mjs';
 import { applyRoundDrafts, checkJobSheet, prepareInCode, writableFields } from './lib/prepare.mjs';
 import { logRun } from './lib/runlog.mjs';
+import * as em from './lib/email.mjs';
 import { buildRoundRequest, parseRoundResult } from './lib/writing.mjs';
 import { webPlan } from './lib/websearch.mjs';
 import { claimLease } from './lib/lease.mjs';
@@ -186,7 +187,7 @@ const commands = {
   async work(_, flags) {
     await prepareInCode({ fetch: globalThis.fetch, profile: readProfile() });
     const wl = workList({ commit: flags.commit === true, unattended: flags.unattended === true });
-    return out(wl, wl.exit === 0 ? 0 : 3);
+    return out(wl); // an empty list is not an error: wl.empty says so (exit 0 for every list)
   },
 
   async sheet([sub, key], flags) {
@@ -253,8 +254,14 @@ const commands = {
         return { revoked: which };
       }));
     }
-    if (sub !== 'record' || !['unattended', 'writing'].includes(which)) return out({ error: 'consent record unattended --optional-writing skip|wait | record writing | revoke unattended|writing' }, 2);
+    if (sub !== 'record' || !['unattended', 'writing', 'email'].includes(which)) return out({ error: 'consent record unattended --optional-writing skip|wait | record writing | record email | revoke unattended|writing|email' }, 2);
     return out(updateState((s) => {
+      if (which === 'email') {
+        const c = em.recordEmailConsent(s, readProfile(), loadOverlay());
+        em.emailState(s).modeAsked = c.at;
+        (s.consentLog ||= []).push({ at: c.at, what: 'email consent recorded (sends to published addresses without a yes each batch)' });
+        return c;
+      }
       if (which === 'unattended') {
         const c = recordConsent(s, readProfile(), loadOverlay(), Date.now(), flags['optional-writing']);
         (s.consentLog ||= []).push({ at: new Date().toISOString(), what: `unattended consent recorded (optional writing: ${flags['optional-writing']})` });
@@ -390,7 +397,7 @@ const commands = {
       try {
         return out(buildRoundRequest({ sheets, leads, intros, profile: readProfile() }));
       } catch (e) {
-        return out({ error: e.message, nothing: true }, 3);
+        return out({ nothing: true, note: e.message });
       }
     }
     if (flags.leads) {
@@ -592,8 +599,8 @@ const commands = {
   // The payload for Claude Code's question tool, so the questions are asked as choices, never as a list in prose.
   async ask([kind], flags) {
     const arg = flags.json ? readJsonArg(flags.json) : {};
-    const make = { start: () => qs.startQuestions(), resume: () => qs.resumeChoiceQuestion(arg), tenjin: () => qs.tenjinAsk(arg), eeo: () => qs.eeoQuestion(), follow_up: () => qs.followUpQuestion(arg), contacts: () => qs.contactsCountQuestion(), 'optional-writing': () => qs.optionalWritingQuestion(), fact: () => qs.factQuestion(arg), yes: () => qs.sheetYesQuestion(arg) }[kind];
-    if (!make) return out({ error: 'ask start | resume --json {header,question,guess,next} | tenjin --json {line,status} | eeo | optional-writing | fact --json {label,options} | yes --json {company,title}' }, 2);
+    const make = { start: () => qs.startQuestions(), resume: () => qs.resumeChoiceQuestion(arg), tenjin: () => qs.tenjinAsk(arg), eeo: () => qs.eeoQuestion(), follow_up: () => qs.followUpQuestion(arg), contacts: () => qs.contactsCountQuestion(), 'optional-writing': () => qs.optionalWritingQuestion(), fact: () => qs.factQuestion(arg), yes: () => qs.sheetYesQuestion(arg), email: () => qs.emailBatchQuestion(em.addBatchPeek(loadState())), 'email-mode': () => qs.emailModeQuestion() }[kind];
+    if (!make) return out({ error: 'ask start | resume --json {header,question,guess,next} | tenjin --json {line,status} | eeo | optional-writing | fact --json {label,options} | yes --json {company,title} | email | email-mode' }, 2);
     if (batch.isActive() && batch.batchMode() === 'unattended') return out({ error: 'no questions in an unattended turn: nobody can answer; hold the job and notify' }, 4);
     const p = make();
     const bad = qs.validateAsk(p);
@@ -701,6 +708,45 @@ const commands = {
       job.followUpAsked = new Date().toISOString(); // asked: not due again until something changes
       return { recorded: flags.status, status: job.status };
     }));
+  },
+
+  // Email goes out through the person's Gmail connector, which only the model can call. Code hands out only what may go.
+  async email([sub, ...rest], flags) {
+    const profile = readProfile();
+    const overlay = loadOverlay();
+    if (sub === 'batch') {
+      // the round's drafts, after they are written; the first batch asks the mode once
+      const r = updateState((s) => {
+        const list = em.addBatch(s);
+        const e = em.emailState(s);
+        return { drafts: list.map((c) => ({ id: c.id, to: c.to, subject: c.subject, text: c.text, employer: c.employer, role: c.role })), mode: em.emailConsentCurrent(s, profile, overlay) ? 'auto' : 'ask', askMode: !e.modeAsked && !em.emailConsentCurrent(s, profile, overlay), connector: e.connector };
+      });
+      return out({ ...r, next: r.drafts.length ? (r.askMode ? 'J ask email-mode first (J email mode ask|auto), then J ask email, then J email approve <ids>' : r.mode === 'auto' ? 'J email next --unattended' : 'J ask email, then J email approve <ids> --skip-rest') : 'no drafts' });
+    }
+    if (sub === 'mode') {
+      if (rest[0] !== 'ask') return out({ error: 'email mode ask (the person picked "Ask me each batch"); "send without asking" is J consent record email' }, 2);
+      return out(updateState((s) => { em.emailState(s).modeAsked = new Date().toISOString(); return { mode: 'ask' }; }));
+    }
+    if (sub === 'connector') {
+      if (!['send', 'drafts', 'none'].includes(rest[0])) return out({ error: 'email connector send|drafts|none (what the Gmail connector offers; none when it is not connected)' }, 2);
+      return out(updateState((s) => { em.emailState(s).connector = rest[0]; return { connector: rest[0] }; }));
+    }
+    if (sub === 'approve') {
+      if (!rest.length) return out({ error: 'email approve <id...> [--skip-rest]' }, 2);
+      return out(updateState((s) => em.approve(s, rest, { skipRest: flags['skip-rest'] === true })));
+    }
+    if (sub === 'next') {
+      const unattended = flags.unattended === true;
+      const r = updateState((s) => em.nextEmail(s, { profile, overlay, unattended }));
+      return out(r);
+    }
+    if (sub === 'sent') {
+      const [id, messageId] = rest;
+      if (!id) return out({ error: 'email sent <id> [message id] [--drafted|--shown]' }, 2);
+      const how = flags.drafted === true ? 'drafted' : flags.shown === true ? 'shown' : 'sent';
+      return out(updateState((s) => { logRun(s, 'email', 1); return em.markSent(s, id, { messageId: messageId || null, how }); }));
+    }
+    return out({ error: 'email batch | mode ask | connector send|drafts|none | approve <id...> | next [--unattended] | sent <id> [message id]' }, 2);
   },
 
   async gates(_, flags) {

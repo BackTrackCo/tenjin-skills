@@ -1,3 +1,4 @@
+import { graph } from './graph.mjs';
 // The only network door for the scripts. Hosts outside this list are refused.
 export const ALLOWED_HOSTS = [
   'boards-api.greenhouse.io',
@@ -10,8 +11,11 @@ export const ALLOWED_HOSTS = [
   'hn.algolia.com', // HN Search API by Algolia, the official search for the hiring thread
 ];
 
+// The never-automated hosts (job platforms, Y Combinator sites, X) are refused by name before the allow list is read: the
+// skill never fetches, opens or scripts them. Reading X posts goes through the router's supplier, not through here.
 export function assertAllowed(url) {
-  const host = new URL(url).hostname;
+  const host = new URL(url).hostname.toLowerCase();
+  if (graph().neverHosts.some((b) => host === b || host.endsWith(`.${b}`))) throw new Error(`never-automated host refused: ${host}`);
   if (!ALLOWED_HOSTS.includes(host)) throw new Error(`host not allowed: ${host}`);
 }
 

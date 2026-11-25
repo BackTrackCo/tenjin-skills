@@ -31,7 +31,7 @@ test('37 left employer_page items give no wake, and show in the report as left a
   const wl = work.workList({ now: NOW });
   assert.equal(wl.items.length, 0);
   assert.equal(wl.inventory.filter((i) => i.left === 'low_score').length, 37, 'left items are inventory');
-  assert.equal(wl.exit, 3);
+  assert.equal(wl.empty, true);
   assert.deepEqual(await tick({ sig: null }, NOW + 1000), [], 'no wake');
   const text = report.renderReport(store.loadState(), empty, { now: NOW });
   assert.match(text, /## Left alone \(37\)/);

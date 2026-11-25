@@ -55,7 +55,8 @@ export function writingConsentCurrent(state, rulesText = '') {
 export function revokeConsent(state, which) {
   if (which === 'unattended') state.consent.unattended = null;
   else if (which === 'writing') state.consent.writing = null;
-  else throw new Error('revoke unattended or writing');
+  else if (which === 'email') state.consent.email = null;
+  else throw new Error('revoke unattended, writing or email');
 }
 
 export function limitsOf(overlay) {

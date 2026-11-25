@@ -118,7 +118,7 @@ test('only the allowed HN hosts are ever called', async () => {
   await hn.runHn({ fetch: f, profile, state: store.emptyState(), sleep: async () => {} });
   assert.ok(f.calls.length > 4);
   for (const u of f.calls) assert.ok(['hn.algolia.com', 'hacker-news.firebaseio.com'].includes(new URL(u).hostname), u);
-  for (const bad of ['https://news.ycombinator.com/item?id=1', 'https://www.workatastartup.com/jobs', 'https://hn.algolia.com.evil.test/x']) await assert.rejects(net.guardedFetch(bad, {}, async () => ({})), /host not allowed/);
+  for (const bad of ['https://news.ycombinator.com/item?id=1', 'https://www.workatastartup.com/jobs', 'https://hn.algolia.com.evil.test/x']) await assert.rejects(net.guardedFetch(bad, {}, async () => ({})), /host not allowed|never-automated host refused/);
 });
 
 test('the network check: no script fetches news.ycombinator.com or workatastartup.com, and no careers-page fetch exists', () => {

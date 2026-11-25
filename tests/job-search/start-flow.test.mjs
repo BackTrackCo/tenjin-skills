@@ -233,7 +233,7 @@ test('intros: one writer call per job for the contacts with a channel, checked p
   assert.equal(contacts[1].intro.subject, 'Dev tools');
   assert.equal(contacts[2].intro, undefined);
   assert.ok(contacts[0].intro.writtenAt && contacts[0].intro.sources[0] === 'https://acme.test/team');
-  assert.match(report.renderReport(store.loadState(), empty, { now: NOW }), /Example intro via x, a draft you send yourself: Hi Bo/);
+  assert.match(report.renderReport(store.loadState(), empty, { now: NOW }), /Intro to copy \(x\), you send it yourself: Hi Bo/);
 });
 
 test('intro length checks per channel; no consent gate and no writing_needs_yes', () => {

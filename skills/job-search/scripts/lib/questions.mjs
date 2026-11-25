@@ -2,7 +2,7 @@
 // choices goes through it, never as a list in prose: 1 to 4 questions per call, 2 to 4 options each, a short label and a
 // one-line description, the default first and labelled "(Recommended)" (or "(from your resume)" for a resume guess).
 // The tool adds its own "Other" free-text answer. Never in an unattended turn: nobody can answer there.
-const q = (header, question, options) => ({ header, question, multiSelect: false, options });
+const q = (header, question, options, multiSelect = false) => ({ header, question, multiSelect, options });
 
 export const START_RESUME_QUESTION = 'Which file is your resume? Give its path. (A plain question: I read only that file and never search your files.)';
 
@@ -94,6 +94,27 @@ export function sheetYesQuestion({ company, title }) {
   ])] };
 }
 
+// The round's email drafts, shown after they are ready: multi-select questions of up to 4 options each (the tool's limits, 16
+// drafts at most), each option a recipient and a subject. More than 16: send all, none, or the numbers through Other.
+export function emailBatchQuestion(drafts) {
+  if (drafts.length > 16) {
+    return { questions: [q('Emails', `${drafts.length} email drafts are ready, each to an address the poster published. Which should go?`, [
+      { label: `Yes, send all ${drafts.length}`, description: 'Every draft goes from your Gmail, once per address.' },
+      { label: 'None', description: 'Send nothing; the drafts stay for the report.' },
+    ])], note: 'The numbers to send come through Other.' };
+  }
+  const chunks = [];
+  for (let i = 0; i < drafts.length; i += 4) chunks.push(drafts.slice(i, i + 4));
+  return { questions: chunks.map((c, i) => q(`Emails ${i + 1}`, 'Tick the drafts to send from your Gmail; the rest are not sent.', [...c.map((d) => ({ label: String(d.to).slice(0, 60), description: String(d.subject || d.employer || 'no subject').replace(/\n/g, ' ').slice(0, 90) })), ...(c.length < 2 ? [{ label: 'None of these', description: 'Tick this, or nothing, to send none of the drafts above.' }] : [])], true)), ids: drafts.map((d) => d.id) };
+}
+// Asked once, when the first email batch is ready.
+export function emailModeQuestion() {
+  return { questions: [q('Email', 'How should intro emails to published addresses go out?', [
+    { label: 'Ask me each batch (Recommended)', description: 'You see each batch of drafts and tick the ones to send.' },
+    { label: 'Send without asking, within my rules', description: 'Sends in the round with no yes, only to published addresses, once per address; revoke any time.' },
+  ])] };
+}
+
 // A payload is valid when it fits the question tool: 1 to 4 questions, 2 to 4 options each, labels and descriptions
 // present, the first option marked as the default.
 export function validateAsk(p) {
@@ -106,7 +127,7 @@ export function validateAsk(p) {
     if (!Array.isArray(x.options) || x.options.length < 2 || x.options.length > 4) bad.push(`${at}: 2 to 4 options`);
     else {
       for (const o of x.options) if (!o.label || !o.description || o.description.includes('\n')) bad.push(`${at}: each option needs a label and a one-line description`);
-      if (!/\((Recommended|from your resume)\)$/.test(x.options[0].label) && !/^(Skip them|Yes|Install)/.test(x.options[0].label)) bad.push(`${at}: the first option is the default and carries its marker`);
+      if (!x.multiSelect && !/\((Recommended|from your resume)\)$/.test(x.options[0].label) && !/^(Skip them|Yes|Install)/.test(x.options[0].label)) bad.push(`${at}: the first option is the default and carries its marker`);
     }
   }
   return bad;
