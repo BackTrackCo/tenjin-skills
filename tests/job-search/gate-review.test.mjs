@@ -281,3 +281,38 @@ test('4: J open on Windows never starts a shell (fixed in 85d46ca)', async () =>
   assert.equal(open.defaultCommand('https://x.example/?a=1&calc', 'win32').bin, 'rundll32.exe');
   assert.equal(open.chromeCommand('https://x.example/?a=1&calc', 'win32', { env: {}, exists: () => false }), null);
 });
+
+// ---- 15 follow-up: a whole unattended round never needs a refused command ---------------------------------------------
+test('15: a whole unattended round runs in order and no step is refused', () => {
+  const resume = path.join(home, 'resume-round.pdf');
+  fs.writeFileSync(resume, 'x');
+  const j = mkJob({ key: 'https://boards.greenhouse.io/acme/jobs/777', url: 'https://boards.greenhouse.io/acme/jobs/777', status: 'prepared', fit: 90, title: 'Software Engineer', city: 'Berlin', verifiedAt: new Date().toISOString() });
+  reset([j], { eeoText: EEO, applyMode: 'auto_write', resumePath: resume, facts: { first_name: 'Ada' }, unattended: U });
+  fs.rmSync(path.join(process.env.TENJIN_SKILLS_DIR, 'job-search', 'answers.json'), { force: true });
+  const step = (label, args, want = 0) => { const r = J(...args); assert.equal(r.code, want, `${label}: ${r.stdout}`); return r; };
+  const q = path.join(home, 'round-q.json');
+  fs.writeFileSync(q, JSON.stringify([{ label: 'First Name', required: true, type: 'input_text' }, { label: 'Resume/CV', required: true, type: 'input_file' }]));
+  // before the batch: the person's consent and dry run, and the prepare steps (build and check the sheet)
+  step('rule', ['rules', 'add', '--effect', 'period_max', '--value', '5', '--words', 'five']);
+  step('consent', ['consent', 'record', 'unattended', '--optional-writing', 'skip']);
+  step('dryrun record', ['dryrun', 'record', j.key, '{}']);
+  step('dryrun confirm', ['dryrun', 'confirm']);
+  step('sheet build', ['sheet', 'build', j.key, '--questions', q]);
+  step('sheet check', ['sheet', 'check', j.key]);
+  // the batch: only what the handed-out subagent needs
+  step('batch open', ['batch', 'open', '--unattended', '--upload', resume]);
+  const next = step('apply next', ['apply', 'next', '--unattended']);
+  assert.equal(next.json.handout.submit, true);
+  assert.equal(next.json.handout.resume, resume);
+  const hash = next.json.handout.sheetHash;
+  const live = path.join(home, 'round-live.json');
+  fs.writeFileSync(live, JSON.stringify([{ label: 'First Name', required: true }, { label: 'Resume/CV', required: true }]));
+  step('sheet check --live', ['sheet', 'check', j.key, '--live', live]);
+  const rb = path.join(home, 'round-rb.json');
+  fs.writeFileSync(rb, JSON.stringify([{ label: 'First Name', value: 'Ada' }]));
+  step('readback', ['sheet', 'readback', j.key, '--read', rb]);
+  step('may-submit', ['may-submit', j.key, hash]);
+  step('submitted', ['ops', JSON.stringify([{ op: 'transition', key: j.key, to: 'submitted' }])]);
+  step('batch close', ['batch', 'close']);
+  assert.equal(store.loadState().jobs[j.key].status, 'submitted');
+});
