@@ -1,0 +1,38 @@
+{
+  "_note": "Recorded 2026-11-25 through Tenjin alpha.110 request tool, then cleaned: the settlement hash is removed, offer ids are placeholders, and an en dash in one title is a hyphen. In the real run envelope, `result` is a JSON string; here `result` holds the parsed object, so a test must JSON.stringify it to replay the real shape.",
+  "need": "web_search",
+  "step1_job_words": {
+    "_note": "A query that names the job boards in words was routed to the job postings API, not to a web search API. Nothing was paid for it. The code's query for this need must keep the `site:` form below.",
+    "query": "web search API for a script that has no assistant or search tools of its own: return JSON results (title, url, snippet) for the query software engineer New York on jobs.ashbyhq.com, boards.greenhouse.io and jobs.lever.co, 5 results",
+    "json": { "status": "spec", "id": "00000000-0000-4000-8000-000000000007", "cost": ["provider price 0 USD"] },
+    "picked": "OpenWeb Ninja (JSearch job search), GET https://x402.openwebninja.com/jsearch/search-v2"
+  },
+  "step1": {
+    "query": "web search API for a script that has no assistant or search tools of its own: return JSON results (title, url, snippet) for the query site:jobs.ashbyhq.com software engineer New York, 10 results",
+    "json": { "status": "spec", "id": "00000000-0000-4000-8000-000000000008", "nextStep": "Call request({id: \"00000000-0000-4000-8000-000000000008\", input: {...}}) with the inputs above.", "cost": ["provider price 0 USD"] },
+    "text": "Web Search: Web search: live web search API and SERP API for AI agents. Search the web and get ranked results as clean JSON (title, URL, snippet, score, domain, publish date), 1-10 per call, like a SERP or search engine API.\nPrice: $0.003 per call, paid by this machine's wallet straight to the provider.\nRequest: POST https://api.agentsearchhq.com/x402/v1/search\nInputs:\n- query (string, required); Search query in natural language or keywords.\n- country (string); 2-letter ISO 3166-1 country code to localise results, e.g. us, gb, de.\n- date_from (string); Earliest publish date, YYYY-MM-DD.; format date\n- date_to (string); Latest publish date, YYYY-MM-DD.; format date\n- exclude_domains (array of string); Never return results from these domains, up to 5.\n- freshness (string); Only results from the past day, week, month or year. Do not combine with date_from/date_to.; one of \"day\", \"week\", \"month\", \"year\"\n- include_domains (array of string); Only return results from these domains (subdomains included), up to 5.\n- language (string); ISO 639-1 interface language, e.g. en, es or pt-BR.\n- max_results (integer); Maximum number of results (1-10).\nTo run it, call request({id: \"00000000-0000-4000-8000-000000000008\", input: {...}}) with the inputs above. Nothing has been paid.\nAlso offered: Web search API (the Brave-based one, GET https://agent-data-tools.revmesh2074.workers.dev/search/web) and Agent Rest Stop (web search API).",
+    "earlier_pick": "On the first try of the same query (2026-11-24) the router picked the Brave-based Web search API (GET https://agent-data-tools.revmesh2074.workers.dev/search/web, $0.01, inputs q, count, includeDomains as a comma list or JSON array, startPublishedDate). Its response is not recorded."
+  },
+  "step2": {
+    "input": { "query": "software engineer New York", "include_domains": ["jobs.ashbyhq.com", "boards.greenhouse.io", "job-boards.greenhouse.io", "jobs.lever.co"], "max_results": 5, "date_from": "2026-11-10", "country": "us" },
+    "envelope": {
+      "status": "fulfilled",
+      "supplier": "api.agentsearchhq.com",
+      "parameters": { "query": "software engineer New York", "include_domains": ["jobs.ashbyhq.com", "boards.greenhouse.io", "job-boards.greenhouse.io", "jobs.lever.co"], "max_results": 5, "date_from": "2026-11-10", "country": "us" },
+      "cost": ["provider price 0.003 USD"],
+      "providerContentUntrusted": true,
+      "result": {
+        "query": "software engineer New York (site:jobs.ashbyhq.com OR site:boards.greenhouse.io OR site:job-boards.greenhouse.io OR site:jobs.lever.co)",
+        "result_count": 3,
+        "retrieved_at": "2026-11-25T01:49:17.244689+00:00",
+        "results": [
+          { "title": "Job Application for Software Engineer at Dirac, Inc.", "url": "https://job-boards.greenhouse.io/diracinc/jobs/4506200009", "content": "Fully in person at our NYC office in the Empire State Building (350 5th Ave). Relocation assistance is available. New York Pay Range. $120,000 - $200,000 USD.", "score": 0.0, "published_date": "Nov 13, 2026", "domain": "job-boards.greenhouse.io", "retrieved_at": "2026-11-25T01:49:17.120276+00:00", "trust_level": "LOW", "trust_score": 0.45 },
+          { "title": "Senior Full-Stack Software Engineer, Games - Web Platform", "url": "https://job-boards.greenhouse.io/thenewyorktimes/jobs/4752757005", "content": "5+ years of software engineering experience building, deploying, and operating high-traffic web applications and distributed systems. Lead complex engineering ...", "score": 0.0, "published_date": "Nov 10, 2026", "domain": "job-boards.greenhouse.io", "retrieved_at": "2026-11-25T01:49:17.120382+00:00", "trust_level": "LOW", "trust_score": 0.45 },
+          { "title": "Software Engineer (Entry Level) @ Kira", "url": "https://jobs.ashbyhq.com/kira/d92f1ac9-1abb-448c-b039-22643d9bb8a7", "content": "You'll work closely with our VP of Engineering and learn from senior engineers through code review, pairing, and design discussions. This is a generalist role.", "score": 0.0, "published_date": "6 days ago", "domain": "jobs.ashbyhq.com", "retrieved_at": "2026-11-25T01:49:17.120446+00:00", "trust_level": "LOW", "trust_score": 0.45 }
+        ],
+        "filters": { "date_from": "2026-11-10", "country": "us", "include_domains": ["jobs.ashbyhq.com", "boards.greenhouse.io", "job-boards.greenhouse.io", "jobs.lever.co"] }
+      }
+    }
+  },
+  "observed": "The same `site:` query went to two different web search APIs on two days, so the `web_search` mapper must accept more than one supplier: match on the result shape (a `results[]` array of objects with `url` and `title`), not on one host. This supplier takes `include_domains` as an array of at most 5 and `max_results` of at most 10; the other takes `includeDomains` and `count`. The envelope has no `label`. `published_date` comes as \"Nov 13, 2026\" or \"6 days ago\", so code must not rely on its format and must confirm each job on its board. All 3 results were direct Greenhouse or Ashby postings, the kind the JSearch run never returned."
+}

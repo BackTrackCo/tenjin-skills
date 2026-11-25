@@ -32,8 +32,9 @@ export function startQuestions() {
 }
 
 // The role, place or remote, only when the resume really leaves it open: the guess first, the next best second.
-export function resumeChoiceQuestion({ header, question, guess, next }) {
-  return { questions: [q(header, question, [{ label: `${guess} (from your resume)`, description: 'The best reading of your resume. No answer means this one.' }, { label: next, description: 'The next best reading.' }])] };
+export function resumeChoiceQuestion({ header, question, guess, next, source = 'resume' }) {
+  const from = source === 'LinkedIn' ? 'LinkedIn' : 'resume';
+  return { questions: [q(header, question, [{ label: `${guess} (from your ${from})`, description: `The best reading of your ${from === 'LinkedIn' ? 'LinkedIn profile, which has no job titles' : 'resume'}. No answer means this one.` }, { label: next, description: 'The next best reading.' }])] };
 }
 
 export function tenjinAsk({ line, status }) {
@@ -145,7 +146,7 @@ export function validateAsk(p) {
     if (!Array.isArray(x.options) || x.options.length < 2 || x.options.length > 4) bad.push(`${at}: 2 to 4 options`);
     else {
       for (const o of x.options) if (!o.label || !o.description || o.description.includes('\n')) bad.push(`${at}: each option needs a label and a one-line description`);
-      if (!x.multiSelect && !/\((Recommended|from your resume)\)$/.test(x.options[0].label) && !/^(Skip them|Yes|Install)/.test(x.options[0].label)) bad.push(`${at}: the first option is the default and carries its marker`);
+      if (!x.multiSelect && !/\((Recommended|from your resume|from your LinkedIn)\)$/.test(x.options[0].label) && !/^(Skip them|Yes|Install)/.test(x.options[0].label)) bad.push(`${at}: the first option is the default and carries its marker`);
     }
   }
   return bad;

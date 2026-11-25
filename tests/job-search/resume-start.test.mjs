@@ -17,6 +17,8 @@ const work = await import(`${S}work.mjs`);
 const report = await import(`${S}report.mjs`);
 const qs = await import(`${S}questions.mjs`);
 const li = await import(`${S}suppliers/linkedin.mjs`);
+const prep = await import(`${S}prepare.mjs`);
+const __filename = new URL(import.meta.url).pathname;
 const ws = await import(`${S}suppliers/websearch.mjs`);
 const sup = await import(`${S}suppliers/index.mjs`);
 const net = await import(`${S}net.mjs`);
@@ -112,29 +114,59 @@ test('a link is https only, follows at most 3 redirects, and refuses local, priv
   await assert.rejects(net.guardedFetch('https://other.test/x', {}, async () => ({}), { allowUrl: 'https://a.test/x' }), /not the one allowed/);
 });
 
-test('with Tenjin a LinkedIn link is the linkedin_profile need and never goes to guardedFetch; the mapper needs no headline or skills', async () => {
-  const url = 'https://www.linkedin.com/in/pat-example/';
-  assert.deepEqual(li.mapper({ url }), { url: 'https://www.linkedin.com/in/pat-example' });
+const LI = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'fixtures', 'router', 'linkedin-profile.json'), 'utf8'));
+const liRun = { ...LI.step2.envelope, result: JSON.stringify(LI.step2.envelope.result) };
+test('with Tenjin a LinkedIn link is the linkedin_profile need and never goes to guardedFetch; the recorded response reads thin', async () => {
+  const url = 'https://www.linkedin.com/in/person-l/';
+  assert.deepEqual(li.mapper({ url }), { url: 'https://www.linkedin.com/in/person-l' });
   assert.throws(() => li.mapper({ url: 'https://www.linkedin.com/company/x' }), /not a linkedin\.com\/in/);
-  assert.equal(li.RECORDED, false, 'built from the spec, marked unrecorded');
-  const profile = { result: { name: 'Pat Example', location: 'Berlin', followers: 10, about: 'I build compilers.', experience: [{ title: 'Engineer', company: 'Acme' }], education: [{ school: 'Uni' }], recentPosts: [] } };
-  assert.match(li.adapter(profile).text, /Pat Example\n\nBerlin\n\nI build compilers\.\n\nExperience:\n- Engineer, Acme/);
+  assert.equal(li.RECORDED, true, 'recorded 2026-11-25');
+  const a = li.adapter(LI.step2.envelope.result);
+  assert.deepEqual(a.employers.map((e) => [e.name, e.start]), [['Example Software Co', '2014-02'], ['Example University', '2018']], 'a string and a number start date are both normalized');
+  assert.deepEqual(a.schools.map((e) => e.name), ['Example School of Business'], 'only schools are education, not the board seats');
+  assert.doesNotMatch(a.text, /Example Coffee Co|Example Business Council/);
+  assert.match(a.text, /^Person L\n\nSeattle, Washington, United States\n\nLeads a software company[\s\S]*Employers:\n- Example Software Co \(2014-02 to now\)/);
+  assert.equal(a.thin, true);
+  assert.doesNotMatch(JSON.stringify(a), /headline|skills/i, 'no headline and no skills field is invented');
   assert.throws(() => li.adapter({ result: {} }), /no name and no about/);
-  const spec = { status: 'spec', id: '00000000-0000-4000-8000-000000000009', nextStep: 'LinkedIn profile reader, $0.02', __text: 'Request: GET https://x402.orthogonal.com/scrapecreators/v1/linkedin/profile\nInputs: url' };
-  const run = { status: 'fulfilled', supplier: 'x402.orthogonal.com', cost: ['provider price 0.02 USD'], result: JSON.stringify(profile) };
+  assert.equal(li.normDate(2018), '2018');
+  assert.equal(li.normDate('2014-02'), '2014-02');
+  assert.equal(li.normDate('soon'), null);
   reset({ tenjin: { status: 'ready' } });
   const spy = serve({});
-  const f = fake({ answers: [spec, run] });
+  const f = fake({ answers: [{ ...LI.step1.json, __text: LI.step1.text }, liRun] });
   const r = await rs.setFromLink({ url, state: store.loadState(), client: client(f), fetchImpl: spy });
   assert.equal(r.read, true);
-  assert.match(r.resumeText, /Pat Example/);
+  assert.equal(r.thin, true);
+  assert.match(r.resumeText, /Person L/);
   assert.equal(spy.calls.length, 0, 'linkedin.com is never fetched');
   assert.deepEqual(f.log().filter((l) => l.call).map((l) => Object.keys(l.call)[0]), ['query', 'id']);
   // a status other than fulfilled falls back to the export ask
-  const g = fake({ answers: [spec, { status: 'failed', reason: 'down' }] });
+  const g = fake({ answers: [{ ...LI.step1.json, __text: LI.step1.text }, { status: 'failed', reason: 'down' }] });
   const bad = await rs.setFromLink({ url, state: store.loadState(), client: client(g), fetchImpl: spy });
   assert.equal(bad.read, false);
   assert.match(bad.ask, /PDF export/);
+});
+
+test('a LinkedIn link gives a thin profile: the role is confirmed with the guess first, and a form that needs more holds only that job', () => {
+  const p = qs.resumeChoiceQuestion({ header: 'Role', question: 'Which role should I look for?', guess: 'Engineering leader', next: 'Product manager', source: 'LinkedIn' });
+  assert.equal(p.questions[0].options[0].label, 'Engineering leader (from your LinkedIn)');
+  assert.deepEqual(qs.validateAsk(p), []);
+  assert.match(qs.resumeChoiceQuestion({ header: 'Role', question: 'q', guess: 'g', next: 'n' }).questions[0].options[0].label, /\(from your resume\)$/);
+  const upload = mkJob({ status: 'apply_ready', sheet: { hash: 'h', passed: true, eeoMissing: false, fields: [{ label: 'Resume', value: '<resume>', tag: 'upload', required: true }] } });
+  const history = mkJob({ status: 'apply_ready', sheet: { hash: 'h', passed: true, eeoMissing: false, fields: [{ label: 'Email', value: 'a@b.test', tag: 'fact', required: true }], unanswered: [{ label: 'Work history with job titles', why: 'no fact' }] } });
+  const plain = mkJob({ status: 'apply_ready', sheet: { hash: 'h', passed: true, eeoMissing: false, fields: [{ label: 'Email', value: 'a@b.test', tag: 'fact', required: true }] } });
+  const call = (job, profile) => ap.jobFailure({ job, state: { approvals: { [job.key]: { sheetHash: 'h' } }, applications: [], consent: {} }, profile: { eeo: 'decline_all', ...profile }, overlay: empty, mode: 'attended', now: Date.now() });
+  const thin = { resumeSource: 'link', resumeThin: true };
+  assert.equal(call(upload, thin), 'needs_resume_file');
+  assert.equal(call(history, thin), 'needs_resume_file');
+  assert.equal(call(plain, thin), null, 'a form the profile can fill is not held');
+  assert.equal(call(history, { resumeSource: 'file', resumePath: __filename }), null, 'with a file the work-history rule does not apply');
+  // the sheet check parks the same way
+  const job = { ...history, sheet: { ...history.sheet, unanswered: [], forbidden: [], fields: [{ label: 'Previous employers and job titles', value: 'x', tag: 'fact', required: true }] } };
+  const r = prep.checkJobSheet(job, null, thin);
+  assert.equal(r.ok, false);
+  assert.deepEqual(job.parked.reasons, ['needs_resume_file']);
 });
 
 test('without Tenjin a LinkedIn link asks first, then is a hint moment with an export ask; it is never fetched', async () => {
@@ -150,30 +182,47 @@ test('without Tenjin a LinkedIn link asks first, then is a hint moment with an e
   assert.equal(spy.calls.length, 0);
 });
 
-test('the web search mapper: the board hosts as includeDomains, the role and place in a short query, the window as a start date; the adapter reads the shape', () => {
-  const m = ws.mapper({ role: 'software engineer', place: 'Berlin', remote: true, since: '2026-11-10' });
-  assert.deepEqual(m, { q: 'software engineer Berlin remote', count: 20, includeDomains: 'jobs.ashbyhq.com,boards.greenhouse.io,job-boards.greenhouse.io,jobs.lever.co', startPublishedDate: '2026-11-10T00:00:00.000Z' });
-  assert.ok(ws.mapper({ role: 'x'.repeat(900), place: '' }).q.length <= 400);
-  assert.equal(ws.RECORDED, false);
-  const item = (o) => ({ title: 'Software Engineer', ...o });
-  const a = ws.adapter({ results: [item({ url: 'https://job-boards.greenhouse.io/acme/jobs/1', snippet: 's', publishedDate: '2026-11-20' }), item({ url: 'https://www.linkedin.com/jobs/view/1' })] });
-  assert.deepEqual(a.results.map((r) => r.url), ['https://job-boards.greenhouse.io/acme/jobs/1'], 'only a board job link is kept');
-  const b = ws.adapter({ data: { results: [{ link: 'https://jobs.lever.co/acme/abc', description: 'd' }] } });
-  assert.equal(b.results.length, 1, 'another API\'s shape reads the same');
+const WS = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'fixtures', 'router', 'web-search-api.json'), 'utf8'));
+test('the web search: one small input mapper per supplier, one adapter that reads the result shape; the recorded API is a POST with an array of at most 5 domains', () => {
+  const need = { role: 'software engineer', place: 'New York', remote: false, since: '2026-11-10' };
+  const a = ws.agentsearch.mapper(need);
+  assert.deepEqual(a, { query: 'software engineer New York', include_domains: ['jobs.ashbyhq.com', 'boards.greenhouse.io', 'job-boards.greenhouse.io', 'jobs.lever.co'], max_results: 10, date_from: '2026-11-10' });
+  assert.ok(a.include_domains.length <= 5 && a.max_results <= 10);
+  assert.equal(ws.agentsearch.RECORDED, true);
+  const b = ws.brave.mapper({ ...need, remote: true });
+  assert.deepEqual(b, { q: 'software engineer New York remote', count: 20, includeDomains: 'jobs.ashbyhq.com,boards.greenhouse.io,job-boards.greenhouse.io,jobs.lever.co', startPublishedDate: '2026-11-10T00:00:00.000Z' });
+  assert.equal(ws.brave.RECORDED, false, 'the other API stays unrecorded');
+  assert.ok(ws.brave.mapper({ role: 'x'.repeat(900) }).q.length <= 400);
+  const need2 = FXneed();
+  assert.match(need2, /for the query site:jobs\.ashbyhq\.com software engineer New York, 10 results$/, 'the need keeps the site: form');
+  // the recorded result: the adapter keeps the board links; published dates are read against the retrieval time or dropped
+  const r = ws.adapter(WS.step2.envelope.result);
+  assert.deepEqual(r.results.map((x) => x.url.split('/')[2]), ['job-boards.greenhouse.io', 'job-boards.greenhouse.io', 'jobs.ashbyhq.com']);
+  assert.equal(r.results[0].postedAt.slice(0, 10), '2026-11-13');
+  assert.equal(r.results[2].postedAt.slice(0, 10), '2026-11-19', '"6 days ago" is read against retrieved_at');
+  assert.equal(ws.readPublished('last Tuesday', '2026-11-25T00:00:00Z'), null, 'free text it cannot read is dropped');
+  assert.equal(ws.readPublished('3 hours ago', 'not a date'), null);
+  assert.equal(WS.step2.envelope.label, undefined, 'the recorded envelope has no label');
+  const x = ws.adapter({ data: { results: [{ link: 'https://jobs.lever.co/acme/abc', description: 'd' }, { url: 'https://www.linkedin.com/jobs/view/1', title: 't' }] } });
+  assert.equal(x.results.length, 1, 'another API\'s shape reads the same; only board job links are kept');
   assert.throws(() => ws.adapter({ nope: 1 }), /no results list/);
-  assert.equal(sup.pickSupplier('GET https://agent-data-tools.revmesh2074.workers.dev/search/web', 'web_search').noCache, true);
+  assert.equal(sup.pickSupplier(WS.step1.text, 'web_search').host, 'api.agentsearchhq.com');
+  assert.equal(sup.pickSupplier('GET https://agent-data-tools.revmesh2074.workers.dev/search/web', 'web_search').host, 'agent-data-tools.revmesh2074.workers.dev');
 });
+function FXneed() {
+  return JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'graph.json'), 'utf8')).needTemplates.web_search.replace('{role}', 'software engineer').replace('{place}', 'New York');
+}
 
-test('the web search result is never saved: the router run keeps no results file', async () => {
+test('the web search result is never saved: the recorded run keeps no results file, and the supplier must match the spec', async () => {
   reset();
-  const spec = { status: 'spec', id: '00000000-0000-4000-8000-000000000010', nextStep: 'web search $0.01', __text: 'Request: GET https://agent-data-tools.revmesh2074.workers.dev/search/web' };
-  const run = { status: 'fulfilled', supplier: 'agent-data-tools.revmesh2074.workers.dev', cost: ['provider price 0.01 USD'], result: JSON.stringify({ results: [{ url: 'https://job-boards.greenhouse.io/acme/jobs/1', title: 'SE', snippet: 's' }] }) };
-  const f = fake({ answers: [spec, run] });
+  const run = { ...WS.step2.envelope, result: JSON.stringify(WS.step2.envelope.result) };
+  const f = fake({ answers: [{ ...WS.step1.json, __text: WS.step1.text }, run] });
   const before = fs.existsSync(path.join(stateDir(), 'results')) ? fs.readdirSync(path.join(stateDir(), 'results')).length : 0;
-  const [r] = await router.runRound([{ kind: 'web_search', text: 'web search API for a script', fields: { role: 'se', place: 'Berlin', since: '2026-11-10' }, query: { role: 'se', place: 'Berlin', remote: false, since: '2026-11-10' } }], { client: client(f) });
+  const [r] = await router.runRound([{ kind: 'web_search', text: 'web search API for a script', fields: { role: 'software engineer', place: 'New York', since: '2026-11-10' }, query: { role: 'software engineer', place: 'New York', remote: false, since: '2026-11-10' } }], { client: client(f) });
   assert.equal(r.ok, true);
   assert.equal(r.ingest.fullResultPath, null);
-  assert.equal(r.ingest.results.length, 1);
+  assert.equal(r.ingest.results.length, 3);
+  assert.deepEqual(Object.keys(f.log().find((l) => l.call && l.call.id).call.input).sort(), ['date_from', 'include_domains', 'max_results', 'query'], 'the recorded supplier\'s input names');
   assert.equal(fs.existsSync(path.join(stateDir(), 'results')) ? fs.readdirSync(path.join(stateDir(), 'results')).length : 0, before, 'nothing cached');
 });
 

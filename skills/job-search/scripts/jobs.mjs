@@ -219,7 +219,7 @@ const commands = {
       const res = updateState((s) => {
         const job = s.jobs[key];
         if (!job || !job.sheet) throw new Error('build the sheet first');
-        const r = checkJobSheet(job, live);
+        const r = checkJobSheet(job, live, profile);
         return r;
       });
       return out(res, res.ok ? 0 : 4);
@@ -794,13 +794,13 @@ const commands = {
     if (r.ask === true) r = { ...r, ask: r.why };
     if (r.ask || r.read === false) return out({ read: false, ...r });
     ensureDir(stateDir());
-    const next = { ...profile, resumeSource: r.source, resumeText: r.resumeText !== undefined ? r.resumeText : r.keepFile ? profile.resumeText : undefined, resumeNeedsText: Boolean(r.needsText) };
+    const next = { ...profile, resumeSource: r.source, resumeText: r.resumeText !== undefined ? r.resumeText : r.keepFile ? profile.resumeText : undefined, resumeNeedsText: Boolean(r.needsText), resumeThin: r.thin === true };
     if (r.resumePath) next.resumePath = r.resumePath;
     else if (!r.keepFile) delete next.resumePath;
     if (r.url) next.resumeUrl = r.url;
     else if (!r.keepFile) delete next.resumeUrl;
     writeJsonAtomic(profileFile(), next);
-    return out({ read: true, source: next.resumeSource, saved: r.resumeTextFile || r.resumePath || null, needsText: next.resumeNeedsText, next: next.resumeNeedsText ? 'read the file with your file reader, then save its text: J resume set --text' : 'read role, role words, place and remote from the resume' });
+    return out({ read: true, source: next.resumeSource, saved: r.resumeTextFile || r.resumePath || null, needsText: next.resumeNeedsText, next: next.resumeNeedsText ? 'read the file with your file reader, then save its text: J resume set --text' : next.resumeThin ? 'a LinkedIn profile has employers but no job titles: confirm the target role with a choice question, your guess first (J ask resume --json {header,question,guess,next,source:"LinkedIn"}); a form that needs more asks for a file or the text' : 'read role, role words, place and remote from the resume' });
   },
 
   async notify([sub, result]) {

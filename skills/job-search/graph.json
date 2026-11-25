@@ -212,7 +212,7 @@
   "needTemplates": {
     "job_postings": "job postings for {role} roles in {place}, posted in the last {days} days",
     "x_hiring_posts": "hiring posts on X for {role} roles in {place} from the last {days} days",
-    "web_search": "web search API for a script that has no assistant or search tools of its own: return JSON results (title, url, snippet) for job postings on jobs.ashbyhq.com, boards.greenhouse.io, job-boards.greenhouse.io and jobs.lever.co for {role} in {place}",
+    "web_search": "web search API for a script that has no assistant or search tools of its own: return JSON results (title, url, snippet) for the query site:jobs.ashbyhq.com {role} {place}, 10 results",
     "careers_page": "find the careers page of {company} from its website {url} and the job board it uses",
     "linkedin_profile": "read the public LinkedIn profile at {url}: return the profile as JSON",
     "people_search": "people search: engineering leaders at {company} ({url}){where}"

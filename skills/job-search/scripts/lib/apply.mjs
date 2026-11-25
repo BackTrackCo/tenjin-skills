@@ -181,6 +181,7 @@ export function jobFailure({ job, state, profile, overlay, mode, now, writingOk 
   if (!job.sheet || !job.sheet.passed) return 'sheet_not_checked';
   if (job.sheet.eeoMissing || !profile.eeo) return 'eeo_missing';
   // A resume given as text only has no file: a form that requires one holds this job, which asks once for the file.
+  if (profile.resumeThin && [...(job.sheet.fields || []), ...(job.sheet.unanswered || [])].some((f) => /work history|employment history|job titles?|previous (employer|job|role)s?|current (title|role)/i.test(f.label))) return 'needs_resume_file';
   if ((job.sheet.fields || []).some((f) => f.tag === 'upload') && profile.resumeSource && !(profile.resumePath && fs.existsSync(profile.resumePath))) return 'needs_resume_file';
   if (duplicateWithin(state, job, now, graph().unattendedWindow.duplicateDays)) return 'applied_to_company_title_within_90_days';
   if (state.applications.some((a) => a.key === job.key)) return 'already_applied';

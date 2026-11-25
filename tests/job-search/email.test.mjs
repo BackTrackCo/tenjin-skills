@@ -197,3 +197,39 @@ test('SKILL.md and the references: send only what J email next handed out; no co
     assert.doesNotMatch(fs.readFileSync(path.join(SKILL, f), 'utf8'), /mcp__claude_ai_Gmail|send_email|gmail_send/i, f);
   }
 });
+
+test('an address published word for word in an X post counts like one in an HN comment: channel email, the DM link shown, one draft', async () => {
+  reset({ posts: [
+    { url: 'https://x.com/poster_a/status/101', author: 'poster_a', source: 'x', text: 'We are hiring an engineer, mail jobs@acme-a.test', status: 'new' },
+    { url: 'https://x.com/poster_b/status/102', author: 'poster_b', source: 'x', text: 'Hiring, DM me', status: 'new' },
+    { url: 'https://x.com/poster_c/status/103', author: 'poster_c', source: 'x', text: 'Hiring: a@acme-c.test or b@acme-c.test', status: 'new' },
+  ] });
+  const obj = { need: 'hn_hiring_posts', status: 'fulfilled', query: { role: 'e', place: '', remote: false, since: null }, postings: [], batch: ['https://x.com/poster_a/status/101', 'https://x.com/poster_b/status/102', 'https://x.com/poster_c/status/103'], outcomes: [101, 102, 103].map((n) => ({ url: `https://x.com/poster_${'abc'[n - 101]}/status/${n}`, outcome: 'lead' })), leads: [{ url: 'https://x.com/poster_c/status/103', email: 'b@acme-c.test' }] };
+  const out = await ing.ingest({ obj, state: store.loadState(), profile: {}, overlay: empty, fetch: async () => ({ ok: false }), now: NOW });
+  assert.deepEqual(out.held, []);
+  const [a, b, c] = store.loadState().leads;
+  assert.deepEqual([a.channel, a.handle, a.email, a.emailFromPost, a.source], ['email', 'poster_a', 'jobs@acme-a.test', true, 'x'], 'a handle and an address: the channel is email');
+  assert.deepEqual([b.channel, b.email], ['x', null], 'no address: the DM stays the person\'s');
+  assert.deepEqual([c.channel, c.email], ['email', 'b@acme-c.test'], 'the model may pick one of two addresses, if it is in the post word for word');
+  // a made-up address that is not in the post is refused
+  store.updateState((s) => { s.posts = [{ url: 'https://x.com/poster_d/status/104', author: 'poster_d', source: 'x', text: 'Hiring', status: 'new' }]; });
+  const bad = await ing.ingest({ obj: { ...obj, batch: ['https://x.com/poster_d/status/104'], outcomes: [{ url: 'https://x.com/poster_d/status/104', outcome: 'lead' }], leads: [{ url: 'https://x.com/poster_d/status/104', email: 'ceo@elsewhere.test' }] }, state: store.loadState(), profile: {}, overlay: empty, fetch: async () => ({ ok: false }), now: NOW });
+  assert.match(bad.held[0], /not word for word in the post/);
+  // the same checks as any email: a batch yes, 90 days, no attachment
+  store.updateState((s) => { for (const l of s.leads) l.intro = { channel: l.channel, subject: l.channel === 'email' ? 'Hello' : null, text: 'A short note.', writtenAt: 'x' }; });
+  assert.deepEqual(em.candidates(store.loadState()).map((c) => c.to).sort(), ['b@acme-c.test', 'jobs@acme-a.test'], 'the X lead without an address is never an email');
+  const batch = J('email', 'batch').json;
+  assert.equal(batch.drafts.length, 2, 'one draft per address, none for the DM link');
+  assert.equal(J('email', 'next').json.handout, null, 'nothing goes before the batch yes');
+  J('email', 'approve', batch.drafts[0].id);
+  const h = J('email', 'next').json.handout;
+  assert.deepEqual(h.attachments, []);
+  J('email', 'sent', h.id, 'm1');
+  store.updateState((s) => { s.leads.push({ ...s.leads[0], key: 'x:999', url: 'https://x.com/poster_a/status/999', intro: { channel: 'email', subject: 'Again', text: 'Another.' } }); });
+  const again = J('email', 'batch').json.drafts.find((d) => d.subject === 'Again');
+  J('email', 'approve', again.id);
+  assert.equal(J('email', 'next').json.queue.find((q) => q.id === again.id).reason, 'repeat_within_90_days');
+  const text = report.renderReport(store.loadState(), empty, { now: NOW });
+  assert.match(text, /poster_a.*DM link, if you prefer to write there: https:\/\/x\.com\/poster_a/);
+  assert.equal((text.match(/Intro \(email/g) || []).length >= 1, true);
+});

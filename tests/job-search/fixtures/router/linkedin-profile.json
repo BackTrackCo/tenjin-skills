@@ -1,0 +1,51 @@
+{
+  "_note": "Recorded 2026-11-25 through Tenjin alpha.110 request tool with the public example profile from the spec, then cleaned: the name, handle, about text, organisation names, post and article text are placeholders; images, long ids and the settlement hash are removed; posts and articles cut to one each. Field names, types and the order of keys are the real ones. In the real run envelope, `result` is a JSON string; here `result` holds the parsed object, so a test must JSON.stringify it to replay the real shape.",
+  "need": "linkedin_profile",
+  "step1": {
+    "query": "read one LinkedIn profile from its profile URL and return the person's name, headline, location, work experience, education and skills",
+    "json": { "status": "spec", "id": "00000000-0000-4000-8000-000000000006", "nextStep": "Call request({id: \"00000000-0000-4000-8000-000000000006\", input: {...}}) with the inputs above.", "cost": ["provider price 0 USD"] },
+    "text": "Orthogonal (Scrape Creators LinkedIn profile): Read a public LinkedIn person profile by its URL: name, location, about, experience with dates, education, follower count and recent posts. Sync. Use when a linkedin.com/in/ URL is already known.\nPrice: $0.02 per call, paid by this machine's wallet straight to the provider.\nRequest: GET https://x402.orthogonal.com/scrapecreators/v1/linkedin/profile\nInputs:\n- url (string, required); Public LinkedIn profile URL, https://www.linkedin.com/in/<handle>; min length 1\nExample input: {\"url\":\"https://www.linkedin.com/in/person-l\"}\nReturns: JSON {name, location, followers, about, experience[], education[], recentPosts[]}: the public profile, plus credit counters\nTo run it, call request({id: \"00000000-0000-4000-8000-000000000006\", input: {...}}) with the inputs above. Nothing has been paid."
+  },
+  "step2": {
+    "input": { "url": "https://www.linkedin.com/in/person-l" },
+    "envelope": {
+      "status": "fulfilled",
+      "supplier": "x402.orthogonal.com",
+      "label": "Scrape Creators LinkedIn profile",
+      "parameters": { "url": "https://www.linkedin.com/in/person-l" },
+      "cost": ["provider price 0.02 USD"],
+      "providerContentUntrusted": true,
+      "result": {
+        "success": true,
+        "credits_remaining": 445256,
+        "credits_charged": 1,
+        "name": "Person L",
+        "location": "Seattle, Washington, United States",
+        "followers": 12000,
+        "connections": "",
+        "about": "Leads a software company and writes about building products.",
+        "recentPosts": [
+          { "link": "https://www.linkedin.com/posts/person-l_example-activity-1", "id": "1", "title": "A short post about shipping a product release.", "datePublished": "2026-11-24T03:48:49.838Z", "activityType": "Post" }
+        ],
+        "experience": [
+          { "@type": "Organization", "name": "Example Software Co", "url": "https://www.linkedin.com/company/example-software-co", "location": "Greater Seattle Area", "member": { "@type": "OrganizationRole", "startDate": "2014-02" } },
+          { "@type": "Organization", "name": "Example University", "url": "https://www.linkedin.com/school/example-university/", "member": { "@type": "OrganizationRole", "startDate": 2018 } }
+        ],
+        "articles": [
+          { "headline": "An annual letter", "author": "Person L", "datePublished": "2026-10-21T20:41:14.000+00:00", "url": "https://www.linkedin.com/pulse/an-annual-letter-person-l", "articleBody": "" }
+        ],
+        "activity": [],
+        "education": [
+          { "@type": "Organization", "name": "Example Coffee Co", "url": "https://www.linkedin.com/company/example-coffee-co", "member": { "@type": "OrganizationRole", "startDate": 2017, "endDate": 2024 } },
+          { "@type": "Organization", "name": "Example Business Council", "url": "https://www.linkedin.com/company/example-business-council", "member": { "@type": "OrganizationRole", "startDate": 2021, "endDate": 2023 } },
+          { "@type": "EducationalOrganization", "name": "Example School of Business", "url": "https://www.linkedin.com/school/example-school-of-business/", "member": { "@type": "OrganizationRole", "startDate": 1994, "endDate": 1996 } }
+        ],
+        "publications": [],
+        "projects": [],
+        "recommendations": [],
+        "similarProfiles": []
+      }
+    }
+  },
+  "observed": "The profile has no job titles: each `experience[]` entry is an organisation with `name`, `url`, sometimes `location`, and `member.startDate` (and `endDate` when ended); there is no title or description field. `startDate` is a string (\"2014-02\") in one entry and a number (2018) in another. `education[]` mixes board and advisory seats (`@type` \"Organization\") with schools (`@type` \"EducationalOrganization\"); only the second kind is education. There is no headline and no skills field, as the spec said. So a LinkedIn read gives the name, place, about text and employers with dates, but not the roles: the skill must still confirm the target role (with its guess as the default) and should ask for a resume file or text when the profile is too thin to fill forms. The skill never opens the LinkedIn URL itself."
+}

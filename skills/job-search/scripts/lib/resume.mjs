@@ -109,7 +109,7 @@ export async function setFromLink({ url, state, client, fetchImpl = globalThis.f
     }
     const r = await readLinkedIn({ url, client });
     if (!r.ok) return { read: false, linkedin: true, status: r.status, ask: 'a PDF export of the profile or the text' };
-    return { read: true, ...setText(r.text, { source: 'link' }), url };
+    return { read: true, ...setText(r.text, { source: 'link' }), url, thin: true };
   }
   const r = await fetchResume(url, fetchImpl, { lookup });
   if (r.signIn) return { read: false, signIn: true, ask: 'a connector can read this only if the person connected one; otherwise a public link, the file or the text' };

@@ -7,8 +7,16 @@ import { parseWritingResult } from './writing.mjs';
 
 // The sheet check, shared by `J sheet check` and the prepare step: a passing sheet moves a prepared job to apply_ready; a
 // failing one parks the job with the reason and the names of what is missing.
-export function checkJobSheet(job, live = null) {
+// A LinkedIn profile is thin: employers with dates and no job titles. A form that needs a file, or work history with titles,
+// holds only that job and asks once for a resume file or the text.
+export const NEEDS_HISTORY = /work history|employment history|job titles?|previous (employer|job|role)s?|most recent (role|employer)|current (title|role)/i;
+export function checkJobSheet(job, live = null, profile = {}) {
   const r = checkSheet(job.sheet, live);
+  if (profile.resumeThin && [...(job.sheet.fields || []), ...(job.sheet.unanswered || [])].some((f) => NEEDS_HISTORY.test(f.label))) {
+    job.sheet.passed = false;
+    park(job, ['needs_resume_file']);
+    return { ok: false, problems: ['the form needs work history with job titles and the resume is a LinkedIn profile: a file or the text is needed'] };
+  }
   job.sheet.passed = r.ok;
   if (r.ok) {
     unpark(job);
@@ -65,7 +73,7 @@ export async function prepareInCode({ fetch, profile }) {
       }
       j.needsWriting = false;
       applyOp(s, { op: 'transition', key: j.key, to: 'prepared' });
-      checkJobSheet(j);
+      checkJobSheet(j, null, profile);
       out.ready.push(j.key);
     }
     return out;
@@ -94,7 +102,7 @@ export function applyRoundDrafts(state, answers, profile) {
     const sheet = buildSheet({ job: j, questions: j.questions, profile, answers: known, drafts: j.drafts });
     j.sheet = { ...sheet, passed: false };
     applyOp(state, { op: 'transition', key, to: 'prepared' });
-    checkJobSheet(j);
+    checkJobSheet(j, null, profile);
     res.written++;
   }
   return res;

@@ -264,16 +264,20 @@ function planPosts({ obj, state, plan }) {
       const text = post.text || '';
       const handle = l.handle ? String(l.handle).replace(/^@/, '') : null;
       let channel = null;
-      if (post.source === 'x' || /^https?:\/\/(x|twitter)\.com\//i.test(o.url)) {
+      const isX = post.source === 'x' || /^https?:\/\/(x|twitter)\.com\//i.test(o.url);
+      if (isX) {
         if (!post.author) return `post ${o.url} has no author in its record`;
-        channel = 'x';
+        // An address published word for word in an X post counts like one in an HN comment; with a handle and an address
+        // both, the channel is email, and the report still shows the DM link next to it with no second draft.
+        if (l.email && !text.includes(l.email)) return `lead ${o.url}: the email is not word for word in the post`;
+        channel = l.email ? 'email' : 'x';
         if (handle && handle.toLowerCase() !== String(post.author).replace(/^@/, '').toLowerCase()) return `lead ${o.url}: the handle must be the post's author from the record`;
       } else if (l.email || handle) {
         if (l.email && !text.includes(l.email)) return `lead ${o.url}: the email is not word for word in the post`;
         if (!l.email && handle && !text.includes(handle)) return `lead ${o.url}: the handle is not word for word in the post`;
         channel = l.email ? 'email' : 'other';
       } else return `lead ${o.url}: an HN comment needs an email or a handle that appears in it`;
-      plan.leads.push({ url: o.url, key: leadKey(o.url), source: channel === 'x' ? 'x' : 'hn', channel, author: post.author || '', handle: channel === 'x' ? String(post.author).replace(/^@/, '') : handle, email: l.email || null, emailFromPost: Boolean(l.email) && text.includes(l.email), employer: o.employer || l.employer || '', role: o.role || l.role || '', place: o.place || l.place || '', excerpt: text.slice(0, 280), status: 'new', foundAt: new Date().toISOString(), intro: null, joinedJob: null });
+      plan.leads.push({ url: o.url, key: leadKey(o.url), source: isX ? 'x' : 'hn', channel, author: post.author || '', handle: isX ? String(post.author).replace(/^@/, '') : handle, email: l.email || null, emailFromPost: Boolean(l.email) && text.includes(l.email), employer: o.employer || l.employer || '', role: o.role || l.role || '', place: o.place || l.place || '', excerpt: text.slice(0, 280), status: 'new', foundAt: new Date().toISOString(), intro: null, joinedJob: null });
     }
     plan.outcomes.push({ url: o.url, outcome: o.outcome, reason: o.reason || null });
   }
@@ -445,12 +449,14 @@ function authorContact(state, pj, plan) {
   const handle = handleOf(post);
   const emails = emailsIn(post.text || '');
   if (isYc(post.url) && !post.author) return;
-  const how = handle ? `DM @${handle} on X` : emails.length === 1 ? emails[0] : null;
+  // an address in the post, an X post's included, makes the contact an email one; the handle stays the DM link
+  const email = emails.length === 1 ? emails[0] : null;
+  const how = email || (handle ? `DM @${handle} on X` : null);
   if (!how) return;
   try {
-    applyOp(state, { op: 'contact', key, name: post.author || handle || 'the poster', title: '', sourceUrl: isYc(post.url) ? `https://${HN_SITE}/user?id=${encodeURIComponent(post.author)}` : post.url, how, cares: `hiring for ${job.title}`, channel: handle ? 'x' : 'email' });
+    applyOp(state, { op: 'contact', key, name: post.author || handle || 'the poster', title: '', sourceUrl: isYc(post.url) ? `https://${HN_SITE}/user?id=${encodeURIComponent(post.author)}` : post.url, how, cares: `hiring for ${job.title}`, channel: email ? 'email' : 'x' });
     // set by code only, never by an op: the address appeared word for word in the poster's own post
-    if (!handle) Object.assign(state.contacts[key][state.contacts[key].length - 1], { email: emails[0], emailFromPost: true });
+    if (email) Object.assign(state.contacts[key][state.contacts[key].length - 1], { email, emailFromPost: true, ...(handle ? { handle } : {}) });
   } catch {}
 }
 

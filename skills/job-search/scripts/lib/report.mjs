@@ -122,7 +122,7 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
   const leads = (state.leads || []).filter((l) => l.status === 'new' && !l.joinedJob);
   if (leads.length) {
     L.push('', `## People hiring (${leads.length})`);
-    for (const l of leads) L.push(`- ${l.author || l.handle || l.email}${l.employer ? `, ${l.employer}` : ''}${l.role ? `, ${l.role}` : ''}: ${l.url}${l.intro ? `. ${introNote(l.intro, l.channel === 'x' ? l.handle : null, l.channel === 'email' ? l.email : null, l.emailFromPost)}` : ''}`);
+    for (const l of leads) L.push(`- ${l.author || l.handle || l.email}${l.employer ? `, ${l.employer}` : ''}${l.role ? `, ${l.role}` : ''}: ${l.url}${l.intro ? `. ${introNote(l.intro, l.channel === 'x' ? l.handle : null, l.channel === 'email' ? l.email : null, l.emailFromPost)}${l.channel === 'email' && l.source === 'x' && l.handle ? ` DM link, if you prefer to write there: ${dmLink(l.handle, '').profile}` : ''}` : ''}`);
   }
   const mail = pendingEmails(state);
   if (mail.length) L.push('', `${mail.length} intro email draft${mail.length > 1 ? 's' : ''} wait${mail.length > 1 ? '' : 's'} for your yes (addresses the posters published; none goes without it).`);
