@@ -1,7 +1,7 @@
 ---
 name: job-search
 description: >-
-  Use this skill for any job hunt: finding jobs that fit a person, rerunning a search for only the new postings, finding the hiring manager, team lead or founder behind a role, adding fresh jobs to a career-ops pipeline, and applying to the good ones through Claude in Chrome, attended with a yes on each or unattended under the person's rules. It reads watched boards, Hacker News and the web daily, checks each job is still open, ranks them and prepares the application. Do not use it for a cover letter, resume tailoring, interview prep or a job offer alone.
+  Use this skill for any job hunt: finding jobs that fit a person, rerunning a search for only the new postings, finding the hiring manager, team lead or founder behind a role, and applying to the good ones through Claude in Chrome, attended with a yes on each or unattended under the person's rules. It reads watched boards, Hacker News and the web daily, checks each job is still open, ranks them and prepares the application. Do not use it for a cover letter, resume tailoring, interview prep or a job offer alone.
 allowed-tools: Bash(node ${CLAUDE_SKILL_DIR}/scripts/jobs.mjs *) TaskCreate TaskUpdate TodoWrite PushNotification mcp__claude-in-chrome__*
 ---
 

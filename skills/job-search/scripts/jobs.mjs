@@ -33,7 +33,6 @@ import { pushSettings } from './lib/pushsettings.mjs';
 import { copyToUploads, migrateResume, uploadBlockedStep, uploadsDir, uploadsGranted, uploadsLine } from './lib/uploads.mjs';
 import * as qs from './lib/questions.mjs';
 import { FREQUENCIES, frequencyOf, periodStart } from './lib/schedule.mjs';
-import { appendPending, isCareerOpsDir, pipelineLine, readCareerOps } from './lib/careerops.mjs';
 import { observations } from './lib/signals.mjs';
 import { ingest, joinLeads, leadKey } from './lib/ingest.mjs';
 import { validateProfile } from './lib/profile.mjs';
@@ -121,29 +120,23 @@ const commands = {
       writeJsonAtomic(profileFile(), { ...prof, resumePath: path.resolve(p), resumeText: text });
       return out({ read: true, chars: text.length });
     }
-    if (sub === 'careerops') {
-      // Inside a career-ops folder: read cv.md and config/profile.yml, ask nothing they already answer.
-      const dir = process.cwd();
-      if (!isCareerOpsDir(dir)) return out({ detected: false });
-      const co = readCareerOps(dir);
-      const prof = readProfile();
-      writeJsonAtomic(profileFile(), { ...prof, resumePath: path.join(dir, 'cv.md'), resumeText: co.cv, careerOps: { dir, pipeline: flags.pipeline === 'yes' } });
-      return out({ detected: true, dir, pipeline: flags.pipeline === 'yes', profileYml: co.profileYml.slice(0, 20000), note: 'cv.md and config/profile.yml are read; answer the profile from them and ask only what they leave out' });
-    }
     if (sub === 'stage') {
       updateState((s) => {
         s.setup = { ...s.setup, stage: rest[0] || null, next: rest[1] || null };
       });
       return out({ saved: true });
     }
-    return out({ error: 'setup check | resume <path> | careerops | stage <stage> <next>' }, 2);
+    return out({ error: 'setup check | resume <path> | stage <stage> <next>' }, 2);
   },
 
   async profile([sub, arg]) {
     if (sub === 'get') return out(readProfile());
     if (sub === 'set') {
       ensureDir(stateDir());
-      const next = { ...readProfile(), ...readJsonArg(arg) };
+      const given = readJsonArg(arg);
+      // The compatibility feature for an external tool is gone: the field is refused from now on. An old profile that still has it loads, and the field is ignored.
+      if (given && typeof given === 'object' && 'careerOps' in given) return out({ error: 'the profile was not saved: careerOps is no longer a profile field (that feature was removed)' }, 2);
+      const next = { ...readProfile(), ...given };
       const bad = validateProfile(next);
       if (bad.length) return out({ error: `the profile was not saved: ${bad.join('; ')}` }, 2);
       writeJsonAtomic(profileFile(), next);
@@ -465,20 +458,6 @@ const commands = {
         s.held = s.held.filter((h) => !(h.reason === 'no_chrome_tools' && h.detail === s.jobs[key].company));
       }
     }) || { ok: true });
-  },
-  // On the person's yes at setup, each job that passed review is appended under "## Pending" in the career-ops pipeline.
-  async pipeline([sub, ...keys]) {
-    if (sub !== 'add') return out({ error: 'pipeline add [key...]' }, 2);
-    const profile = readProfile();
-    if (!profile.careerOps || profile.careerOps.pipeline !== true) return out({ error: 'the person has not said yes to the career-ops pipeline at setup' }, 4);
-    return out(updateState((s) => {
-      const pick = keys.length ? keys.map((k) => s.jobs[k]).filter(Boolean) : Object.values(s.jobs).filter((j) => ['reviewed', 'shortlisted', 'prepared', 'apply_ready'].includes(j.status));
-      const jobs = pick.filter((j) => !j.pipelineAt);
-      const lines = jobs.map((j) => pipelineLine(j, (s.contacts[j.key] || [])[0] || null));
-      const n = appendPending(profile.careerOps.dir, lines);
-      for (const j of jobs) j.pipelineAt = new Date().toISOString();
-      return { appended: n, next: 'Tell the person that /career-ops pipeline scores these jobs and tailors their CV.' };
-    }));
   },
   async contacts([sub, ...keys], flags) {
     if (sub === 'count') {

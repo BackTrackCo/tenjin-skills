@@ -5,7 +5,6 @@ import { companyNames, nameMatches } from './company.mjs';
 import { applyOp, bump, normLabel } from './store.mjs';
 import { careersFromLinks, classifyLinks, probeBoards, resolveFromCareersPage } from './employer.mjs';
 import { HN_SITE, isNeverAutomated, isYc, linkedinOf } from './platforms.mjs';
-import { loadSkipUrls } from './careerops.mjs';
 import { parseBoardUrl } from './boards.mjs';
 import { mergeJobs, normalizeUrl, sha } from './dedupe.mjs';
 import { effectiveProfile } from './overlay.mjs';
@@ -175,7 +174,6 @@ export async function planIngest({ obj: given, state, profile, overlay, fetch, n
   const eff = effectiveProfile(profile, overlay);
   eff.windowDays = catchUpDays(state, now, profile.windowDays || 14);
   plan.round = obj.query && obj.query.round;
-  const skip = loadSkipUrls(profile);
   const boards = new Map();
   const getBoard = async (t) => {
     const id = `${t.ats}:${t.token}`;
@@ -255,8 +253,6 @@ export async function planIngest({ obj: given, state, profile, overlay, fetch, n
     plan.jobs.push({ url: key, ats: null, board: null, title: p.title, company: p.employer, city: p.city, region: p.region, country: p.country, remote: p.remote, posted: p.postedAt, type: p.employmentType, salary: salaryText(p.salary), desc: p.description, applyLinks: p.applyLinks.map((l) => l.url), place: `${p.city}|${p.region}`, warnings: [...screen.warnings, 'not confirmed open'], via, employerPosting: null, unresolved, fromPost: p.sourceUrl, otherSystem: cl.other, workAtStartupUrl: unresolved === 'yc_platform_only' ? yc : null, platformLinks: cl.platform, employerWebsite: p.employerWebsite || null, ...(p.employerWebsite ? { employerWebsiteSource: 'posting' } : {}), sourceUrl: p.sourceUrl, openConfirmed: false, ...(linkedinOf(p.applyLinks) ? { linkedinUrl: linkedinOf(p.applyLinks) } : {}) });
     plan.unresolved++;
   }
-  // a job the person's career-ops folder already has is not added again
-  plan.jobs = plan.jobs.filter((j) => !skip.has(j.url) && !(j.employerPosting && skip.has(j.employerPosting.url)));
   return plan;
 }
 

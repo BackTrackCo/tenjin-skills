@@ -36,7 +36,6 @@ export function migrateResume(profile) {
   if (cur && fs.existsSync(cur)) return null;
   const src = profile.resumePath;
   if (!src || !fs.existsSync(src) || !fs.statSync(src).isFile()) return null;
-  if (path.basename(path.dirname(src)) === 'cv' || /\.(md|markdown)$/i.test(src) && profile.careerOps) return null; // a career-ops folder's own file stays where it is
   return { resumeUploadPath: copyToUploads(src) };
 }
 

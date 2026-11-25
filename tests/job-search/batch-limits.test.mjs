@@ -29,10 +29,8 @@ const LIMIT_COMMANDS = [
   ['start', 'record', '--mode', 'auto_write'],
   ['watch', 'remove', 'acme'],
   ['setup', 'resume', '/tmp/x'],
-  ['setup', 'careerops'],
   ['dryrun', 'confirm'],
   ['batch', 'open', '--unattended'],
-  ['pipeline', 'add'],
   ['release', 'apply'],
   ['intros', 'save', 'k1', '--result', '/tmp/x'],
 ];

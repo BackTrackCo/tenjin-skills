@@ -32,7 +32,6 @@ export function validateProfile(p) {
   }
   if (has('facts')) need(p.facts && typeof p.facts === 'object' && !Array.isArray(p.facts) && Object.values(p.facts).every((v) => ['string', 'number', 'boolean'].includes(typeof v)), 'facts must be an object of text, number or true/false values');
   if (has('eeo')) need(p.eeo === 'decline_all' || (p.eeo && typeof p.eeo === 'object' && p.eeo.answers && typeof p.eeo.answers === 'object'), 'eeo must be "decline_all" or {"answers": {"<question>": "<answer>"}}');
-  if (has('careerOps')) need(p.careerOps && typeof p.careerOps === 'object' && isStr(p.careerOps.dir) && (p.careerOps.pipeline === undefined || typeof p.careerOps.pipeline === 'boolean'), 'careerOps must be {"dir": "<folder>", "pipeline": true|false}');
   if (has('unattended')) {
     const u = p.unattended;
     if (!u || typeof u !== 'object') bad.push('unattended must be an object');

@@ -12,7 +12,6 @@ const work = await import('../../skills/job-search/scripts/lib/work.mjs');
 const ap = await import('../../skills/job-search/scripts/lib/apply.mjs');
 const report = await import('../../skills/job-search/scripts/lib/report.mjs');
 const g = await import('../../skills/job-search/scripts/lib/batch.mjs');
-const co = await import('../../skills/job-search/scripts/lib/careerops.mjs');
 
 const NOW = Date.parse('2026-11-23T10:00:00Z');
 const empty = { rules: [], lessons: [] };
@@ -261,97 +260,37 @@ test('without Tenjin the reply ends with one line about what it adds; the report
   fs.rmSync(path.join(bin, 'tenjin'));
 });
 
-// ---- 10. career-ops ----------------------------------------------------------
-function careerOpsDir() {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'careerops-'));
-  fs.mkdirSync(path.join(d, 'config'));
-  fs.mkdirSync(path.join(d, 'data'));
-  fs.writeFileSync(path.join(d, 'cv.md'), '# Ada\nCompilers, 8 years.\n');
-  fs.writeFileSync(path.join(d, 'config', 'profile.yml'), 'name: Ada\nrole: software engineer\nlocation: Berlin\n');
-  fs.writeFileSync(path.join(d, 'data', 'pipeline.md'), '# Pipeline\n\n## Pending\n- [ ] https://boards.greenhouse.io/old/jobs/1 | Old | Dev | Berlin\n\n## Done\n- [x] https://boards.greenhouse.io/done/jobs/9 | Done | Dev | Berlin\n');
-  fs.writeFileSync(path.join(d, 'data', 'applications.md'), '| 1 | https://jobs.lever.co/applied/abc | Applied | Dev |\n');
-  fs.writeFileSync(path.join(d, 'data', 'scan-history.tsv'), 'https://jobs.ashbyhq.com/scanned/uuid-1\t2026-11-01\n');
-  fs.writeFileSync(path.join(d, 'notes.md'), 'unrelated\n');
-  return d;
-}
-const snapshot = (d) => Object.fromEntries(fs.readdirSync(d, { recursive: true, withFileTypes: true }).filter((e) => e.isFile()).map((e) => [path.relative(d, path.join(e.parentPath, e.name)), fs.readFileSync(path.join(e.parentPath, e.name), 'utf8')]));
-
-test('career-ops: all three files must be there; setup reads cv.md and profile.yml', () => {
-  const d = careerOpsDir();
-  assert.equal(co.isCareerOpsDir(d), true);
-  assert.equal(runJobs(home, ['setup', 'careerops'], { cwd: os.tmpdir() }).json.detected, false);
-  fs.rmSync(path.join(d, 'data', 'pipeline.md'));
-  assert.equal(co.isCareerOpsDir(d), false);
-  const d2 = careerOpsDir();
-  const r = runJobs(home, ['setup', 'careerops'], { cwd: d2 });
-  assert.equal(r.json.detected, true);
-  assert.match(r.json.profileYml, /role: software engineer/);
-  const p = JSON.parse(fs.readFileSync(path.join(home, '.tenjin-skills', 'job-search', 'profile.json'), 'utf8'));
-  assert.match(p.resumeText, /Compilers, 8 years/);
-  assert.deepEqual(p.careerOps, { dir: fs.realpathSync(d2), pipeline: false });
-});
-
-test('career-ops: dedupe also skips the URLs in the pipeline, applications and scan history', async () => {
-  const d = careerOpsDir();
-  const profile = { ...prof, careerOps: { dir: d, pipeline: false }, includeOld: true };
-  const skip = co.loadSkipUrls(profile);
-  for (const u of ['https://boards.greenhouse.io/old/jobs/1', 'https://boards.greenhouse.io/done/jobs/9', 'https://jobs.lever.co/applied/abc', 'https://jobs.ashbyhq.com/scanned/uuid-1']) assert.ok(skip.has(u), u);
+// ---- the career-ops compatibility feature is gone --------------------------------------
+test('an old profile with the removed careerOps field loads and the field is ignored; J profile set refuses it from now on', () => {
   reset();
-  const sweepMod = await import('../../skills/job-search/scripts/lib/sweep.mjs');
-  const board = ghBoard('Old', [{ id: 1, title: 'Software Engineer' }, { id: 2, title: 'Software Engineer' }]);
-  const payload = await sweepMod.runSweep({ state: store.loadState(), profile: { ...profile, watch: [{ url: 'https://boards.greenhouse.io/old' }] }, overlay: empty, fetch: fakeFetch({ [`${GH}/old/`]: board }), now: NOW });
-  assert.deepEqual(payload.jobs.map((j) => j.sourceId), ['2'], 'job 1 is in the pipeline');
-  const r = await run(webDoc([{ url: 'https://boards.greenhouse.io/old/jobs/1' }]), fakeFetch({ [`${GH}/old/`]: board }), profile);
-  assert.equal(r.added, 0);
+  const pf = path.join(home, '.tenjin-skills', 'job-search', 'profile.json');
+  fs.mkdirSync(path.dirname(pf), { recursive: true });
+  fs.writeFileSync(pf, JSON.stringify({ search: { role: 'software engineer' }, careerOps: { dir: '/old/folder', pipeline: true } }));
+  const got = runJobs(home, ['profile', 'get']);
+  assert.equal(got.code, 0);
+  assert.equal(got.json.search.role, 'software engineer');
+  const set = runJobs(home, ['profile', 'set', JSON.stringify({ frequency: 'weekly' })]);
+  assert.equal(set.code, 0, set.stdout);
+  assert.equal(runJobs(home, ['work']).code, 0, 'the old field breaks nothing');
+  const refused = runJobs(home, ['profile', 'set', JSON.stringify({ careerOps: { dir: '/x', pipeline: true } })]);
+  assert.equal(refused.code, 2);
+  assert.match(refused.json.error, /careerOps is no longer a profile field/);
+  for (const cmd of [['setup', 'careerops'], ['pipeline', 'add']]) assert.equal(runJobs(home, cmd).code, 2, cmd.join(' '));
 });
 
-test('career-ops: the pipeline write needs the yes, goes under ## Pending, and changes no other file', () => {
-  const d = careerOpsDir();
-  const before = snapshot(d);
-  runJobs(home, ['setup', 'careerops'], { cwd: d });
-  const j1 = mkJob({ key: 'https://boards.greenhouse.io/new/jobs/1', status: 'reviewed', company: 'Newco', title: 'Staff Engineer', city: 'Berlin' });
-  j1.employerPosting.url = j1.key;
-  const j2 = mkJob({ key: 'https://boards.greenhouse.io/other/jobs/2', status: 'reviewed', company: 'Other', title: 'Engineer | Platform', city: '', remote: true });
-  j2.employerPosting.url = j2.key;
-  const skipped = mkJob({ key: 'https://boards.greenhouse.io/no/jobs/3', status: 'skipped' });
-  store.updateState((s) => { Object.assign(s, store.emptyState()); s.jobs = { [j1.key]: j1, [j2.key]: j2, [skipped.key]: skipped }; s.contacts[j1.key] = [{ name: 'Bo Lee', title: 'VP Eng', sourceUrl: 'https://newco.test/team', how: 'x', cares: 'y', notConfirmed: true }]; });
-  assert.equal(runJobs(home, ['pipeline', 'add']).code, 4, 'no yes at setup, no write');
-  assert.deepEqual(snapshot(d), before);
-  runJobs(home, ['setup', 'careerops', '--pipeline', 'yes'], { cwd: d });
-  const r = runJobs(home, ['pipeline', 'add']);
-  assert.equal(r.json.appended, 2);
-  const after = snapshot(d);
-  for (const f of Object.keys(before)) if (f !== path.join('data', 'pipeline.md')) assert.equal(after[f], before[f], `${f} is byte for byte the same`);
-  const expected = before[path.join('data', 'pipeline.md')].replace('\n\n## Done', `\n- [ ] https://boards.greenhouse.io/new/jobs/1 | Newco | Staff Engineer | Berlin | note: write to Bo Lee, VP Eng, not confirmed (https://newco.test/team)\n- [ ] https://boards.greenhouse.io/other/jobs/2 | Other | Engineer / Platform | Remote\n\n## Done`);
-  assert.equal(after[path.join('data', 'pipeline.md')], expected, 'inserted at the end of the Pending section, nothing else touched');
-  assert.equal(runJobs(home, ['pipeline', 'add']).json.appended, 0, 'each job once');
-  assert.deepEqual(Object.keys(after), Object.keys(before));
-});
-
-test('career-ops: a missing ## Pending heading is added; a file with no trailing newline stays valid', () => {
-  const d = careerOpsDir();
-  fs.writeFileSync(path.join(d, 'data', 'pipeline.md'), '# Pipeline\n- [x] https://a.test/1 | A | B | C');
-  co.appendPending(d, ['- [ ] https://b.test/2 | X | Y | Z']);
-  assert.equal(fs.readFileSync(path.join(d, 'data', 'pipeline.md'), 'utf8'), '# Pipeline\n- [x] https://a.test/1 | A | B | C\n\n## Pending\n- [ ] https://b.test/2 | X | Y | Z\n');
-  assert.equal(co.pipelineLine(mkJob({ company: 'A', title: 'B', city: 'C' }), null).includes('note:'), false, 'no note when no person was found');
-});
-
-test('career-ops: the pipeline write is refused while a batch is open', () => {
-  const d = careerOpsDir();
-  runJobs(home, ['setup', 'careerops', '--pipeline', 'yes'], { cwd: d });
-  const before = snapshot(d);
-  g.openBatch({ mode: 'attended', uploadPath: '/r.pdf' });
-  assert.equal(runJobs(home, ['pipeline', 'add']).code, 4);
-  assert.deepEqual(snapshot(d), before);
-  assert.equal(runJobs(home, ['setup', 'careerops'], { cwd: d }).code, 4);
-  g.closeBatch();
+test('no file in the skill or the README mentions the removed feature', () => {
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]));
+  const files = [...walk(path.join(ROOT, 'skills', 'job-search')), path.join(ROOT, 'README.md')].filter((f) => /\.(md|mjs|json)$/.test(f));
+  for (const f of files) assert.doesNotMatch(fs.readFileSync(f, 'utf8'), /career[- ]ops|careerops\.mjs|setup careerops|pipeline add/i, f);
+  assert.equal(fs.existsSync(path.join(ROOT, 'skills', 'job-search', 'scripts', 'lib', 'careerops.mjs')), false);
+  assert.equal(fs.existsSync(path.join(ROOT, 'skills', 'job-search', 'references', 'careerops.md')), false);
 });
 
 // ---- 12 and 13. the description, the credit, no decline rule ------------------
 test('the description covers the find-jobs uses; README names find-jobs and no file carries a license notice for it', () => {
   const skill = fs.readFileSync(path.join(ROOT, 'skills', 'job-search', 'SKILL.md'), 'utf8');
   const desc = /^description: >-\n((?:  .+\n)+)/m.exec(skill)[1].replace(/\n\s*/g, ' ').trim();
-  for (const w of ['any job hunt', 'only the new postings', 'hiring manager', 'career-ops pipeline', 'attended', 'unattended', 'Do not use it for a cover letter, resume tailoring, interview prep or a job offer']) assert.ok(desc.includes(w) || skill.includes(w), w);
+  for (const w of ['any job hunt', 'only the new postings', 'hiring manager', 'attended', 'unattended', 'Do not use it for a cover letter, resume tailoring, interview prep or a job offer']) assert.ok(desc.includes(w) || skill.includes(w), w);
   assert.ok(desc.length < 1536, 'under the listing limit');
   // find-jobs is the company's own work: no license wording about it, and no copyright line, in any file of the skill or the README
   const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]));
@@ -360,7 +299,6 @@ test('the description covers the find-jobs uses; README names find-jobs and no f
     assert.doesNotMatch(t, /find-jobs[^.\n]{0,80}\bMIT\b|\bMIT\b[^.\n]{0,80}find-jobs/i, `${f} says MIT about find-jobs`);
     assert.doesNotMatch(t, /Copyright \(c\) \d{4} vraspar|Permission is hereby granted, free of charge/, `${f} holds the notice`);
   }
-  assert.doesNotMatch(fs.readFileSync(path.join(ROOT, 'skills', 'job-search', 'references', 'careerops.md'), 'utf8'), /find-jobs/, 'careerops.md covers only career-ops');
   assert.match(fs.readFileSync(path.join(ROOT, 'skills', 'job-search', 'CHANGES.md'), 'utf8'), /vraspar\/find-jobs/);
   assert.match(fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8'), /vraspar\/find-jobs/);
   const all = [skill, ...fs.readdirSync(path.join(ROOT, 'skills', 'job-search', 'references')).map((f) => fs.readFileSync(path.join(ROOT, 'skills', 'job-search', 'references', f), 'utf8'))].join('\n');
