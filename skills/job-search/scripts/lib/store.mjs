@@ -202,6 +202,7 @@ export function applyOp(state, op) {
       break;
     case 'approve':
       if (!job.sheet || job.sheet.hash !== op.sheetHash) throw new Error('the yes must name this job and its current sheet hash');
+      if (job.sheet.passed !== true) throw new Error('the yes needs a complete sheet that passed its check');
       state.approvals[op.key] = { sheetHash: op.sheetHash, at: op.at || new Date().toISOString() };
       break;
     case 'signal': {

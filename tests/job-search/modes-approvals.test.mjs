@@ -126,7 +126,8 @@ test('may-submit answers no after fill-only, a withdraw, a changed sheet, a clos
   const j = ready(6);
   reset([j]);
   J('approve', j.key);
-  const st = () => store.loadState();
+  // the job was handed out (apply next), which may-submit now requires
+  const st = () => { const s = store.loadState(); s.jobs[j.key].inFlight = { at: new Date().toISOString(), host: 'h', mode: 'attended', submit: true, sheetHash: 'h6' }; return s; };
   const may = (over = {}, open = true) => approval.maySubmit({ ...st(), ...over }, {}, empty, j.key, 'h6', open);
   assert.equal(may().ok, true);
   assert.equal(may({}, false).why, 'batch_closed');

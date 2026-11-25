@@ -110,6 +110,8 @@ test('no_chrome_tools: one reason, one notification, nothing submitted, not coun
   const w1 = runJobs(home, ['work', '--commit']);
   assert.match(w1.json.notify, /no chrome tools/);
   assert.equal(runJobs(home, ['work', '--commit']).json.notify, null, 'one notification');
+  assert.equal(store.loadState().batch, null, 'a Chrome stop closes the batch, attended too');
+  open('attended');
   const next = runJobs(home, ['apply', 'next']);
   assert.deepEqual(next.json.queue, [{ key: j.key, reason: 'no_chrome_tools' }]);
   assert.equal(next.json.handout, null);

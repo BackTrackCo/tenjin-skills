@@ -11,6 +11,7 @@ import { parseWritingResult } from './writing.mjs';
 // A LinkedIn profile is thin: employers with dates and no job titles. A form that needs a file, or work history with titles,
 // holds only that job and asks once for a resume file or the text.
 export const NEEDS_HISTORY = /work history|employment history|job titles?|previous (employer|job|role)s?|most recent (role|employer)|current (title|role)/i;
+export const SHEET_HOLDS = ['needs_facts', 'unknown_field', 'forbidden_field', 'form_changed', 'eeo_missing', 'needs_resume_file'];
 export function checkJobSheet(job, live = null, profile = {}) {
   const r = checkSheet(job.sheet, live);
   if (profile.resumeThin && [...(job.sheet.fields || []), ...(job.sheet.unanswered || [])].some((f) => NEEDS_HISTORY.test(f.label))) {
@@ -21,7 +22,9 @@ export function checkJobSheet(job, live = null, profile = {}) {
   job.sheet.passed = r.ok;
   if (r.ok) {
     job.awaitingApproval = false;
-    unpark(job);
+    // A passing sheet check lifts only a hold the sheet itself caused; a stop (a bot check, a login, a suspected injection, a
+    // read-back that failed) stays until the person or `J unpark` lifts it.
+    if (!job.parked || job.parked.reasons.every((x) => SHEET_HOLDS.includes(x))) unpark(job);
     if (job.status === 'prepared') job.status = 'apply_ready';
   } else {
     const facts = job.sheet.unanswered.filter((u) => u.factKey || u.ack).map((u) => u.factKey || `ack:${u.ack}`);

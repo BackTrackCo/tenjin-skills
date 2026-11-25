@@ -183,7 +183,7 @@ export function buildSheet({ job, questions, profile, answers = [], drafts = {} 
     fields.push({ label: q.label, value, tag, required: q.required });
   }
   const sheet = { job: job.key, fields, unanswered, forbidden, eeoMissing, eeoFields };
-  sheet.hash = sha(canonical({ job: job.key, fields: fields.map((f) => [f.label, f.value]) })).slice(0, 16);
+  sheet.hash = sha(canonical({ job: job.key, fields: fields.map((f) => [f.label, f.value]), open: [...unanswered.map((u) => u.label), ...forbidden].sort() })).slice(0, 16);
   return sheet;
 }
 
@@ -215,6 +215,9 @@ export function checkReadBack(sheet, read) {
     const got = by.get(normLabel(f.label));
     if (got !== String(f.value).trim() && !(f.tag === 'ack' && /^(true|checked|yes|on)$/i.test(got || ''))) { problems.push(`read-back differs: ${f.label}`); fields.push({ label: f.label, value: got === undefined ? null : got }); }
   }
+  // A field the form holds that is not on the sheet, with a value in it, was filled by something other than the sheet.
+  const known = new Set(sheet.fields.map((f) => normLabel(f.label)));
+  for (const r of read) if (r && !known.has(normLabel(r.label)) && String(r.value ?? '').trim() !== '') { problems.push(`a field the sheet does not hold has a value: ${r.label}`); fields.push({ label: r.label, value: String(r.value).trim(), extra: true }); }
   return { ok: problems.length === 0, problems, fields };
 }
 

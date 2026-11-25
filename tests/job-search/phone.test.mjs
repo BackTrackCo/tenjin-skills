@@ -122,7 +122,7 @@ test('a filled job offers Submit it now, I\'ll submit in Chrome and Not this one
   assert.deepEqual(q.questions[0].options.map((o) => o.label), ['Submit it now (Recommended)', 'I\'ll submit in Chrome', 'Not this one']);
   assert.deepEqual(qs.validateAsk({ questions: q.questions }), []);
   const profile = { eeoText: 'Decline every voluntary demographic question (test placeholder).', applyMode: 'fill_only' };
-  const may = () => approval.maySubmit(store.loadState(), profile, empty, job.key, 'h50', true);
+  const may = () => { const s = store.loadState(); s.jobs[job.key].inFlight = { at: new Date().toISOString(), host: 'h', mode: 'attended', submit: true, sheetHash: s.jobs[job.key].sheet.hash }; return approval.maySubmit(s, profile, empty, job.key, 'h50', true); };
   assert.equal(may().why, 'fill_only', 'the fill-only mode never reaches a submit without that answer');
   const base = { overlay: empty, mode: 'attended', now: Date.now(), batchOpen: true, profile };
   assert.equal(ap.applyNext({ ...base, state: store.loadState() }).handouts.length, 0, 'a filled job is not handed out again');

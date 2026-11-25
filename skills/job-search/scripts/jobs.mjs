@@ -39,7 +39,7 @@ import { routeContacts, routedRounds } from './lib/routed.mjs';
 import { resumeHeld } from './lib/held.mjs';
 import { DEFAULT_BUDGET_MS, runHn } from './lib/hn.mjs';
 import { DEFAULT_YC_BUDGET_MS, runYc } from './lib/yc.mjs';
-import { isFillOnly, markFillReady, markSubmitted } from './lib/fillonly.mjs';
+import { fillRulesKey, isFillOnly, markFillReady, markSubmitted } from './lib/fillonly.mjs';
 
 // The sheets waiting for the person's yes, best fit first: the report lists them one line each.
 export function readySheets(st) {
@@ -130,7 +130,10 @@ const commands = {
   async batch([sub], flags) {
     if (sub === 'open') {
       const profile = readProfile();
-      const p = batch.openBatch({ mode: flags.unattended ? 'unattended' : 'attended', uploadPath: flags.upload || profile.resumeUploadPath || profile.resumePath });
+      // Only the resume the person named is ever uploaded: a path of its own must be that file.
+      const named = profile.resumeUploadPath || profile.resumePath || null;
+      if (flags.upload !== undefined && flags.upload !== named) return out({ error: 'batch open --upload must be the resume the person named (profile resumeUploadPath or resumePath)' }, 4);
+      const p = batch.openBatch({ mode: flags.unattended ? 'unattended' : 'attended', uploadPath: named });
       return out({ mode: p.mode, next: 'run apply next' });
     }
     if (sub === 'close') {
@@ -143,6 +146,7 @@ const commands = {
 
   async ops([arg]) {
     const ops = readJsonArg(arg);
+    if (Array.isArray(ops) && ops.some((o) => o && o.op === 'approve') && batch.isActive() && batch.batchMode() === 'unattended') return out({ error: 'ops approve is refused while an unattended batch is open' }, 4);
     const r = applyOps(ops);
     const ranked = (Array.isArray(ops) ? ops : []).filter((o) => o.op === 'rank').length;
     if (ranked) updateState((s) => logRun(s, 'review', ranked));
@@ -223,7 +227,8 @@ const commands = {
       const r = checkReadBack(job.sheet, readJsonArg(flags.read));
       return out(updateState((s) => {
         const j = s.jobs[key];
-        if (r.ok) { j.readbackTries = 0; return r; }
+        if (r.ok) { j.readbackTries = 0; j.readbackBad = null; return r; }
+        j.readbackBad = { hash: j.sheet.hash, at: new Date().toISOString() }; // may-submit says no until a read-back confirms
         j.readbackTries = (j.readbackTries || 0) + 1;
         if (j.readbackTries < 2) return { ...r, refill: r.fields, next: 'fill those fields again once, then read the form\'s values back again' };
         j.readbackTries = 0;
@@ -237,16 +242,19 @@ const commands = {
   async apply([sub], flags) {
     if (sub !== 'next') return out({ error: 'apply next [--unattended] [--all]' }, 2);
     const mode = flags.unattended ? 'unattended' : 'attended';
-    batch.touchBatch();
+    // A batch idle past its window stays closed: it is cleaned up here, never revived by this call.
+    batch.cleanupStale();
     const state = loadState();
-    const res = applyNext({ state, profile: readProfile(), overlay: loadOverlay(), mode, batchOpen: batch.isActive(Date.now(), state), writingRulesText: readWritingRules(), all: flags.all === true });
+    const open = batch.isActive(Date.now(), state);
+    if (open) batch.touchBatch();
+    const res = applyNext({ state, profile: readProfile(), overlay: loadOverlay(), mode, batchOpen: open, writingRulesText: readWritingRules(), all: flags.all === true });
     let batchClosed = false;
     updateState((s) => {
-      for (const q of res.queue) if (s.jobs[q.key] && !['sheet_not_checked', 'no_recorded_yes', 'no_chrome_tools', 'host_busy'].includes(q.reason)) park(s.jobs[q.key], [q.reason]);
+      for (const q of res.queue) if (s.jobs[q.key] && !['sheet_not_checked', 'no_recorded_yes', 'no_chrome_tools', 'host_busy', 'parked'].includes(q.reason)) park(s.jobs[q.key], [q.reason]);
       for (const h of res.handouts) {
         logRun(s, 'browser', 1);
         (s.handouts ||= []).push({ key: h.key, at: new Date().toISOString(), counted: Boolean(h.submit || h.fillOnly) });
-        s.jobs[h.key].inFlight = { at: new Date().toISOString(), host: h.host };
+        s.jobs[h.key].inFlight = { at: new Date().toISOString(), host: h.host, mode: h.mode, submit: h.submit, sheetHash: h.sheetHash };
       }
       if (res.handouts.length) refreshClaims(s, 'apply_ready');
       // An unattended round ends in code: nothing left to submit (empty, held, parked or refused) closes the batch, but never
@@ -304,7 +312,11 @@ const commands = {
       // one click never both answers a fact and approves.
       return out({ saved: Object.keys(given), sheetComplete: true, next: `ask the approval now: J ask approval --key ${keys[0]}` });
     }
-    if (flags.all === true || flags['no-new'] === true) list = readySheets(st).filter((r) => !r.missingFacts.length && (flags.all === true || !r.newAnswers.length)).map((r) => r.key);
+    if (flags.all === true || flags['no-new'] === true) {
+      // Bound to what was shown: only the sheets the last `ask approve` listed, and only while each still has the shown hash.
+      const shown = st.shownApprove ? st.shownApprove.sheets : null;
+      list = readySheets(st).filter((r) => !r.missingFacts.length && (flags.all === true || !r.newAnswers.length) && (!shown || (r.key in shown && st.jobs[r.key].sheet.hash === shown[r.key]))).map((r) => r.key);
+    }
     if (!list.length) return out({ error: 'approve <key...> | --all | --no-new (nothing to approve)' }, 2);
     for (const k of list) if (st.jobs[k] && applyPathOf(st.jobs[k], readProfile()) === 'ask') {
       if (flags.all === true || flags['no-new'] === true) { list = list.filter((x) => applyPathOf(st.jobs[x], readProfile()) !== 'ask'); break; }
@@ -312,12 +324,14 @@ const commands = {
     }
     if (!list.length) return out({ error: 'every listed job waits for its where choice (J ask approval --key <job>)' }, 4);
     for (const k of list) if (!st.jobs[k] || !st.jobs[k].sheet || !st.jobs[k].sheet.passed) return out({ error: `${k} has no complete sheet yet: answer its missing facts (J ask approval <key>)` }, 4);
+    // The yes is for the sheet the person was shown: a sheet that changed since `ask approval` needs its question again.
+    for (const k of list) { const shownHash = st.jobs[k].approvalShown && st.jobs[k].approvalShown.hash; if (shownHash && shownHash !== st.jobs[k].sheet.hash) return out({ error: `${k}: the sheet changed after it was shown; ask again with J ask approval --key ${k}` }, 4); }
+    if (flags['submit-now'] === true) for (const k of list) if (!st.jobs[k].fillReady) return out({ error: `${k} is not filled and waiting` }, 4);
     const res = applyOps(list.map((key) => ({ op: 'approve', key, sheetHash: st.jobs[key].sheet.hash })));
     // "Submit it now" on a filled form: the yes for the unchanged sheet hash lifts fill-only for that job; `J may-submit` checks it and
     // the browser subagent presses submit, filling again first (in one pass) when the tab was closed or the form lost its values.
     if (flags['submit-now'] === true) {
-      for (const k of list) if (!st.jobs[k] || !st.jobs[k].fillReady) return out({ error: `${k} is not filled and waiting` }, 4);
-      updateState((s) => { for (const k of list) { s.approvals[k] = { sheetHash: s.jobs[k].sheet.hash, at: new Date().toISOString() }; s.jobs[k].submitNow = { sheetHash: s.jobs[k].sheet.hash, at: new Date().toISOString() }; s.jobs[k].fillOnly = false; bump(s.jobs[k]); } });
+      updateState((s) => { for (const k of list) { s.approvals[k] = { sheetHash: s.jobs[k].sheet.hash, at: new Date().toISOString() }; s.jobs[k].submitNow = { sheetHash: s.jobs[k].sheet.hash, fillRules: fillRulesKey(loadOverlay()), at: new Date().toISOString() }; s.jobs[k].fillOnly = false; bump(s.jobs[k]); } });
       const fin = loadState();
       return out({ submitNow: list.length, state: `Submitted: none yet. Submitting after one last check: ${[...new Set(list.map((k) => fin.jobs[k].company))].join(', ')}.${fin.chrome === 'off' ? ` Waiting: Claude in Chrome is off in this session. ${CHROME_STEPS}` : ''}`, next: 'start the browser subagent with J apply next --all (fromFilled): it runs J may-submit, then presses submit, or fills again and submits when the tab is gone' });
     }
@@ -380,7 +394,10 @@ const commands = {
   },
   async dryrun([sub, key, json]) {
     return out(updateState((s) => {
-      if (sub === 'record') return recordDryRun(s, { key, ...readJsonArg(json) });
+      if (sub === 'record') {
+        if (!s.jobs[key]) throw new Error(`unknown job: ${key}`);
+        return recordDryRun(s, { key, ...readJsonArg(json) });
+      }
       if (sub === 'confirm') return confirmDryRun(s, readProfile(), loadOverlay());
       throw new Error('dryrun record <key> <json> | confirm');
     }) || { ok: true });
@@ -394,6 +411,7 @@ const commands = {
       if (!job) throw new Error(`unknown job: ${key}`);
       s.stops.push({ key, kind, at: new Date().toISOString(), host: job.ats, company: job.company });
       job.inFlight = null; // a stop on one job frees its host and leaves the others handed out
+      job.mayAt = null;
       if (kind === 'chrome_disconnected') s.held.push({ reason: 'chrome_disconnected', detail: job.company });
       else if (kind === 'no_chrome_tools') {
         // The browser result reported no Chrome tools. One reason, one notification, nothing submitted, not applied.
@@ -404,7 +422,11 @@ const commands = {
         park(job, [kind]);
       }
       // a stop that ends the round also closes an unattended batch, in code
-      if (['captcha', 'chrome_disconnected', 'no_chrome_tools'].includes(kind) && s.batch && s.batch.mode === 'unattended') {
+      if (['chrome_disconnected', 'no_chrome_tools'].includes(kind) && s.batch) {
+        // Chrome is gone: every open check says no, in an attended batch too, until a new batch is opened.
+        s.batch = null;
+        closed = true;
+      } else if (kind === 'captcha' && s.batch && s.batch.mode === 'unattended') {
         s.batch = null;
         closed = true;
       }
@@ -672,7 +694,11 @@ const commands = {
   // The last check right before the submit click: the browser subagent presses submit only on yes.
   async 'may-submit'([key, hash]) {
     if (!key || !hash) return out({ error: 'may-submit <key> <sheet hash>' }, 2);
-    const r = maySubmit(loadState(), readProfile(), loadOverlay(), key, hash, batch.isActive());
+    const r = updateState((s) => {
+      const res = maySubmit(s, readProfile(), loadOverlay(), key, hash, batch.isActive(Date.now(), s), { mode: batch.batchMode(s) === 'unattended' ? 'unattended' : 'attended', writingRulesText: readWritingRules() });
+      if (res.ok) s.jobs[key].mayAt = new Date().toISOString(); // the one pass: a second check or a second handout is refused
+      return res;
+    });
     return out(r, r.ok ? 0 : 4);
   },
   // Whether the Claude in Chrome tools are in this session, recorded at every start and after a /chrome reconnect. With them
@@ -790,6 +816,8 @@ const commands = {
     return out(updateState((s) => {
       if (!s.jobs[key]) throw new Error(`unknown job: ${key}`);
       s.jobs[key].fillOnly = onoff !== 'off';
+      if (onoff !== 'off') s.jobs[key].submitNow = null; // fill-only turned on again ends a "Submit it now"
+      bump(s.jobs[key]);
       return { fillOnly: s.jobs[key].fillOnly };
     }));
   },
@@ -879,7 +907,7 @@ const commands = {
     if (kind === 'approval') {
       const job = loadState().jobs[flags.key];
       if (!job || !job.sheet) return out({ error: 'ask approval --key <job>: prepare its sheet first' }, 2);
-      updateState((st) => { markShown(st, [`yes:${flags.key}`]); }); // the application is shown with this call: no push repeats it
+      updateState((st) => { markShown(st, [`yes:${flags.key}`]); st.jobs[flags.key].approvalShown = { hash: job.sheet.hash, at: new Date().toISOString() }; }); // the application is shown with this call: no push repeats it
       { const ap = qs.approvalQuestions(job, applyPathOf(job, readProfile()), { chromeOff: loadState().chrome === 'off' }); const bad = ap.questions.length ? qs.validateAsk(ap) : []; return bad.length ? out({ error: bad.join('; ') }, 2) : out(ap); }
     }
     if (kind === 'approve-pick') return out({ groups: qs.approvePickQuestions(readySheets(loadState()), { chromeOff: loadState().chrome === 'off' }) });
@@ -889,7 +917,7 @@ const commands = {
       return out(qs.appliedQuestion(job));
     }
     if (kind === 'eeo') return out({ error: 'EEO is never a choice question and never goes through the question tool: ask the plain question J eeo question --key <job> prints, then save the answer with J eeo set' }, 2);
-    const make = { approve: () => qs.approveListQuestion(readySheets(loadState()).length, { chromeOff: loadState().chrome === 'off' }), start: () => qs.startQuestions({ chromeOff: loadState().chrome === 'off', rc: loadState().rc || 'unknown', pushSent: loadState().pushSent === true, settings: pushSettings() }), auto: () => qs.autoModeQuestion({ chromeOff: loadState().chrome === 'off' }), place: () => qs.placeQuestion(arg), role: () => qs.roleQuestion(arg), acknowledge: () => qs.acknowledgeQuestion(arg), follow_up_detail: () => qs.followUpDetail(arg), resume: () => qs.resumeChoiceQuestion(arg), tenjin: () => qs.tenjinAsk(arg), follow_up: () => qs.followUpQuestion(arg), contacts: () => qs.contactsCountQuestion(), 'optional-writing': () => qs.optionalWritingQuestion(), fact: () => qs.factQuestion(arg), yes: () => qs.sheetYesQuestion(arg), email: () => qs.emailBatchQuestion(em.addBatchPeek(loadState()), flags.group === undefined ? null : Number(flags.group)), 'email-mode': () => qs.emailModeQuestion() }[kind];
+    const make = { approve: () => { const rows = readySheets(loadState()); updateState((st) => { st.shownApprove = { at: new Date().toISOString(), sheets: Object.fromEntries(rows.map((r) => [r.key, st.jobs[r.key].sheet.hash])) }; }); return qs.approveListQuestion(rows.length, { chromeOff: loadState().chrome === 'off' }); }, start: () => qs.startQuestions({ chromeOff: loadState().chrome === 'off', rc: loadState().rc || 'unknown', pushSent: loadState().pushSent === true, settings: pushSettings() }), auto: () => qs.autoModeQuestion({ chromeOff: loadState().chrome === 'off' }), place: () => qs.placeQuestion(arg), role: () => qs.roleQuestion(arg), acknowledge: () => qs.acknowledgeQuestion(arg), follow_up_detail: () => qs.followUpDetail(arg), resume: () => qs.resumeChoiceQuestion(arg), tenjin: () => qs.tenjinAsk(arg), follow_up: () => qs.followUpQuestion(arg), contacts: () => qs.contactsCountQuestion(), 'optional-writing': () => qs.optionalWritingQuestion(), fact: () => qs.factQuestion(arg), yes: () => qs.sheetYesQuestion(arg), email: () => qs.emailBatchQuestion(em.addBatchPeek(loadState()), flags.group === undefined ? null : Number(flags.group)), 'email-mode': () => qs.emailModeQuestion() }[kind];
     if (!make) return out({ error: 'ask start | auto | place --json {guess,remote} | role --json {guess} | acknowledge --json {company,text,link} | follow_up_detail --json {company} | resume --json {header,question,guess,next} | tenjin --json {line,status} | eeo --json {label,options} | optional-writing | fact --json {label,options} | yes --json {company,title} | email | email-mode | approve | approve-pick | approval --key <job>' }, 2);
     if (batch.isActive() && batch.batchMode() === 'unattended') return out({ error: 'no questions in an unattended turn: nobody can answer; hold the job and notify' }, 4);
     const p = make();
@@ -1141,7 +1169,7 @@ async function main() {
   const oldState = readOldStateFields();
   if (oldState.length) return out({ error: oldStateError(oldState) }, 2);
   // A command that changes what a submit may do is refused while a batch is open, whoever calls it.
-  if (batch.isBatchDenied(cmd, pos[0]) && batch.isActive()) return out({ error: `${cmd} ${pos[0] || ''} is refused while a batch is open; close it in an attended session first`.replace('  ', ' ') }, 4);
+  if (batch.isBatchDenied(cmd, pos[0], batch.batchMode()) && batch.isActive()) return out({ error: `${cmd} ${pos[0] || ''} is refused while a batch is open; close it in an attended session first`.replace('  ', ' ') }, 4);
   try {
     await commands[cmd](pos, flags);
     if (cmd !== 'watch') touchLease();

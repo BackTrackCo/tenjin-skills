@@ -21,7 +21,12 @@ export const BATCH_DENIED = [
   ['dryrun', 'confirm'], ['batch', 'open'],
   ['release', 'apply'], ['intros', 'save'], ['contacts', 'count'], ['leads', 'save'], ['leads', 'mark'], ['email', 'approve'], ['email', 'mode'],
 ];
-export const isBatchDenied = (cmd, sub) => BATCH_DENIED.some(([c, s]) => c === cmd && (s === null || s === sub));
+// Also refused while an unattended batch is open: nobody is there to say yes, so nothing may record one or loosen a stop.
+export const UNATTENDED_DENIED = [
+  ['approve', null], ['ask', 'approval'], ['fillonly', null], ['unpark', null], ['chrome', 'set'],
+  ['sheet', 'build'], ['eeo', 'set'], ['eeo', 'add'], ['eeo', 'skip'], ['eeo', 'answer'], ['agree', null], ['resume', 'set'],
+];
+export const isBatchDenied = (cmd, sub, mode = null) => BATCH_DENIED.some(([c, s]) => c === cmd && (s === null || s === sub)) || (mode === 'unattended' && UNATTENDED_DENIED.some(([c, s]) => c === cmd && (s === null || s === sub)));
 
 export const batchOf = (state = loadState()) => state.batch || null;
 export const batchExists = (state) => Boolean(batchOf(state));
