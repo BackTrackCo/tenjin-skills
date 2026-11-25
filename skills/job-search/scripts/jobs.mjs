@@ -8,7 +8,7 @@ import { SKILL_DIR, ensureDir, readJson, stateDir, writeJsonAtomic } from './lib
 import { applyOp, applyOps, compact, loadState, updateState, view } from './lib/store.mjs';
 import { addLesson, addRule, deriveLessons, loadOverlay, removeRule } from './lib/overlay.mjs';
 import { persist, runSweep } from './lib/sweep.mjs';
-import { LEAVE_REASONS, ITEM_LEAVE_REASONS, advanceSearch, askFirst, itemKind, leaveItem, leaveRecord, park, unpark, workList } from './lib/work.mjs';
+import { refreshClaims, releaseClaims, LEAVE_REASONS, ITEM_LEAVE_REASONS, advanceSearch, askFirst, itemKind, leaveItem, leaveRecord, park, unpark, workList } from './lib/work.mjs';
 import { applyRoundDrafts, checkJobSheet, prepareInCode, writableFields } from './lib/prepare.mjs';
 import { logRun } from './lib/runlog.mjs';
 import * as em from './lib/email.mjs';
@@ -250,7 +250,7 @@ const commands = {
     let batchClosed = false;
     updateState((s) => {
       for (const q of res.queue) if (s.jobs[q.key] && !['sheet_not_checked', 'no_recorded_yes', 'no_chrome_tools'].includes(q.reason)) park(s.jobs[q.key], [q.reason]);
-      if (res.handout) logRun(s, 'browser', 1);
+      if (res.handout) { logRun(s, 'browser', 1); refreshClaims(s, 'apply_ready'); }
       if (res.handout) (s.handouts ||= []).push({ key: res.handout.key, at: new Date().toISOString(), counted: Boolean(res.handout.submit || res.handout.fillOnly) });
       // An unattended round ends in code: nothing left to submit (empty, held, parked or refused) closes the batch.
       if (mode === 'unattended' && !res.handout && s.batch && s.batch.mode === 'unattended') {
@@ -524,6 +524,7 @@ const commands = {
     }
     const state = loadState();
     const r = await ingest({ obj, state, profile: readProfile(), overlay: loadOverlay(), fetch: globalThis.fetch });
+    if (obj) updateState((s) => releaseClaims(s, (key) => key === obj.jobKey || (Array.isArray(obj.batch) && key.startsWith('posts:')) || key === `need:${obj.need}` || (obj.need === 'web_search' && (key === 'web' || key === 'search'))));
     if (obj && !r.held.length) updateState((s) => logRun(s, obj.need === 'web_search' ? 'web_search' : obj.need === 'careers_page' ? 'careers' : Array.isArray(obj.batch) ? 'post_review' : obj.need === 'people_search' ? 'contacts' : 'search', 1));
     return out(r, r.held.length && !r.added && !r.applyYourself && !r.posts ? 4 : 0);
   },
@@ -718,6 +719,7 @@ const commands = {
           s.jobs[k].left = leaveRecord(s, s.jobs[k], overlay, flags.reason, profile);
         } else leaveItem(s, k, flags.reason, profile);
       }
+      releaseClaims(s, (key) => keys.includes(key) || keys.includes(`contacts:${key}`) || keys.some((k) => k === `contacts:${key}`));
       return { left: keys.length, reason: flags.reason, ...(keys.some((k) => itemKind(k) === 'contacts') && flags.unattended !== true ? { askTenjin: askFirst(s, 'contacts') } : {}) };
     }));
   },

@@ -1,13 +1,13 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ALIVE_MS, TICK_MS, beat, claimLease, heartbeat, releaseLease } from './lease.mjs';
+import { ALIVE_MS, TICK_MS, beat, claimLease, heartbeat, leaseFresh, releaseLease } from './lease.mjs';
 import { checkRelease, recordRelease } from './release.mjs';
 import { SKILL_DIR, readJson, stateDir } from './paths.mjs';
 import { loadState, updateState } from './store.mjs';
 import { loadOverlay } from './overlay.mjs';
 import { persist, runSweep, sweepDue } from './sweep.mjs';
-import { waitingSet, workList } from './work.mjs';
+import { claimActive, settleClaims, unclaimedDue, waitingSet, workList } from './work.mjs';
 import { frequencyOf } from './schedule.mjs';
 import { routedRounds } from './routed.mjs';
 import { prepareInCode } from './prepare.mjs';
@@ -72,11 +72,15 @@ export async function tick(ctx) {
       updateState((st) => { st.held = [...st.held.filter((h) => !String(h.detail).startsWith('code:')), { reason: 'source_empty', detail: `code: ${e.message}` }]; });
     }
   }
+  // Claimed work is in flight: settle the claims (end the ones past their limit on a still-open item, drop the ones for items
+  // no longer due), then read the list again, so a timed-out item carries its version change.
+  { const before = workList({ now, commit: false }); updateState((st) => settleClaims(st, before.items, now)); }
   const wl = workList({ now, commit: false });
+  const claimState = loadState();
   // Wake the model only for due work it can act on now. What waits for the person never wakes it (its one notification
   // is the notify line). The fingerprint of what was last sent is kept in state, so a restart or a re-arm repeats nothing,
   // and nothing repeats on a timer: it wakes when the due set gains an item or an item's version changes.
-  const actionable = wl.items.filter((i) => !i.waitsForPerson);
+  const actionable = wl.items.filter((i) => !i.waitsForPerson && !claimActive(claimState, i, now));
   const tokens = actionable.map((i) => `${i.key}:${i.reason}:${i.v}`).sort();
   const st = loadState().watcher || { sent: [], fingerprint: null, notify: null };
   const fresh = tokens.filter((t) => !st.sent.includes(t));
@@ -113,7 +117,22 @@ export async function tick(ctx) {
 // work only when an actionable wake is due under the wake rules, and the exit is what wakes the session. It never exits
 // because of time, and it keeps ticking with no output on a quiet state. A restarted watcher reads the stored fingerprint, so
 // it does not exit again for the same due set. A second watcher exits at once when another holds the lease.
-export async function runWatcher({ holder = Math.random().toString(36).slice(2, 10), pid = process.pid, fetchImpl, runner, write = (l) => process.stdout.write(`${l}\n`), sleep = (ms) => new Promise((r) => setTimeout(r, ms)), tickMs = TICK_MS, maxTicks = Infinity, ctx = {}, clock = () => Date.now(), timer = (fn, ms) => { const t = setInterval(fn, ms); t.unref(); return () => clearInterval(t); }, tickImpl = tick } = {}) {
+export async function runWatcher({ holder = Math.random().toString(36).slice(2, 10), pid = process.pid, fetchImpl, runner, write = (l) => process.stdout.write(`${l}\n`), sleep = (ms) => new Promise((r) => setTimeout(r, ms)), tickMs = Number(process.env.JOB_SEARCH_TICK_MS) || TICK_MS, maxTicks = Infinity, ctx = {}, clock = () => Date.now(), timer = (fn, ms) => { const t = setInterval(fn, ms); t.unref(); return () => clearInterval(t); }, tickImpl = tick } = {}) {
+  // Code holds the restart rule: the watcher starts only as the last step of the turn. While any actionable due item is
+  // unclaimed, it refuses with one line naming them, so a watcher started in the middle of a round cannot see the round's
+  // own new items as new work.
+  { const cur = loadState().lease;
+    if (cur && leaseFresh(cur, clock()) && cur.holder !== holder) {
+      write('another session holds the lease; work attended');
+      return { exit: 0, reason: 'lease_held' };
+    }
+    const st = loadState(); const wl = workList({ now: clock(), commit: false }); const open = unclaimedDue(st, wl.items, clock());
+    if (open.length) {
+      const names = {};
+      for (const i of open) names[i.reason] = (names[i.reason] || 0) + 1;
+      write(`not started: ${Object.entries(names).map(([k, n]) => `${n} ${k}`).join(', ')} due and not handed out; run J work --commit, hand them out, then start J watch last`);
+      return { exit: 0, reason: 'unclaimed', open: open.map((i) => i.key) };
+    } }
   const claim = await claimLease({ holder, pid, now: clock() });
   if (!claim.ok) {
     write('another session holds the lease; work attended');

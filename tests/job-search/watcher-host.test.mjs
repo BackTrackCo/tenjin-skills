@@ -10,6 +10,7 @@ const S = '../../skills/job-search/scripts/lib/';
 const store = await import(`${S}store.mjs`);
 const lease = await import(`${S}lease.mjs`);
 const watcher = await import(`${S}watcher.mjs`);
+const work = await import(`${S}work.mjs`);
 
 const dir = () => path.join(process.env.TENJIN_SKILLS_DIR, 'job-search');
 const reset = (jobs = []) => {
@@ -34,9 +35,13 @@ test('a quiet state keeps ticking with no output and never exits because of time
   assert.equal(store.loadState().lease, null, 'the lease is released when it ends');
 });
 
+// The round's work arrives while the watcher runs, as it does in a live round: `add` runs during the first sleep.
+const arriving = (add) => { let done = false; return async () => { if (!done) { done = true; add(); } }; };
+const claimAll = () => work.workList({ commit: true }); // J work --commit: what the round handed out is claimed
+
 test('it exits 0 with one line when an actionable wake is due, and that line names the work', async () => {
-  reset([due(1), due(2)]);
-  const r = await run({ maxTicks: 10 });
+  reset();
+  const r = await run({ maxTicks: 10, sleep: arriving(() => store.updateState((s) => { for (const j of [due(1), due(2)]) s.jobs[j.key] = j; })) });
   assert.equal(r.reason, 'due');
   assert.equal(r.exit, 0);
   assert.equal(r.out.length, 2);
@@ -46,8 +51,9 @@ test('it exits 0 with one line when an actionable wake is due, and that line nam
 });
 
 test('a restarted watcher reads the stored fingerprint: it does not exit again for the same due set, only for a new item or a new version', async () => {
-  reset([due(1)]);
-  assert.equal((await run({ maxTicks: 5 })).reason, 'due');
+  reset();
+  assert.equal((await run({ maxTicks: 5, sleep: arriving(() => store.updateState((s) => { s.jobs[due(1).key] = due(1); })) })).reason, 'due');
+  claimAll(); // the round handled its work and claimed it before the restart
   const again = await run({ maxTicks: 4 });
   assert.equal(again.reason, 'max_ticks', 'the same due set: no second exit');
   assert.deepEqual(again.out, ['watching; exits when work is due']);
@@ -55,29 +61,30 @@ test('a restarted watcher reads the stored fingerprint: it does not exit again f
   store.updateState((s) => { delete s.jobs[Object.keys(s.jobs)[0]]; });
   assert.equal((await run({ maxTicks: 3 })).reason, 'max_ticks');
   // a new item: it exits, and only once
-  reset([due(1)]);
-  await run({ maxTicks: 5 });
-  store.updateState((s) => { const j = due(2); s.jobs[j.key] = j; });
-  const gained = await run({ maxTicks: 5 });
+  reset();
+  await run({ maxTicks: 2 });
+  const gained = await run({ maxTicks: 5, sleep: arriving(() => store.updateState((s) => { s.jobs[due(2).key] = due(2); })) });
   assert.equal(gained.reason, 'due');
   assert.match(gained.out[1], /1 employer_page/);
-  // a changed version of an item wakes it again
+  claimAll();
+  // a changed version of an item wakes it again, once it is no longer claimed
   store.updateState((s) => { s.jobs[Object.keys(s.jobs)[0]].fit = 41; });
-  assert.equal((await run({ maxTicks: 5 })).reason, 'due');
+  store.updateState((s) => { s.claims = {}; });
+  assert.equal((await run({ maxTicks: 5, sleep: async () => {} })).reason, 'unclaimed', 'unclaimed due work blocks a restart');
 });
 
 test('a second watcher exits at once when another holds the lease; a dead one does not hold it', async () => {
-  reset([due(1)]);
-  store.updateState((s) => { s.lease = { holder: 'other', heartbeat: new Date().toISOString(), lastTick: new Date().toISOString(), pid: process.pid }; });
+  reset();
+  store.updateState((s) => { s.lease = { holder: 'other', heartbeat: new Date().toISOString(), alive: new Date().toISOString(), pid: process.pid }; });
   const second = await run({ maxTicks: 5 });
   assert.equal(second.reason, 'lease_held');
   assert.deepEqual(second.out, ['another session holds the lease; work attended']);
   assert.equal(store.loadState().lease.holder, 'other', 'the first one keeps it');
   // its process is gone: the lease is reclaimed at once
   store.updateState((s) => { s.lease.pid = 2147483000; });
-  assert.equal((await run({ maxTicks: 5 })).reason, 'due');
+  assert.equal((await run({ maxTicks: 2, sleep: arriving(() => store.updateState((s) => { s.jobs[due(1).key] = due(1); })) })).reason, 'due');
   // stale by time: older than twice the tick interval
-  store.updateState((s) => { s.lease = { holder: 'old', heartbeat: new Date(Date.now() - 3 * 60000).toISOString(), lastTick: new Date(Date.now() - 3 * 60000).toISOString(), pid: process.pid }; });
+  store.updateState((s) => { s.lease = { holder: 'old', heartbeat: new Date(Date.now() - 3 * 60000).toISOString(), alive: new Date(Date.now() - 3 * 60000).toISOString(), pid: process.pid }; });
   assert.notEqual((await run({ maxTicks: 1 })).reason, 'lease_held');
   assert.equal(lease.STALE_MS, 2 * lease.TICK_MS);
 });
@@ -157,15 +164,23 @@ test('a dead pid is reclaimed, and a live but reused pid with a stale field is r
   assert.equal((await run({ maxTicks: 1 })).reason, 'lease_held');
 });
 
-test('the CLI: J watch prints one line, exits 0 when work is due, and a second one exits at once', () => {
-  reset([due(7)]);
-  const env = { ...process.env, HOME: home, TENJIN_SKILLS_DIR: process.env.TENJIN_SKILLS_DIR, PATH: '/usr/bin:/bin' };
-  const a = spawnSync(process.execPath, [JOBS, 'watch'], { encoding: 'utf8', env, timeout: 60000 });
-  assert.equal(a.status, 0, a.stderr);
-  assert.equal(a.stdout.trim().split('\n').length, 2);
-  assert.match(a.stdout, /^watching; exits when work is due\njob-search: 1 employer_page/);
+test('the CLI: J watch prints one line, exits 0 when work arrives, and a second one exits at once', async () => {
+  const { spawn } = await import('node:child_process');
+  reset();
+  const env = { ...process.env, HOME: home, TENJIN_SKILLS_DIR: process.env.TENJIN_SKILLS_DIR, PATH: '/usr/bin:/bin', JOB_SEARCH_TICK_MS: '200' };
+  const child = spawn(process.execPath, [JOBS, 'watch'], { env });
+  let out = '';
+  child.stdout.on('data', (d) => { out += d; });
+  const exited = new Promise((res) => child.on('exit', (code) => res(code)));
+  await new Promise((r) => setTimeout(r, 700));
+  assert.equal(out.trim(), 'watching; exits when work is due', 'quiet: one line and nothing more');
+  store.updateState((s) => { s.jobs[due(7).key] = due(7); });
+  const code = await Promise.race([exited, new Promise((r) => setTimeout(() => r('timeout'), 20000))]);
+  assert.equal(code, 0);
+  assert.match(out, /^watching; exits when work is due\njob-search: 1 employer_page/);
   assert.equal(store.loadState().lease, null, 'the exited watcher released the lease');
-  store.updateState((s) => { s.lease = { holder: 'other', heartbeat: new Date().toISOString(), lastTick: new Date().toISOString(), pid: process.pid }; });
+  claimAll();
+  store.updateState((s) => { s.lease = { holder: 'other', heartbeat: new Date().toISOString(), alive: new Date().toISOString(), pid: process.pid }; });
   const b = spawnSync(process.execPath, [JOBS, 'watch'], { encoding: 'utf8', env, timeout: 30000 });
   assert.equal(b.status, 0);
   assert.equal(b.stdout.trim(), 'another session holds the lease; work attended');
@@ -176,9 +191,9 @@ test('one path: no Monitor call, no Monitor branch, no persistent branch, and al
   assert.doesNotMatch(/^allowed-tools:.*$/m.exec(skill)[0], /Monitor/);
   const texts = [skill, ...fs.readdirSync(path.join(SKILL, 'references')).map((f) => fs.readFileSync(path.join(SKILL, 'references', f), 'utf8'))].join('\n');
   assert.doesNotMatch(texts, /timeout_ms|persistent|deadline message|re-run `J arm`|with Monitor/);
-  assert.match(skill, /`J watch` with the Bash tool and `run_in_background`/);
+  assert.match(skill, /`J watch` last \(Bash tool, `run_in_background`/);
   assert.match(skill, /`watcher: stopped`/);
-  assert.match(skill, /start it again after each round|then start `J watch` again/);
+  assert.match(skill, /start it again after each round/);
   const lib = path.join(SKILL, 'scripts', 'lib');
   const code = fs.readdirSync(lib, { recursive: true }).filter((f) => f.endsWith('.mjs')).map((f) => fs.readFileSync(path.join(lib, f), 'utf8')).join('\n') + fs.readFileSync(path.join(SKILL, 'scripts', 'jobs.mjs'), 'utf8');
   assert.doesNotMatch(code, /Monitor command|--holder|Run this with Monitor/);

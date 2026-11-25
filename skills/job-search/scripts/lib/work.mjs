@@ -132,6 +132,41 @@ export function leaveItem(state, key, reason, profile, now = Date.now()) {
   (state.leftItems ||= {})[key] = { reason, at: new Date(now).toISOString(), inputs: itemInputs(state, key, profile, now) };
 }
 export const itemStillLeft = (state, key, profile, now) => Boolean(state.leftItems && state.leftItems[key] && state.leftItems[key].inputs === itemInputs(state, key, profile, now));
+// Work already handed to the model is claimed in code, with a time, so it never wakes the model again: `J work --commit`
+// claims the items it prints. The watcher's wake set leaves claimed items out. A claim ends when the item's result is
+// ingested, when it is left, when the item is no longer due, or at the time limit. The limit is 20 minutes: a little longer
+// than the slowest claimed step, one browser application (a few minutes, up to about a quarter of an hour with slow pages),
+// so a step that is still running keeps its claim, while an agent that died holds its item for at most 20 minutes. An item
+// still open when its claim times out gets a version change, so it wakes the model once. An apply loop refreshes its claims.
+export const CLAIM_MS = 20 * 60000;
+const ckey = (i) => `${i.key}|${i.reason}`;
+export const claimActive = (state, item, now = Date.now()) => {
+  const c = (state.claims || {})[ckey(item)];
+  return Boolean(c && now - Date.parse(c.at) < CLAIM_MS);
+};
+export function claimItems(state, items, now = Date.now()) {
+  for (const i of items) if (!i.waitsForPerson) (state.claims ||= {})[ckey(i)] = { at: new Date(now).toISOString() };
+}
+// Drop claims for items that are no longer due, and end claims past the limit: an item still due then wakes once.
+export function settleClaims(state, items, now = Date.now()) {
+  const due = new Set(items.map(ckey));
+  for (const [k, c] of Object.entries(state.claims || {})) {
+    if (!due.has(k)) delete state.claims[k];
+    else if (now - Date.parse(c.at) >= CLAIM_MS) {
+      delete state.claims[k];
+      (state.claimEpochs ||= {})[k] = (state.claimEpochs[k] || 0) + 1;
+    }
+  }
+}
+export function releaseClaims(state, match) {
+  for (const k of Object.keys(state.claims || {})) if (match(k.split('|')[0], k.split('|')[1])) delete state.claims[k];
+}
+export function refreshClaims(state, reason, now = Date.now()) {
+  for (const [k, c] of Object.entries(state.claims || {})) if (k.endsWith(`|${reason}`)) c.at = new Date(now).toISOString();
+}
+// The due items the model could act on now that nobody has been handed.
+export const unclaimedDue = (state, items, now = Date.now()) => items.filter((i) => !i.waitsForPerson && !claimActive(state, i, now));
+
 // Every write to an item raises its state version: the version is a hash of the job's own record, apart from the clocks
 // that a re-verify touches without any news.
 export function itemVersion(job) {
@@ -258,6 +293,7 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
   for (const i of items) {
     const job = state.jobs[i.key];
     i.v = i.reason === 'email_due' ? sha(canonical(pendingEmails(state).map((c) => c.id))).slice(0, 10) : i.reason === 'web_search_due' ? `${state.search.webPending.round}:${state.search.webPending.at}` : i.reason === 'need_due' ? (() => { const n = state.search.needPending.find((x) => `need:${x.kind}` === i.key); return `${n.round}:${n.at}`; })() : job ? itemVersion(job) : i.reason === 'search_due' ? `${(state.search.session || {}).round ?? 'new'}:${state.routed.lastSearchAt}` : String(i.posts ? i.posts.length : 0);
+    { const ep = (state.claimEpochs || {})[ckey(i)]; if (ep) i.v = `${i.v}~${ep}`; } // a timed-out claim on a still-open item: one more wake
     i.waitsForPerson = waitsForPerson(state, profile, i, overlay);
   }
   for (const i of items) {
@@ -366,6 +402,7 @@ export function workList({ now = Date.now(), commit = false, unattended = false 
       for (const j of Object.values(state.jobs)) if (j.left && !stillLeft(state, j, overlay, readJson(path.join(stateDir(), 'profile.json'), {}))) j.left = null; // news came: due again
       for (const k of Object.keys(state.leftItems || {})) if (!itemStillLeft(state, k, readJson(path.join(stateDir(), 'profile.json'), {}), now)) delete state.leftItems[k];
       for (const k of wl.bring) state.jobs[k].broughtAt = new Date(now).toISOString(); // brought for the person's yes
+      claimItems(state, wl.items, now); // handed to the model: in flight, so the watcher does not wake it for them
     }
     return wl;
   };

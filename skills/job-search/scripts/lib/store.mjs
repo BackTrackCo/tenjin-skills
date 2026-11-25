@@ -53,6 +53,8 @@ export function emptyState() {
     emails: null,
     watcherEver: false,
     tenjinSetup: null,
+    claims: {},
+    claimEpochs: {},
   };
 }
 
