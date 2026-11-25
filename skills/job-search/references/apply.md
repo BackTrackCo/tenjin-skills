@@ -1,6 +1,6 @@
 # Apply
 
-Only the employer's own posting on Greenhouse, Lever or Ashby (`exact` or `confirmed`), never a job platform or a Y Combinator site: LinkedIn, Indeed, Glassdoor, ZipRecruiter and similar ban automated use, and the YC Terms of Use ban automated access to news.ycombinator.com and workatastartup.com. One application at a time.
+Only the employer's own posting on Greenhouse, Lever or Ashby (`exact` or `confirmed`), never a job platform, X or a Y Combinator site: LinkedIn, Indeed, Glassdoor, ZipRecruiter and similar ban automated use, and the YC Terms of Use ban automated access to news.ycombinator.com and workatastartup.com. One application at a time.
 
 ## Open the batch
 1. `J batch open` (add `--unattended` for an unattended batch). `apply next` hands out a job only in an open batch.
