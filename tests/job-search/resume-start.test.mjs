@@ -182,48 +182,62 @@ test('without Tenjin a LinkedIn link asks first, then is a hint moment with an e
   assert.equal(spy.calls.length, 0);
 });
 
-const WS = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'fixtures', 'router', 'web-search-api.json'), 'utf8'));
-test('the web search: one small input mapper per supplier, one adapter that reads the result shape; the recorded API is a POST with an array of at most 5 domains', () => {
+const WS = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'fixtures', 'router', 'exa-search.json'), 'utf8'));
+test('the board search: one recorded mapper for the catalog tool, no seller named in a query, results read as a list of title, URL and date', () => {
   const need = { role: 'software engineer', place: 'New York', remote: false, since: '2026-11-10' };
-  const a = ws.agentsearch.mapper(need);
-  assert.deepEqual(a, { query: 'software engineer New York', include_domains: ['jobs.ashbyhq.com', 'boards.greenhouse.io', 'job-boards.greenhouse.io', 'jobs.lever.co'], max_results: 10, date_from: '2026-11-10' });
-  assert.ok(a.include_domains.length <= 5 && a.max_results <= 10);
-  assert.equal(ws.agentsearch.RECORDED, true);
-  const b = ws.brave.mapper({ ...need, remote: true });
-  assert.deepEqual(b, { q: 'software engineer New York remote', count: 20, includeDomains: 'jobs.ashbyhq.com,boards.greenhouse.io,job-boards.greenhouse.io,jobs.lever.co', startPublishedDate: '2026-11-10T00:00:00.000Z' });
-  assert.equal(ws.brave.RECORDED, false, 'the other API stays unrecorded');
-  assert.ok(ws.brave.mapper({ role: 'x'.repeat(900) }).q.length <= 400);
-  const need2 = FXneed();
-  assert.match(need2, /for the query site:jobs\.ashbyhq\.com software engineer New York, 10 results$/, 'the need keeps the site: form');
-  // the recorded result: the adapter keeps the board links; published dates are read against the retrieval time or dropped
+  assert.deepEqual(ws.exa.mapper(need), { query: 'software engineer New York', type: 'lite', includeDomains: ['jobs.ashbyhq.com', 'boards.greenhouse.io', 'job-boards.greenhouse.io', 'jobs.lever.co'], numResults: 10 });
+  assert.equal('contents' in ws.exa.mapper(need), false, 'Tenjin sets contents itself');
+  assert.equal(ws.exa.mapper({ role: 'designer', place: '', remote: true }).query, 'designer remote');
+  assert.deepEqual([ws.exa.RECORDED, ws.exa.TOOL, ws.exa.HOST], [true, 'exa-search', 'api.exa.ai']);
+  assert.equal(ws.agentsearch, undefined, 'the {query} route\'s mappers are gone');
+  assert.equal(ws.brave, undefined);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'graph.json'), 'utf8')).needTemplates.web_search, undefined, 'no routed {query} need text for the board search');
   const r = ws.adapter(WS.step2.envelope.result);
-  assert.deepEqual(r.results.map((x) => x.url.split('/')[2]), ['job-boards.greenhouse.io', 'job-boards.greenhouse.io', 'jobs.ashbyhq.com']);
-  assert.equal(r.results[0].postedAt.slice(0, 10), '2026-11-13');
-  assert.equal(r.results[2].postedAt.slice(0, 10), '2026-11-19', '"6 days ago" is read against retrieved_at');
+  assert.equal(r.results.length, 5);
+  assert.ok(r.results.every((x) => /greenhouse\.io|ashbyhq\.com|lever\.co/.test(x.url)));
+  assert.equal(r.results[0].postedAt.slice(0, 10), '2026-10-28');
   assert.equal(ws.readPublished('last Tuesday', '2026-11-25T00:00:00Z'), null, 'free text it cannot read is dropped');
-  assert.equal(ws.readPublished('3 hours ago', 'not a date'), null);
-  assert.equal(WS.step2.envelope.label, undefined, 'the recorded envelope has no label');
+  const missing = ws.adapter({ results: [{ id: 'a', title: 't', url: 'https://jobs.lever.co/acme/abc', highlights: [] }] });
+  assert.equal(missing.results[0].postedAt, null, 'publishedDate is sometimes missing: the board\'s own date decides');
   const x = ws.adapter({ data: { results: [{ link: 'https://jobs.lever.co/acme/abc', description: 'd' }, { url: 'https://www.linkedin.com/jobs/view/1', title: 't' }] } });
-  assert.equal(x.results.length, 1, 'another API\'s shape reads the same; only board job links are kept');
+  assert.equal(x.results.length, 1, 'only board job links are kept');
   assert.throws(() => ws.adapter({ nope: 1 }), /no results list/);
-  assert.equal(sup.pickSupplier(WS.step1.text, 'web_search').host, 'api.agentsearchhq.com');
-  assert.equal(sup.pickSupplier('GET https://agent-data-tools.revmesh2074.workers.dev/search/web', 'web_search').host, 'agent-data-tools.revmesh2074.workers.dev');
+  assert.equal(sup.pickTool('exa-search', 'web_search').host, 'api.exa.ai');
+  assert.equal(sup.pickTool('exa-search', 'job_postings'), null);
 });
-function FXneed() {
-  return JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'graph.json'), 'utf8')).needTemplates.web_search.replace('{role}', 'software engineer').replace('{place}', 'New York');
-}
 
-test('the web search result is never saved: the recorded run keeps no results file, and the supplier must match the spec', async () => {
+test('the board search runs by tool id: a free spec first, then the run, nothing saved, and the supplier must match', async () => {
   reset();
   const run = { ...WS.step2.envelope, result: JSON.stringify(WS.step2.envelope.result) };
   const f = fake({ answers: [{ ...WS.step1.json, __text: WS.step1.text }, run] });
   const before = fs.existsSync(path.join(stateDir(), 'results')) ? fs.readdirSync(path.join(stateDir(), 'results')).length : 0;
-  const [r] = await router.runRound([{ kind: 'web_search', text: 'web search API for a script', fields: { role: 'software engineer', place: 'New York', since: '2026-11-10' }, query: { role: 'software engineer', place: 'New York', remote: false, since: '2026-11-10' } }], { client: client(f) });
+  const need = { kind: 'web_search', tool: 'exa-search', text: null, fields: { role: 'software engineer', place: 'New York', since: '2026-11-10' }, query: { role: 'software engineer', place: 'New York', remote: false, since: '2026-11-10', variant: null, round: 0 } };
+  const [r] = await router.runRound([need], { client: new router.RouterClient({ bin: f.bin, timeouts: { ...router.TIMEOUTS, shutdown: 300 } }) });
   assert.equal(r.ok, true);
+  assert.equal(r.cost, 'provider price 0.004 USD');
   assert.equal(r.ingest.fullResultPath, null);
-  assert.equal(r.ingest.results.length, 3);
-  assert.deepEqual(Object.keys(f.log().find((l) => l.call && l.call.id).call.input).sort(), ['date_from', 'include_domains', 'max_results', 'query'], 'the recorded supplier\'s input names');
+  assert.equal(r.ingest.results.length, 5);
+  const calls = f.log().filter((l) => l.call).map((l) => l.call);
+  assert.deepEqual(calls[0], { tool: 'exa-search' }, 'step 1 is the catalog tool by id, never a {query}');
+  assert.equal(calls[1].id, WS.step1.json.id);
+  assert.deepEqual(Object.keys(calls[1].input).sort(), ['includeDomains', 'numResults', 'query', 'type']);
+  assert.equal(calls.length, 2);
   assert.equal(fs.existsSync(path.join(stateDir(), 'results')) ? fs.readdirSync(path.join(stateDir(), 'results')).length : 0, before, 'nothing cached');
+});
+
+test('each offer id pays once: two searches fetch two specs, and a used id answering needs_input is held, never sent again', async () => {
+  reset();
+  const run = { ...WS.step2.envelope, result: JSON.stringify(WS.step2.envelope.result) };
+  const spec2 = { ...WS.step1.json, id: '00000000-0000-4000-8000-00000000000a' };
+  const used = { status: 'needs_input', reason: 'this id pays once' };
+  const f = fake({ answers: [{ ...WS.step1.json, __text: WS.step1.text }, run, { ...spec2, __text: WS.step1.text }, used] });
+  const need = { kind: 'web_search', tool: 'exa-search', text: null, fields: { role: 'software engineer', place: 'New York' }, query: { role: 'software engineer', place: 'New York', remote: false, since: null, variant: null, round: 0 } };
+  const out = await router.runRound([need, need], { client: new router.RouterClient({ bin: f.bin, timeouts: { ...router.TIMEOUTS, shutdown: 300 } }) });
+  assert.deepEqual(out.map((r) => r.ok), [true, false]);
+  assert.equal(out[1].status, 'needs_input');
+  const calls = f.log().filter((l) => l.call).map((l) => l.call);
+  assert.deepEqual(calls.map((c) => (c.tool ? 'spec' : 'run')), ['spec', 'run', 'spec', 'run'], 'a fresh spec before every search');
+  assert.notEqual(calls[1].id, calls[3].id);
 });
 
 test('catch-up: the first period takes the catch-up, then the daily number; twice a day splits it; weekly is 7 days', () => {

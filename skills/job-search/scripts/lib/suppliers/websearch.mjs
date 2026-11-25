@@ -1,32 +1,25 @@
 import { boardTarget } from '../boards.mjs';
 
-// The web search need: one small input mapper per known supplier (their input names differ) and one result adapter that
-// reads any result shaped as a list of title, URL and snippet, so it matches the result shape, not one host. The need's
-// query keeps the `site:` form: a query that named the boards in words went to the job postings API instead. Results are
-// for immediate use only, so none is ever saved and only job links confirmed on the employer's board are kept; a result's
-// published date is free text, so it is read against the call's retrieval time or dropped, and the board's own date decides.
+// The board search, with Tenjin (code only, never a model step): one call to the router's catalog tool by id. Step 1 is
+// `{tool}`, which answers a spec with a fresh offer id; step 2 is `{id, input}`, which pays once. An offer id pays once,
+// so code fetches a fresh spec before every search and never sends a used id again. Results are data only, never saved;
+// only job links that sit on a known board are kept, and code then confirms each on the board's own API, whose date decides
+// (the result's `publishedDate` is ISO when present and sometimes missing). The need names no seller and never goes through
+// the `{query}` route, which could answer native or pick another API.
 export const KIND = 'web_search';
 export const BOARD_HOSTS = ['jobs.ashbyhq.com', 'boards.greenhouse.io', 'job-boards.greenhouse.io', 'jobs.lever.co'];
 
-const query = ({ role, place, remote }) => `${role} ${place || ''}${remote === true ? ' remote' : ''}`.replace(/\s+/g, ' ').trim().slice(0, 400);
+const query = ({ role, place, remote }) => `${role} ${place || (remote === true ? 'remote' : '')}`.replace(/\s+/g, ' ').trim().slice(0, 400);
 
-// RECORDED 2026-11-25: a POST; `include_domains` an array of at most 5, `max_results` at most 10, `date_from` YYYY-MM-DD.
-export const agentsearch = {
-  HOST: 'api.agentsearchhq.com',
+// RECORDED 2026-11-25: `type` lite ($0.004), `includeDomains` an array of at most 20, `numResults` 1 to 10. Tenjin sets `contents`
+// on every call, so the input leaves it out.
+export const exa = {
+  HOST: 'api.exa.ai',
   KIND,
+  TOOL: 'exa-search',
   RECORDED: true,
   NO_CACHE: true,
-  mapper: ({ role, place, remote, since }) => ({ query: query({ role, place, remote }), include_domains: BOARD_HOSTS, max_results: 10, ...(since ? { date_from: since } : {}) }),
-};
-
-// UNRECORDED: built from the router's spec. `q` (at most 400 characters), `count` 1 to 20, `includeDomains` a comma list or
-// a JSON array, `startPublishedDate` ISO 8601.
-export const brave = {
-  HOST: 'agent-data-tools.revmesh2074.workers.dev',
-  KIND,
-  RECORDED: false,
-  NO_CACHE: true,
-  mapper: ({ role, place, remote, since }) => ({ q: query({ role, place, remote }), count: 20, includeDomains: BOARD_HOSTS.join(','), ...(since ? { startPublishedDate: new Date(`${since}T00:00:00Z`).toISOString() } : {}) }),
+  mapper: (need) => ({ query: query(need), type: 'lite', includeDomains: BOARD_HOSTS, numResults: 10 }),
 };
 
 const str = (v) => (typeof v === 'string' ? v : '');

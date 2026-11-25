@@ -9,8 +9,8 @@ import { advanceSearch, searchRound, variantFor } from './work.mjs';
 // With Tenjin, a search round runs in code, with no model step before review: the needs go to the router one at a time
 // (router.mjs), each result is ingested, and the same rule as the model-run rounds decides whether the next role-word
 // variant is worth a round. A search that is held (any status but fulfilled, no adapter, a timeout) is named in the
-// report; nothing is retried. The web search is a routed need too, phrased as an API for a script; a `native`
-// answer or a missing mapper holds it for the round with a report line, never a model step.
+// report; nothing is retried. The board search is a routed need too, run by catalog tool id; a missing mapper holds it for
+// the round with a report line, never a model step.
 const fill = (kind, f) => graph().needTemplates[kind].replace(/\{(\w+)\}/g, (_, k) => (f[k] === undefined ? '' : String(f[k])));
 export const needText = (kind, q) => fill(kind, { ...q, role: q.variant || q.role, place: q.place || 'any place' });
 
@@ -20,8 +20,8 @@ export function roundNeeds(profile, state, now, round) {
   const days = Math.max(1, Math.ceil((now - since.getTime()) / 86400000));
   const base = { role: profile.search.role, place: profile.search.place || '', remote: profile.search.remote === true, since: since.toISOString().slice(0, 10), variant: variantFor(profile, round), round };
   const searchNeeds = SEARCH_KINDS.map((kind) => ({ kind, text: needText(kind, { ...base, days }), fields: { ...base, days: Math.min(days, 14), role: base.variant || base.role }, query: base }));
-  // The web search is one routed need per round (phrased as an API for a script, so the router does not answer native).
-  const web = { kind: 'web_search', text: needText('web_search', base), fields: { ...base, role: base.variant || base.role }, query: base };
+  // The board search is one need per round, run through the catalog's search tool by id (no `{query}` route, no seller named).
+  const web = { kind: 'web_search', tool: 'exa-search', text: null, fields: { ...base, role: base.variant || base.role }, query: base };
   return [...searchNeeds, web];
 }
 
@@ -59,8 +59,8 @@ const leaveForModel = (need, round, now) => updateState((s) => {
   s.search.needPending = [...(s.search.needPending || []).filter((n) => n.kind !== need.kind), { kind: need.kind, text: need.text, query: need.query, round, at: new Date(now).toISOString() }];
 });
 
-// Each need runs on its own: one that cannot run in code never stops the others. The web search (answered native) and an
-// uncovered need are left as Haiku items for the round's wake.
+// Each need runs on its own: one that cannot run in code never stops the others. An uncovered need is left as a Haiku item
+// for the round's wake.
 export async function routedRounds({ profile, fetch, client = new RouterClient(), now = Date.now(), maxRounds = 20 }) {
   const log = [];
   for (let i = 0; i < maxRounds; i++) {
@@ -90,7 +90,7 @@ export async function routedRounds({ profile, fetch, client = new RouterClient()
         log.push({ round, need: need.kind, ok: false, status: r.status });
       }
     }
-    // With Tenjin the web search is a routed need like the others: a native answer or a missing mapper holds it for the round, with a report line, and never becomes a model step.
+    // With Tenjin the board search is a routed need like the others: a failed call holds it for the round, with a report line, and never becomes a model step.
     updateState((s) => { s.routed.lastSearchAt = s.routed.lastSearchAt || new Date(now).toISOString(); });
     const next = updateState((s) => (s.search.session ? advanceSearch(s, profile) : { done: true }));
     if (next.done) break;

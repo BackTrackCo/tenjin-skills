@@ -12,7 +12,7 @@ const store = await import('../../skills/job-search/scripts/lib/store.mjs');
 const sup = await import('../../skills/job-search/scripts/lib/suppliers/index.mjs');
 const FAKE = path.join(import.meta.dirname, 'helpers', 'fake-tenjin.mjs');
 // The recorded answers (cleaned). In the real run envelope `result` is a JSON string; the fixtures hold it parsed.
-const FX = Object.fromEntries(['job-postings', 'x-posts', 'careers-page', 'people-search', 'web-search'].map((n) => [n, fixture(`router/${n}.json`)]));
+const FX = Object.fromEntries(['job-postings', 'x-posts', 'careers-page', 'people-search', 'exa-search'].map((n) => [n, fixture(`router/${n}.json`)]));
 const spec = (name) => ({ ...FX[name].step1.json, __text: FX[name].step1.text });
 const run = (name, key = 'step2') => ({ ...FX[name][key].envelope, result: JSON.stringify(FX[name][key].envelope.result) });
 const J = { spec: spec('job-postings'), fulfilled: run('job-postings') };

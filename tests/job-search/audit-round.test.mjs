@@ -24,7 +24,7 @@ const { buildSheet } = await import(`${S}sheet.mjs`);
 const NOW = Date.parse('2026-11-24T20:00:00Z');
 const empty = { rules: [], lessons: [] };
 const FAKE = path.join(import.meta.dirname, 'helpers', 'fake-tenjin.mjs');
-const FX = Object.fromEntries(['job-postings', 'x-posts', 'web-search'].map((n) => [n, fixture(`router/${n}.json`)]));
+const FX = Object.fromEntries(['job-postings', 'x-posts', 'exa-search'].map((n) => [n, fixture(`router/${n}.json`)]));
 const reset = (jobs = [], extra = {}) => {
   fs.rmSync(path.join(process.env.TENJIN_SKILLS_DIR, 'job-search', 'rules.json'), { force: true });
   store.updateState((s) => { Object.assign(s, store.emptyState(), extra); for (const j of jobs) s.jobs[j.key] = j; });
@@ -50,19 +50,20 @@ test('routed needs run one by one: a need with an unknown supplier becomes one H
   const J = FX['job-postings'];
   const jrun = { ...J.step2.envelope, result: JSON.stringify(J.step2.envelope.result) };
   const unknown = { ...FX['x-posts'].step1.json, __text: 'Request: GET https://unknown-seller.example/search\n' };
-  const f = fake({ answers: [{ ...J.step1.json, __text: J.step1.text }, jrun, unknown, sp('web-search')] });
+  const f = fake({ answers: [{ ...J.step1.json, __text: J.step1.text }, jrun, unknown, sp('exa-search'), { ...FX['exa-search'].step2.envelope, result: JSON.stringify(FX['exa-search'].step2.envelope.result) }] });
   const prof = { places: ['New York'], includeOld: true, search: { role: 'software engineer', place: 'New York City' } };
   const log = await routed.routedRounds({ profile: prof, fetch: fakeFetch({}), client: client(f), now: NOW });
   assert.ok(log.some((l) => l.need === 'job_postings' && l.ok), 'the covered need ran');
   assert.ok(log.some((l) => l.need === 'x_hiring_posts' && l.status === 'model'), 'the uncovered need is left for the model');
   const s = store.loadState();
   assert.equal(s.held.some((h) => h.detail.includes('x_hiring_posts')), false, 'not a hold');
-  assert.equal(f.log().filter((l) => l.call).length, 4, 'no payment step for the unknown supplier');
+  assert.equal(f.log().filter((l) => l.call).length, 5, 'no payment step for the unknown supplier');
   const wl = work.buildWorkList(s, empty, NOW, prof);
   const item = wl.items.find((i) => i.reason === 'need_due');
   assert.equal(item.key, 'need:x_hiring_posts');
   assert.ok(!wl.items.some((i) => i.reason === 'web_search_due'), 'with Tenjin the web search is never a model item');
-  assert.ok(s.held.some((h) => h.detail.startsWith('routed:web_search: native')), 'a native answer holds the need for the round, named in the report');
+  assert.ok(s.held.filter((h) => h.detail.startsWith('routed:web_search')).every((h) => /board .* unavailable/.test(h.detail)), 'the board search ran by tool id; only a board lookup may hold it');
+  assert.deepEqual(f.log().filter((l) => l.call).map((l) => l.call).filter((c) => c.tool), [{ tool: 'exa-search' }], 'the board search asks the catalog tool by id, never a {query}');
   // the item closes with its outcome command, and a left one comes back at the next period
   assert.equal(runJobs(home, ['search', 'done', 'x_hiring_posts']).code, 0);
   assert.equal(store.loadState().search.needPending.length, 0);

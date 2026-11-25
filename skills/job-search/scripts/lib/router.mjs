@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { findTenjin } from './tenjin.mjs';
 import { ensureDir, stateDir } from './paths.mjs';
-import { pickSupplier } from './suppliers/index.mjs';
+import { pickSupplier, pickTool } from './suppliers/index.mjs';
 
 // The one file that spawns `tenjin mcp`: a small JSON-RPC client over stdio, no dependency. Each need goes to the
 // router's own `request` tool in two steps: the need as text (the answer is a spec that names a supplier), then the
@@ -127,18 +127,18 @@ export class RouterError extends Error {
 
 // Runs one need. Returns {ok, status, ingest, cost, reason}. Never sends the same request twice; never retries.
 export async function runNeed(client, need, { save = saveResult } = {}) {
+  // A need that names a catalog tool by id (the board search) asks `{tool}` for a fresh spec and offer id: no routing decision,
+  // so no `native` answer and no other seller. Every other need goes as text and the router picks the seller.
   let spec;
   try {
-    spec = await client.request({ query: need.text }, client.timeouts.query);
+    spec = await client.request(need.tool ? { tool: need.tool } : { query: need.text }, client.timeouts.query);
   } catch (e) {
     return held(need, e.code || 'failed', e.message);
   }
-  // `native` (the web search): the host assistant's own tools are enough, so that need stays a model step. Not a hold.
-  if (spec.status === 'native') return { ok: false, native: true, status: 'native', reason: 'the router answered native: it holds this need for the round', need: need.kind, cost: null };
   if (spec.status !== 'spec') return held(need, spec.status || 'no_spec', spec.reason || `the router answered ${spec.status || 'nothing'} to the need`, spec);
-  const offer = spec.id; // the spec answer carries the offer id at the top level
+  const offer = spec.id; // the spec answer carries the offer id at the top level; it pays once
   const text = JSON.stringify(spec);
-  const sup = pickSupplier(text, need.kind);
+  const sup = need.tool ? pickTool(need.tool, need.kind) : pickSupplier(text, need.kind);
   if (!offer || !sup) return held(need, 'no_adapter', 'no known supplier in the spec; the next attended turn runs this search as the Haiku step');
   let input;
   try {

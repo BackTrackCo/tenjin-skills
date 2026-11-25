@@ -1,0 +1,34 @@
+{
+  "_note": "Recorded 2026-11-25 through Tenjin alpha.110 request tool with {tool: \"exa-search\"} (the catalog tool by id, no routing decision), then cleaned: the settlement hash is removed, the request id and spec id are placeholders, highlights are cut, and em and en dashes in titles and pay ranges are hyphens. In the real run envelope, `result` is a JSON string; here `result` holds the parsed object, so a test must JSON.stringify it to replay the real shape.",
+  "need": "web_search",
+  "step1": {
+    "call": { "tool": "exa-search" },
+    "json": { "status": "spec", "id": "00000000-0000-4000-8000-000000000009", "nextStep": "Call request({id: \"00000000-0000-4000-8000-000000000009\", input: {\"query\":\"<search query>\"}}) alone and wait for its result.", "cost": ["provider price 0 USD"] },
+    "text": "Exa: web search that returns ranked source pages, optionally with their text, highlights or summaries. For routine factual searches, set input.type to \"lite\" ($0.004); choose \"auto\" ($0.007) for hard or ambiguous research. If omitted, Exa uses auto\nPrice: $0.007 per call, paid by this machine's wallet straight to the provider.\nRequest: POST https://api.exa.ai/search\nInputs:\n- query (string, required); Search query; min length 1\n- type (string); one of \"lite\", \"auto\"\n- category (string); one of \"company\", \"people\", \"publication\", \"news\", \"personal site\", \"financial report\"\n- includeDomains (array of string); Return results only from these domains or domain paths; max items 20\n- numResults (integer); default 10; min 1; max 10\nSet by Tenjin on every call (leave these out): contents = {\"highlights\":{\"dynamic\":true,\"maxTotalCharacters\":5000}}\nReturns: JSON {results:[{title, url, publishedDate, highlights[]}]}: up to numResults pages sharing about 5,000 characters of highlights, more from the strongest pages, not the full text"
+  },
+  "step2": {
+    "input": { "query": "software engineer New York", "type": "lite", "includeDomains": ["jobs.ashbyhq.com", "boards.greenhouse.io", "job-boards.greenhouse.io", "jobs.lever.co"], "numResults": 5 },
+    "envelope": {
+      "status": "fulfilled",
+      "supplier": "api.exa.ai",
+      "label": "Exa search",
+      "parameters": { "query": "software engineer New York", "type": "lite", "includeDomains": ["jobs.ashbyhq.com", "boards.greenhouse.io", "job-boards.greenhouse.io", "jobs.lever.co"], "numResults": 5, "contents": { "highlights": { "dynamic": true, "maxTotalCharacters": 5000 } } },
+      "cost": ["provider price 0.004 USD"],
+      "providerContentUntrusted": true,
+      "result": {
+        "requestId": "request-1",
+        "resolvedSearchType": "",
+        "results": [
+          { "id": "https://job-boards.greenhouse.io/addepar1/jobs/8912699002", "title": "Full Stack Software Engineer - Alts & Data Management at Addepar1", "url": "https://job-boards.greenhouse.io/addepar1/jobs/8912699002", "publishedDate": "2026-10-28T00:00:00.000Z", "highlights": ["- **Company:** Addepar1\n- **Location:** New York, NY\n- **Department:** Core Product Engineering\n\n...\n\nApplicants must be legally authorized to work in the United States for any employer without requiring current or future visa sponsorship.\n\n- 2+ years full-stack development experience"] },
+          { "id": "https://job-boards.greenhouse.io/vercel/jobs/5732855004/", "title": "Job Application for Software Engineer, Website at Vercel", "url": "https://job-boards.greenhouse.io/vercel/jobs/5732855004/", "highlights": ["# Software Engineer, Website\n\nHybrid - New York City\n\n...\n\nThis is a hybrid role with 3 in-office days per week in New York City."] },
+          { "id": "https://jobs.ashbyhq.com/openai/dbe79b89-e593-44b3-8aec-c667f7134445", "title": "Software Engineer, Full Stack - Dots at Openai", "url": "https://jobs.ashbyhq.com/openai/dbe79b89-e593-44b3-8aec-c667f7134445", "publishedDate": "2026-10-16T00:00:00.000Z", "highlights": ["- **Company:** Openai\n- **Location:** New York City\n- **Employment type:** Full Time\n- **Compensation:** 347,000-385,000 USD per year plus equity\n\n...\n\nWe are looking for Senior and Staff Full Stack Software Engineers."] },
+          { "id": "https://jobs.ashbyhq.com/openai/b6a86e39-8059-4ccf-8d33-1bf5bd92fa86", "title": "Software Engineer, API Frontiers at Openai", "url": "https://jobs.ashbyhq.com/openai/b6a86e39-8059-4ccf-8d33-1bf5bd92fa86", "publishedDate": "2026-09-11T00:00:00.000Z", "highlights": ["- **Company:** Openai\n- **Location:** New York City\n- **Compensation:** 266,000-445,000 USD per year plus equity\n\n...\n\nWe are looking for a backend software engineer to build and operate the services behind the Responses API."] },
+          { "id": "https://jobs.ashbyhq.com/Agentio/d22f7e19-cf51-4b48-9e5c-0e663dcfd389", "title": "Software Engineer @ Agentio", "url": "https://jobs.ashbyhq.com/Agentio/d22f7e19-cf51-4b48-9e5c-0e663dcfd389", "highlights": ["- Location: New York, NY\n- Type: FullTime\n- Workplace: OnSite\n- Compensation: $195K - $400K, Offers Equity\n\n...\n\nWe are looking for a senior software engineer with experience in early-stage or high-growth environments."] }
+        ],
+        "searchTime": 353.9,
+        "costDollars": { "total": 0.004, "search": { "neural": 0.004 } }
+      }
+    }
+  },
+  "observed": "Called by catalog tool id, so the router made no routing decision and could not answer native. All 5 results were direct Greenhouse or Ashby postings in New York. `publishedDate` is ISO 8601 when present and missing on two results, so code must not require it and must confirm each job on its board. `id` equals `url`. Highlights carry the location, pay and work-authorization lines, which review can use. The envelope has a `label`. Tenjin sets `contents` itself; the caller leaves it out. Cost 0.4 cents with type lite."
+}

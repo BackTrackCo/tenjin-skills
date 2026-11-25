@@ -14,7 +14,7 @@ const x = await import('../../skills/job-search/scripts/lib/suppliers/x.mjs');
 const careers = await import('../../skills/job-search/scripts/lib/suppliers/careers.mjs');
 const people = await import('../../skills/job-search/scripts/lib/suppliers/people.mjs');
 const FAKE = path.join(import.meta.dirname, 'helpers', 'fake-tenjin.mjs');
-const FX = Object.fromEntries(['x-posts', 'careers-page', 'people-search', 'web-search'].map((n) => [n, fixture(`router/${n}.json`)]));
+const FX = Object.fromEntries(['x-posts', 'careers-page', 'people-search', 'exa-search'].map((n) => [n, fixture(`router/${n}.json`)]));
 const sp = (name) => ({ ...FX[name].step1.json, __text: FX[name].step1.text });
 const run = (name, key = 'step2') => ({ ...FX[name][key].envelope, result: JSON.stringify(FX[name][key].envelope.result) });
 const empty = { rules: [], lessons: [] };
@@ -170,26 +170,27 @@ test('people: total 0 is a normal empty answer; a person found is a likely conta
   assert.deepEqual([c.name, c.notConfirmed, c.channel, c.sourceUrl], ['Person J', true, 'linkedin', 'https://www.linkedin.com/in/person-j']);
 });
 
-// ---- the web search stays a model step ------------------------------------------------------
-test('web search: a native answer holds the need for the round, with no model step and nothing paid', async () => {
-  const f = fake({ answers: [sp('web-search')] });
-  const [r] = await router.runRound([needOf('web_search', { role: 'software engineer', place: 'New York' })], { client: client(f) });
-  assert.equal(r.native, true);
-  assert.equal(f.log().filter((l) => l.call).length, 1, 'no step 2');
+// ---- the board search runs in code, by catalog tool id ---------------------------------------
+test('board search: with Tenjin it runs in code by tool id, ingests board-confirmed links, and is never a model step', async () => {
   reset();
   const prof = { places: ['New York'], includeOld: true, search: { role: 'software engineer', place: 'New York City' } };
   const J = fixture('router/job-postings.json');
   const jrun = { ...J.step2.envelope, result: JSON.stringify(J.step2.envelope.result) };
-  const answers = [{ ...J.step1.json, __text: J.step1.text }, jrun, sp('x-posts'), run('x-posts'), sp('web-search')];
+  const answers = [{ ...J.step1.json, __text: J.step1.text }, jrun, sp('x-posts'), run('x-posts'), sp('exa-search'), run('exa-search')];
   const g = fake({ answers });
   const fetch = fakeFetch({});
   const log = await routed.routedRounds({ profile: prof, fetch, client: client(g), now: NOW });
   assert.ok(log.some((l) => l.need === 'job_postings' && l.ok));
   assert.ok(log.some((l) => l.need === 'x_hiring_posts' && l.ok));
+  assert.ok(log.some((l) => l.need === 'web_search' && l.ok), 'the board search ran');
+  const calls = g.log().filter((l) => l.call).map((l) => l.call);
+  assert.deepEqual(calls.filter((c) => c.tool), [{ tool: 'exa-search' }]);
+  assert.equal(calls.some((c) => typeof c.query === 'string' && /site:|boards?|search api/i.test(c.query)), false, 'no {query} route for the board search');
   const s = store.loadState();
-  assert.equal(s.held.some((h) => h.detail.startsWith('routed:web_search: native')), true, 'native holds the need for the round, with a report line');
+  assert.ok(s.held.filter((h) => h.detail.startsWith('routed:web_search')).every((h) => /board .* unavailable/.test(h.detail)), 'only a board lookup may hold it (no board answers in this test), never the router call');
   assert.equal(s.search.webPending, null, 'never a model step with Tenjin');
   const wl = (await import('../../skills/job-search/scripts/lib/work.mjs')).buildWorkList(s, empty, NOW, prof);
   assert.ok(!wl.items.some((i) => i.reason === 'web_search_due'));
-  assert.equal(routed.allNeedsCovered(), true, 'the watcher can run the rounds: the searches that can run in code have adapters');
+  assert.equal(routed.allNeedsCovered(), true);
+  assert.equal(routed.roundNeeds(prof, s, NOW, 0).find((n) => n.kind === 'web_search').tool, 'exa-search');
 });
