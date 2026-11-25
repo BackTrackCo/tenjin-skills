@@ -38,6 +38,7 @@ import { eeoTextOf, oldFieldError, oldFields, validateProfile } from './lib/prof
 import { routeContacts, routedRounds } from './lib/routed.mjs';
 import { resumeHeld } from './lib/held.mjs';
 import { DEFAULT_BUDGET_MS, runHn } from './lib/hn.mjs';
+import { DEFAULT_YC_BUDGET_MS, runYc } from './lib/yc.mjs';
 import { isFillOnly, markFillReady, markSubmitted } from './lib/fillonly.mjs';
 
 // The sheets waiting for the person's yes, best fit first: the report lists them one line each.
@@ -604,6 +605,11 @@ const commands = {
       }));
     }
     return out({ error: 'leads save --result file | mark <url> done|not_interested' }, 2);
+  },
+  // The public Y Combinator job pages, read in code for discovery only (the listed paths, slowly, robots.txt obeyed).
+  async yc(_, flags) {
+    const budgetMs = flags.budget ? Number(flags.budget) * 1000 : DEFAULT_YC_BUDGET_MS;
+    return out(await runYc({ fetch: globalThis.fetch, profile: readProfile(), state: loadState(), budgetMs }));
   },
   async hn(_, flags) {
     const budgetMs = flags.budget ? Number(flags.budget) * 1000 : DEFAULT_BUDGET_MS;

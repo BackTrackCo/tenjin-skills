@@ -25,7 +25,7 @@ export function validateProfile(p) {
   if (!p || typeof p !== 'object' || Array.isArray(p)) return ['the profile must be a JSON object'];
   const has = (k) => p[k] !== undefined;
   if (has('places')) need(strList(p.places), 'places must be a list of strings, for example ["San Francisco"]');
-  for (const k of ['remote', 'includeOld', 'updates', 'hn']) if (has(k)) need(typeof p[k] === 'boolean', `${k} must be true or false`);
+  for (const k of ['remote', 'includeOld', 'updates', 'hn', 'yc']) if (has(k)) need(typeof p[k] === 'boolean', `${k} must be true or false`);
   if (has('frequency')) need(['daily', 'twice_daily', 'weekly'].includes(p.frequency), 'frequency must be daily, twice_daily or weekly');
   if (has('applyMode')) need(['attended', 'auto_no_new', 'auto_write', 'fill_only', 'open_only'].includes(p.applyMode), 'applyMode must be attended, auto_no_new, auto_write, fill_only or open_only');
   if (has('apply')) need(p.apply && typeof p.apply === 'object' && ['employer', 'linkedin', 'ask'].includes(p.apply.where) && p.apply.source === 'person', 'apply must be {"where": "employer"|"linkedin"|"ask", "source": "person"}');

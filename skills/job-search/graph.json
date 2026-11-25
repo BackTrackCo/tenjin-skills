@@ -35,6 +35,10 @@
     "x.com",
     "twitter.com"
   ],
+  "ycRead": {
+    "host": "www.ycombinator.com",
+    "paceMs": 5000
+  },
   "statuses": [
     "new",
     "reviewed",

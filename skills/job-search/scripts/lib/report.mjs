@@ -9,7 +9,7 @@ export const REASONS = {
   multiple_matches: 'more than one job on the board matches',
   no_careers_page: 'no careers page on the employer\'s own site lists the job',
   sign_in_wall: 'the careers page needs a sign-in',
-  yc_platform_only: 'a Y Combinator job with no other posting; apply at the Work at a Startup link',
+  yc_platform_only: 'a Y Combinator job with no employer posting found; apply at its Y Combinator link',
 };
 
 // An intro is a draft. An email to an address the poster published goes through the Gmail connector after the person's yes

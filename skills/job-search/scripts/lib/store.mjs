@@ -38,6 +38,7 @@ export function emptyState() {
     stops: [],
     answerV: 0,
     watcher: { sent: [], fingerprint: null, notify: null },
+    yc: { done: [], sites: {}, lastAt: null, remaining: 0 },
     wakes: [],
     updateLines: [],
     leads: [],

@@ -15,6 +15,7 @@ import { resolveBoardPosts } from './ingest.mjs';
 import { logWake } from './runlog.mjs';
 import { unattendedBatchOpen } from './work.mjs';
 import { hnDue, runHn } from './hn.mjs';
+import { ycDue, runYc } from './yc.mjs';
 
 const DAY = 86400000;
 
@@ -47,6 +48,15 @@ export async function tick(ctx) {
       hnPending = r && r.remaining > 0; // the round is not over: code is still reading
     } catch (e) {
       updateState((st) => { st.held = [...st.held.filter((h) => !String(h.detail).startsWith('hn:')), { reason: 'source_empty', detail: `hn: ${e.message}` }]; st.hn = { ...(st.hn || {}), lastAt: new Date(now).toISOString() }; });
+    }
+  }
+  let ycPending = false;
+  if (fetchImpl && ycDue(loadState(), profile, now)) {
+    try {
+      const r = await runYc({ fetch: fetchImpl, profile, state: loadState(), sleep: ctx.sleep, clock: ctx.clock, now });
+      ycPending = r && r.remaining > 0;
+    } catch (e) {
+      updateState((st) => { st.held = [...st.held.filter((h) => !String(h.detail).startsWith('yc:')), { reason: 'source_empty', detail: `yc: ${e.message}` }]; st.yc = { ...(st.yc || {}), lastAt: new Date(now).toISOString() }; });
     }
   }
   // With Tenjin ready, the search rounds run in code, never inside an open unattended batch.
@@ -90,7 +100,7 @@ export async function tick(ctx) {
   // actionable wake. A wake for the line alone comes at most once per round, only for a changed waiting set, and never
   // after a push that came back "not sent" (until the person's next turn): then the line waits for the next wake and the report.
   const s1 = loadState();
-  const mark = `${s1.sweep.lastAt || ''}|${(s1.routed || {}).lastSearchAt || ''}|${(s1.hn || {}).lastAt || ''}`;
+  const mark = `${s1.sweep.lastAt || ''}|${(s1.routed || {}).lastSearchAt || ''}|${(s1.hn || {}).lastAt || ''}|${(s1.yc || {}).lastAt || ''}`;
   const wsNow = waitingSet(s1);
   const wsPrev = st.waiting || {};
   const gained = Object.keys(wsNow).some((k) => wsPrev[k] !== wsNow[k]); // a set that only shrinks changes nothing
@@ -99,7 +109,7 @@ export async function tick(ctx) {
   const res = st.notifyResult || null;
   const blocking = Object.keys(wsNow).some((k) => wsPrev[k] !== wsNow[k] && /^(park|held|consent):/.test(k));
   const notifyOnly = !fresh.length && newNotify && gained && res !== 'not_sent' && (res !== 'unknown' || blocking) && (st.notifyMark || null) !== mark;
-  if (hnPending) return { lines, stop: false };
+  if (hnPending || ycPending) return { lines, stop: false };
   if (fresh.length || notifyOnly) {
     const counts = {};
     for (const i of actionable.filter((x) => fresh.includes(`${x.key}:${x.reason}:${x.v}`))) counts[i.reason] = (counts[i.reason] || 0) + 1;

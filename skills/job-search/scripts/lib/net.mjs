@@ -59,9 +59,24 @@ export async function assertPublicName(host, lookup = (h, o) => dns.promises.loo
   for (const a of list) if (isPrivateAddress(a.address || a)) throw new Error(`${host} resolves to a local or private address: refused`);
 }
 
+// The one narrow exception to the never-automated list: code may read a few public Y Combinator pages, logged out, for discovery
+// only. These paths on one host and nothing else (no query, no other Y Combinator host).
+const YC_PATHS = [
+  /^\/robots\.txt$/,
+  /^\/jobs\/role\/[a-z0-9-]+(\/[a-z0-9-]+)?$/,
+  /^\/companies\/[a-z0-9-]+$/,
+  /^\/companies\/[a-z0-9-]+\/jobs\/[A-Za-z0-9-]+$/,
+];
+export function assertYcRead(url) {
+  const u = new URL(url);
+  if (u.protocol !== 'https:' || u.hostname.toLowerCase() !== graph().ycRead.host || u.search || u.hash || u.username || u.password || u.port) throw new Error(`not a readable Y Combinator page: ${url}`);
+  if (!YC_PATHS.some((re) => re.test(u.pathname))) throw new Error(`not a readable Y Combinator page: ${u.pathname}`);
+}
+
 // `allowUrl` names one exact URL that may be read once, outside the fixed host list (the resume link the person gave). It
 // never lifts the never-automated list or the local and private addresses, and it is https only.
-export function assertAllowed(url, { allowUrl = null } = {}) {
+export function assertAllowed(url, { allowUrl = null, yc = false } = {}) {
+  if (yc) return assertYcRead(url);
   const u = new URL(url);
   const host = u.hostname.toLowerCase();
   if (graph().neverHosts.some((b) => host === b || host.endsWith(`.${b}`))) throw new Error(`never-automated host refused: ${host}`);
@@ -74,8 +89,12 @@ export function assertAllowed(url, { allowUrl = null } = {}) {
   if (!ALLOWED_HOSTS.includes(host)) throw new Error(`host not allowed: ${host}`);
 }
 
-export async function guardedFetch(url, opts = {}, fetchImpl = globalThis.fetch, { allowUrl = null, lookup } = {}) {
-  assertAllowed(url, { allowUrl });
+export async function guardedFetch(url, opts = {}, fetchImpl = globalThis.fetch, { allowUrl = null, lookup, yc = false } = {}) {
+  assertAllowed(url, { allowUrl, yc });
+  if (yc) {
+    // Logged out by construction: no cookie, no credentials, and a redirect is never followed.
+    return fetchImpl(url, { method: 'GET', redirect: 'manual', credentials: 'omit', headers: { 'user-agent': 'tenjin-skills-job-search', accept: 'text/html' } });
+  }
   if (allowUrl) await assertPublicName(new URL(url).hostname, lookup); // before every hop, redirects included
   const res = await fetchImpl(url, {
     ...opts,
