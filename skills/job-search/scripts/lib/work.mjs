@@ -14,6 +14,7 @@ import { cleanupStale, isActive, batchMode } from './batch.mjs';
 import { postFacts } from './postinfo.mjs';
 import { tenjinAsk as tenjinAskQuestion } from './questions.mjs';
 import { emailConsentCurrent, due as pendingEmails } from './email.mjs';
+import { collectFacts, splitByOptions } from './facts.mjs';
 import path from 'node:path';
 
 export const POST_BATCH = 25;
@@ -430,10 +431,13 @@ export function markShown(state, keys = null) {
 export function waitingSetRaw(state) {
   const w = {};
   const mode = readJson(path.join(stateDir(), 'profile.json'), {}).applyMode; // a fill needs no yes, and nothing is submitted in fill_only or open_only
+  const factGroups = collectFacts(state).flatMap(splitByOptions);
+  const inFactGroup = new Set(factGroups.flatMap((g) => g.jobs.map((x) => x.key)));
+  if (factGroups.length) w[`facts:${factGroups.length}`] = sha(canonical(factGroups.map((g) => [g.id, g.jobs.map((x) => x.key)]))).slice(0, 10);
   for (const j of Object.values(state.jobs)) {
     if (graph().terminal.includes(j.status)) continue;
     if (j.fillReady) w[`fill:${j.key}`] = `${j.fillReady.at}|${j.company}`;
-    else if (j.parked) w[`park:${j.key}`] = `${j.parked.key}|${j.parked.reasons.join(',')}|${j.company}`;
+    else if (j.parked && !(j.parked.reasons.length === 1 && j.parked.reasons[0] === 'needs_facts' && inFactGroup.has(j.key))) w[`park:${j.key}`] = `${j.parked.key}|${j.parked.reasons.join(',')}|${j.company}`;
     else if (j.status === 'apply_ready' && !state.approvals[j.key] && j.employerPosting && !j.fillOnly && !['fill_only', 'open_only'].includes(mode) && !String(mode || '').startsWith('auto')) w[`yes:${j.key}`] = `${j.hash}|${j.company}`;
   }
   const mail = pendingEmails(state);
@@ -446,6 +450,11 @@ export function waitingSetRaw(state) {
   return w;
 }
 
+// Every part of a push is a phrase a person understands, never an internal reason code.
+const STOP_PHRASE = { captcha: 'a bot check', login: 'a sign-in', email_code: 'an email code', assessment: 'an assessment', account: 'an account to create', upload_blocked: 'the resume could not be attached', needs_facts: 'a missing answer', unknown_field: 'a question it cannot answer', forbidden_field: 'a form asking for something it never fills', eeo_missing: 'a demographic question', fill_problem: 'a field that did not fill right', injection_suspected: 'text aimed at AI tools', writing_needs_yes: 'a written answer waiting for your yes', needs_resume_file: 'a resume file', form_changed: 'a form that changed', not_in_rules: 'outside your rules' };
+export const plainReason = (r) => STOP_PHRASE[r] || String(r).replace(/_/g, ' ');
+const HELD_PHRASE = { chrome_disconnected: 'Claude in Chrome lost its connection', no_chrome_tools: 'Claude in Chrome is not available in this session', update_waiting: 'an update waits for your yes', update_failed: 'the update could not be installed', stopped: 'a job stopped' };
+export const plainHeld = (reason, detail = '') => `${HELD_PHRASE[reason] || String(reason).replace(/_/g, ' ')}${detail ? ` (${String(detail).replace(/_/g, ' ')})` : ''}`;
 export function notifyLine(state, overlay, now = Date.now(), { unattended = false } = {}) {
   const w = waitingSet(state);
   const fresh = Object.keys(w).filter((k) => state.notified[k] !== w[k]);
@@ -462,7 +471,8 @@ export function notifyLine(state, overlay, now = Date.now(), { unattended = fals
   const filled = fresh.filter((k) => k.startsWith('fill:')).length;
   const mails = fresh.filter((k) => k.startsWith('email:'));
   const stops = fresh.filter((k) => k.startsWith('park:'));
-  const held = fresh.filter((k) => k.startsWith('held:')).map((k) => k.split(':')[1]);
+  const held = fresh.filter((k) => k.startsWith('held:')).map((k) => { const [, r, ...d] = k.split(':'); return plainHeld(r, d.join(':')); });
+  const questions = fresh.filter((k) => k.startsWith('facts:'));
   const consents = fresh.filter((k) => k.startsWith('consent:'));
   const updates = fresh.filter((k) => k.startsWith('update:'));
   const parts = [];
@@ -471,11 +481,12 @@ export function notifyLine(state, overlay, now = Date.now(), { unattended = fals
   if (mails.length) parts.push(`${mails[0].slice(6)} intro email draft${mails[0].slice(6) === '1' ? '' : 's'} to ${emailConsentCurrent(state, readJson(path.join(stateDir(), 'profile.json'), {}), overlay) ? 'send' : 'approve'}`);
   if (stops.length) {
     const j = state.jobs[stops[0].slice(5)];
-    parts.push(`${stops.length} stop${stops.length > 1 ? 's need' : ' needs'} you${stops.length === 1 && j ? ` at ${j.company}` : ''} (${j && j.parked ? (j.parked.reasons[0] === 'needs_facts' && (j.missingFacts || []).length ? `needs facts: ${j.missingFacts.map((f) => f.replace(/_/g, ' ')).join(', ')}` : j.parked.reasons[0].replace(/_/g, ' ')) : 'parked'})`);
+    parts.push(`${stops.length} stop${stops.length > 1 ? 's need' : ' needs'} you${stops.length === 1 && j ? ` at ${j.company}` : ''} (${j && j.parked ? [...new Set(j.parked.reasons.map(plainReason))].join(', ') : 'a stop'})`);
   }
+  if (questions.length) { const n = Number(questions[0].slice(6)); parts.push(`${n} question${n > 1 ? 's wait' : ' waits'} for your answers`); }
   if (updates.length) parts.push(`${updates.length} update${updates.length > 1 ? 's' : ''} for the report`);
   if (consents.length) parts.push(`consent changed: ${[...new Set(consents.map((k) => w[k]))].join('; ')}`);
-  if (held.length) parts.push(`needs you: ${[...new Set(held)].join(', ').replace(/_/g, ' ')}`);
+  if (held.length) parts.push(`needs you: ${[...new Set(held)].join('; ')}`);
   let line = parts.join(', ').replace(/[*_`#\[\]]/g, '');
   if (line.length > 190) line = line.slice(0, 187) + '...';
   // In an unattended run nobody can answer the ask, so the Tenjin hint rides on the notification when it fits.

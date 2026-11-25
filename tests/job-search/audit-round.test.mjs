@@ -114,7 +114,7 @@ test('an answer that cannot tell sent from not sent allows notify-only wakes onl
   store.updateState((s) => { s.sweep.lastAt = '2026-11-25T07:00:00Z'; s.held.push({ reason: 'chrome_disconnected', detail: 'Acme' }); });
   const l = await tick(NOW + 2000);
   assert.equal(l.length, 1);
-  assert.match(l[0], /needs you: chrome disconnected/);
+  assert.match(l[0], /needs you: Claude in Chrome lost its connection/);
 });
 
 test('an actionable wake carries the line in the same round, and the same due set is never sent twice', async () => {

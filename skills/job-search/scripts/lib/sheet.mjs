@@ -10,10 +10,13 @@ const EEO = /\b(gender|race|ethnic|hispanic|latino|veteran|disability|sexual ori
 const FACTS = [
   [/first name|given name/, 'first_name'], [/last name|surname|family name/, 'last_name'], [/^(full )?name$|your name/, 'full_name'],
   [/e-?mail/, 'email'], [/phone|mobile/, 'phone'], [/linkedin/, 'linkedin'], [/github/, 'github'], [/website|portfolio/, 'website'],
-  [/current company|current employer/, 'current_company'], [/city|location|where are you based/, 'location'],
+  [/current company|current employer/, 'current_company'], [/\bcity\b|\blocation\b|where are you based/, 'location'],
   [/sponsorship|visa/, 'requires_sponsorship'], [/authori[sz]ed to work|work authori[sz]ation|legally authori/, 'authorized_to_work'],
   [/salary|compensation expectation/, 'salary_expectation'],
   [/citizen/, 'us_citizen'], [/clearance/, 'security_clearance'],
+  [/current (job )?title|current role|job title/, 'current_title'], [/\b(school|university|college)\b/, 'school'],
+  [/earliest start|start date|when can you start|available to start/, 'start_date'], [/notice period/, 'notice_period'],
+  [/\b(student|new grad|recent graduate)\b/, 'student_status'],
 ];
 const PLACEHOLDER = /\[[^\]]*(path|insert|your|company|name|todo)[^\]]*\]|\bTODO\b|lorem ipsum|\{\{|<insert|\bXXX+\b|\[PATH TO/i;
 

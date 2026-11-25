@@ -34,6 +34,7 @@ import * as qs from './lib/questions.mjs';
 import { FREQUENCIES, frequencyOf, periodStart } from './lib/schedule.mjs';
 import { ingest, joinLeads, leadKey } from './lib/ingest.mjs';
 import { addWatch, removeWatch } from './lib/watchlist.mjs';
+import { applyFactAnswer, buildFactQuestions, collectFacts, splitByOptions } from './lib/facts.mjs';
 import { eeoTextOf, oldFieldError, oldFields, validateProfile } from './lib/profile.mjs';
 import { routeContacts, routedRounds } from './lib/routed.mjs';
 import { resumeHeld } from './lib/held.mjs';
@@ -102,6 +103,18 @@ function releaseStage(key) {
     return Object.keys(s.staged || {}).length;
   });
   return left ? { unstaged: true, kept: 'another job is still uploading' } : { unstaged: true, ...removeStage() };
+}
+
+// A fact the records already give (the profile, an earlier answer) is filled with no question: the sheets that still miss a fact are
+// rebuilt from them before any question is made.
+function refreshSheets(state, profile) {
+  const answers = loadAnswers().entries;
+  for (const job of Object.values(state.jobs)) {
+    if (!['shortlisted', 'prepared', 'apply_ready'].includes(job.status) || !job.sheet || !job.questions || !(job.sheet.unanswered || []).length) continue;
+    const sheet = buildSheet({ job, questions: job.questions, profile, answers, drafts: job.drafts || {} });
+    job.sheet = { ...sheet, passed: false };
+    checkJobSheet(job, null, profile);
+  }
 }
 
 const commands = {
@@ -968,6 +981,19 @@ const commands = {
       updateState((st) => { markShown(st, [`yes:${flags.key}`]); st.jobs[flags.key].approvalShown = { hash: job.sheet.hash, at: new Date().toISOString() }; }); // the application is shown with this call: no push repeats it
       { const ap = qs.approvalQuestions(job, applyPathOf(job, readProfile()), { chromeOff: loadState().chrome === 'off' }); const bad = ap.questions.length ? qs.validateAsk(ap) : []; return bad.length ? out({ error: bad.join('; ') }, 2) : out(ap); }
     }
+    if (kind === 'facts') {
+      // Every missing fact of every job prepared in this moment, merged by code: one question per fact, naming its jobs. The model asks
+      // these calls in order and never writes a question list itself. Nobody is asked in a turn the watcher woke: the jobs hold.
+      if (flags.unattended === true || (batch.isActive() && batch.batchMode() === 'unattended')) {
+        return out({ asked: false, waiting: collectFacts(loadState()).flatMap(splitByOptions).length, next: 'nobody is asked in this turn: the jobs hold and one push says how many questions wait' });
+      }
+      const profile = readProfile();
+      updateState((s) => refreshSheets(s, profile));
+      const built = buildFactQuestions(collectFacts(loadState()));
+      updateState((s) => { s.factPlan = built.plan; });
+      for (const c of built.calls) { const bad = qs.validateAsk({ questions: c.questions }); if (bad.length) return out({ error: bad.join('; ') }, 2); }
+      return out({ count: built.count, calls: built.calls, plain: built.plain, next: built.count ? 'make each call with the question tool, one after another, then send the plain message; record each answer with J facts answer <id> <the chosen option or their words>, or J facts skip <id> for a skip; facts and approvals never share a call' : 'no fact is missing: nothing to ask' });
+    }
     if (kind === 'approve-pick') return out({ groups: qs.approvePickQuestions(readySheets(loadState()), { chromeOff: loadState().chrome === 'off' }) });
     if (kind === 'applied') {
       const job = loadState().jobs[flags.key];
@@ -989,6 +1015,35 @@ const commands = {
     return out({ frequency: f });
   },
   // A form fact the person gave: kept in the profile, and the jobs that waited for it go back in the queue.
+  // The answer to one merged fact question, recorded for every job it names (and as the profile fact when it is one).
+  async facts([sub, id, ...rest]) {
+    const plan = loadState().factPlan || {};
+    if (!['answer', 'skip'].includes(sub) || !id) return out({ error: 'facts answer <id> <value> | skip <id>' }, 2);
+    if (!plan[id]) return out({ error: `no such question: ${id}; run J ask facts again` }, 2);
+    if (sub === 'skip') {
+      return out(updateState((s) => {
+        for (const jb of plan[id].jobs) { try { applyOp(s, { op: 'transition', key: jb.key, to: 'skipped', reason: 'the person skipped it at a missing fact' }); } catch {} }
+        delete s.factPlan[id];
+        return { skipped: plan[id].jobs.map((x) => x.key) };
+      }));
+    }
+    const value = rest.join(' ').trim();
+    if (!value) return out({ error: 'facts answer <id> <value>' }, 2);
+    const profile = readProfile();
+    if (plan[id].factKey) {
+      const next = { ...profile, facts: { ...(profile.facts || {}), [plan[id].factKey]: value } };
+      const bad = validateProfile(next);
+      if (bad.length) return out({ error: bad.join('; ') }, 2);
+      writeJsonAtomic(profileFile(), next);
+    }
+    const r = applyFactAnswer(loadState(), readProfile(), plan, id, value, addAnswer);
+    const left = updateState((s) => {
+      refreshSheets(s, readProfile());
+      delete s.factPlan[id];
+      return r.jobs.map((k) => ({ key: k, missing: ((s.jobs[k] && s.jobs[k].sheet && s.jobs[k].sheet.unanswered) || []).length }));
+    });
+    return out({ recorded: r.jobs.length, jobs: left, needsMapping: r.needsMapping, ...(r.needsMapping.length ? { note: 'these forms do not offer that option word for word: the browser step maps the answer to the form\'s own options, or ask them on their own' } : {}) });
+  },
   async fact([sub, name, ...rest]) {
     if (sub !== 'set' || !name || !rest.length) return out({ error: 'fact set <name> <value>' }, 2);
     const profile = readProfile();

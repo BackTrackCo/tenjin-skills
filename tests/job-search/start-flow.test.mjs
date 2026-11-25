@@ -106,7 +106,7 @@ test('a missing form fact holds only its job as needs_facts, names what is missi
   assert.deepEqual(held.missingFacts.sort(), ['authorized_to_work', 'phone']);
   assert.equal(store.loadState().jobs[other.key].parked, null, 'only its own job holds');
   const w = runJobs(home, ['work', '--commit']);
-  assert.match(w.json.notify, /needs facts: authorized to work, phone|needs facts: phone, authorized to work/);
+  assert.match(w.json.notify, /2 questions wait for your answers/, 'one push says how many questions wait');
   assert.equal(runJobs(home, ['work', '--commit']).json.notify, null, 'one notification');
   // the answer comes, and the job goes back in the queue by itself
   assert.equal(runJobs(home, ['fact', 'set', 'phone', '+49 151 0000000']).json.resumed, 0, 'one fact is not enough');

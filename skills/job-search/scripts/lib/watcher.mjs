@@ -108,7 +108,7 @@ export async function tick(ctx) {
   // The push's own answer decides (J notify result): "not sent" stops notify-only wakes until the person's next turn; an
   // answer that cannot tell leaves them only for items that block work (a stop, a held item, a consent to give).
   const res = st.notifyResult || null;
-  const blocking = Object.keys(wsNow).some((k) => wsPrev[k] !== wsNow[k] && /^(park|held|consent):/.test(k));
+  const blocking = Object.keys(wsNow).some((k) => wsPrev[k] !== wsNow[k] && /^(park|held|consent|facts):/.test(k));
   const notifyOnly = !fresh.length && newNotify && gained && res !== 'not_sent' && (res !== 'unknown' || blocking) && (st.notifyMark || null) !== mark;
   if (hnPending || ycPending) return { lines, stop: false };
   if (fresh.length || notifyOnly) {
