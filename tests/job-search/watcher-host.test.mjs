@@ -101,10 +101,60 @@ test('every J command reports watcher: stopped once armed and no watcher lives; 
   assert.equal(runJobs(home, ['view']).json.watcher, undefined, 'a live watcher with a recent tick');
   store.updateState((s) => { s.lease.lastTick = new Date(Date.now() - 5 * 60000).toISOString(); s.lease.heartbeat = s.lease.lastTick; });
   assert.equal(runJobs(home, ['view']).json.watcher, 'stopped', 'a stale last tick');
-  // a J command refreshes the lease of a live watcher
-  store.updateState((s) => { s.lease.lastTick = now(); s.lease.heartbeat = new Date(Date.now() - 90000).toISOString(); });
+  // J commands never write the liveness field
+  const before = new Date(Date.now() - 20000).toISOString();
+  store.updateState((s) => { s.lease.alive = before; s.lease.heartbeat = before; s.lease.lastTick = before; });
   runJobs(home, ['view']);
-  assert.ok(Date.now() - Date.parse(store.loadState().lease.heartbeat) < 60000, 'refreshed');
+  assert.equal(store.loadState().lease.alive, before, 'a J command did not refresh the liveness field');
+  assert.equal(store.loadState().lease.heartbeat, before);
+});
+
+test('a tick that runs for 5 simulated minutes keeps the watcher running, because its timer refreshes the liveness field', async () => {
+  reset();
+  let t = Date.now();
+  let fire = null;
+  let stopped = 0;
+  const checks = [];
+  const tickImpl = async () => {
+    for (let i = 0; i < 10; i++) {
+      t += 30000; // 30 s of a slow provider, ten times
+      fire();
+      const st = store.loadState();
+      checks.push(lease.watcherStatus(st, t).running);
+      if (i === 9) {
+        const second = await watcher.runWatcher({ write: (l) => checks.push(l), sleep: async () => {}, clock: () => t, tickImpl: async () => ({ lines: [], stop: false }), maxTicks: 1 });
+        checks.push(second.reason);
+      }
+    }
+    return { lines: [], stop: false };
+  };
+  const r = await watcher.runWatcher({ write: () => {}, sleep: async () => {}, clock: () => t, timer: (fn) => { fire = fn; return () => { stopped++; }; }, tickImpl, maxTicks: 1 });
+  assert.equal(r.reason, 'max_ticks');
+  assert.deepEqual(checks.filter((c) => typeof c === 'boolean'), Array(10).fill(true), 'running through 5 minutes');
+  assert.ok(checks.includes('another session holds the lease; work attended'));
+  assert.ok(checks.includes('lease_held'), 'a second J watch exits at once');
+  assert.equal(stopped, 1, 'the timer stops with the watcher');
+  // without the timer the same 5 minutes would read as stopped: that was the bug
+  reset();
+  t = Date.now();
+  await lease.claimLease({ holder: 'w', pid: process.pid, now: t });
+  assert.equal(lease.watcherStatus(store.loadState(), t + 5 * 60000).running, false);
+  assert.equal(lease.watcherStatus(store.loadState(), t + 60000).running, true);
+});
+
+test('a dead pid is reclaimed, and a live but reused pid with a stale field is reclaimed too', async () => {
+  reset();
+  const at = (ms) => new Date(Date.now() - ms).toISOString();
+  store.updateState((s) => { s.lease = { holder: 'dead', heartbeat: at(1000), alive: at(1000), pid: 2147483000 }; });
+  assert.equal((await run({ maxTicks: 1 })).reason, 'max_ticks', 'a dead pid with a fresh field');
+  store.updateState((s) => { s.lease = { holder: 'reused', heartbeat: at(10 * 60000), alive: at(10 * 60000), pid: process.pid }; });
+  assert.equal(lease.watcherStatus(store.loadState()).running, false);
+  assert.equal((await run({ maxTicks: 1 })).reason, 'max_ticks', 'the pid lives but the field is stale: another process now owns that pid');
+  store.updateState((s) => { s.lease = { holder: 'reused', heartbeat: at(10 * 60000), alive: at(10 * 60000), pid: process.pid }; });
+  assert.equal(runJobs(home, ['arm']).json.armed, true);
+  // a live pid with a fresh field is never reclaimed
+  store.updateState((s) => { s.lease = { holder: 'live', heartbeat: at(5000), alive: at(5000), pid: process.pid }; });
+  assert.equal((await run({ maxTicks: 1 })).reason, 'lease_held');
 });
 
 test('the CLI: J watch prints one line, exits 0 when work is due, and a second one exits at once', () => {

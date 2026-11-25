@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { TICK_MS, claimLease, heartbeat, releaseLease } from './lease.mjs';
+import { ALIVE_MS, TICK_MS, beat, claimLease, heartbeat, releaseLease } from './lease.mjs';
 import { checkRelease, recordRelease } from './release.mjs';
 import { SKILL_DIR, readJson, stateDir } from './paths.mjs';
 import { loadState, updateState } from './store.mjs';
@@ -113,25 +113,32 @@ export async function tick(ctx) {
 // work only when an actionable wake is due under the wake rules, and the exit is what wakes the session. It never exits
 // because of time, and it keeps ticking with no output on a quiet state. A restarted watcher reads the stored fingerprint, so
 // it does not exit again for the same due set. A second watcher exits at once when another holds the lease.
-export async function runWatcher({ holder = Math.random().toString(36).slice(2, 10), pid = process.pid, fetchImpl, runner, write = (l) => process.stdout.write(`${l}\n`), sleep = (ms) => new Promise((r) => setTimeout(r, ms)), tickMs = TICK_MS, maxTicks = Infinity, ctx = {} } = {}) {
-  const claim = await claimLease({ holder, pid });
+export async function runWatcher({ holder = Math.random().toString(36).slice(2, 10), pid = process.pid, fetchImpl, runner, write = (l) => process.stdout.write(`${l}\n`), sleep = (ms) => new Promise((r) => setTimeout(r, ms)), tickMs = TICK_MS, maxTicks = Infinity, ctx = {}, clock = () => Date.now(), timer = (fn, ms) => { const t = setInterval(fn, ms); t.unref(); return () => clearInterval(t); }, tickImpl = tick } = {}) {
+  const claim = await claimLease({ holder, pid, now: clock() });
   if (!claim.ok) {
     write('another session holds the lease; work attended');
     return { exit: 0, reason: 'lease_held' };
   }
   updateState((s) => { s.watcherEver = true; });
   write('watching; exits when work is due');
-  const startHash = watcherCodeHash();
-  for (let i = 0, first = true; i < maxTicks; i++, first = false) {
-    const r = await tick({ holder, fetchImpl, runner, firstTick: first, seen: { sig: null }, startHash, ...ctx });
-    for (const l of r.lines) write(l);
-    if (r.stop) return { exit: 0, reason: 'stop', lines: r.lines };
-    if (r.lines.length) {
-      releaseLease(holder); // the session restarts it after the round
-      return { exit: 0, reason: 'due', lines: r.lines };
+  // The liveness field is refreshed from a timer that keeps running through a long tick: the work is async, so the timer
+  // fires while a tick waits on slow providers, and the watcher never looks stopped (and is never started twice).
+  const stopTimer = timer(() => { try { beat(holder, clock()); } catch {} }, ALIVE_MS);
+  try {
+    const startHash = watcherCodeHash();
+    for (let i = 0, first = true; i < maxTicks; i++, first = false) {
+      const r = await tickImpl({ holder, fetchImpl, runner, firstTick: first, seen: { sig: null }, startHash, now: clock(), ...ctx });
+      for (const l of r.lines) write(l);
+      if (r.stop) return { exit: 0, reason: 'stop', lines: r.lines };
+      if (r.lines.length) {
+        releaseLease(holder); // the session restarts it after the round
+        return { exit: 0, reason: 'due', lines: r.lines };
+      }
+      await sleep(tickMs);
     }
-    await sleep(tickMs);
+    releaseLease(holder);
+    return { exit: 0, reason: 'max_ticks' };
+  } finally {
+    stopTimer();
   }
-  releaseLease(holder);
-  return { exit: 0, reason: 'max_ticks' };
 }
