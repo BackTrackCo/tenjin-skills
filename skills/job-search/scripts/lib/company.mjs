@@ -1,4 +1,4 @@
-import { employerWords, websiteLabel } from './employer.mjs';
+import { websiteLabel } from './employer.mjs';
 
 // Finding the company before the people search. The employer's website names the right company, since a short name alone matches
 // many. What code already has, in order: a link field in the job record (`record`), the routed posting's employer website field
@@ -14,22 +14,29 @@ export function websiteOf(job) {
 
 // The names the company is known by: the posting's company and the board's company name.
 export const companyNames = (job) => [job.company, job.boardCompany].filter((n) => typeof n === 'string' && n.trim());
-const squash = (words) => words.join('');
 
+// Names match only when their normalized word lists are equal: lower case, letters and digits only, words kept apart, legal suffix
+// words dropped. "Vercel Inc" equals "Vercel" and "Scope Labs" equals "Scope Labs, Inc."; "Meow" does not equal "Meow Wolf", and
+// "Scope" does not equal "Scope Labs". No containment match anywhere: the lookup returns its best guess with no score, so a looser
+// rule would save another company's website and record its people.
+const LEGAL = new Set(['inc', 'incorporated', 'llc', 'ltd', 'limited', 'corp', 'corporation', 'co', 'company', 'gmbh', 'plc', 'sa', 'ag', 'bv', 'pte', 'pty']);
+export function normName(name) {
+  return String(name || '').normalize('NFKD').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter((w) => w && !LEGAL.has(w));
+}
 export function nameMatches(a, b) {
-  const x = squash(employerWords(a));
-  const y = squash(employerWords(b));
-  if (!x || !y) return false;
-  return x === y || (x.length >= 4 && y.length >= 4 && (x.includes(y) || y.includes(x)));
+  const x = normName(a);
+  const y = normName(b);
+  return x.length > 0 && x.length === y.length && x.every((w, i) => w === y[i]);
 }
 
-// Does the domain's own label match the company name or the board's company name?
+// Does the domain's own label equal a company name, with its words joined ("Scope Labs" and scopelabs.com)? Same normalization,
+// no containment.
 export function domainMatchesCompany(url, names) {
   const label = websiteLabel(url);
   if (!label) return false;
   const l = label.replace(/-/g, '');
   return names.some((n) => {
-    const x = squash(employerWords(n));
-    return x && (l === x || (l.length >= 4 && x.length >= 4 && (l.includes(x) || x.includes(l))));
+    const w = normName(n);
+    return w.length > 0 && l === w.join('');
   });
 }

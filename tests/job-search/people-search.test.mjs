@@ -208,3 +208,38 @@ test('the company lookup request input has only keys from its spec', () => {
   assert.equal(cl.RECORDED, true);
   assert.throws(() => cl.mapper({}), /no company name/);
 });
+
+test('names match only when their normalized word lists are equal: no containment anywhere', async () => {
+  assert.equal(company.nameMatches('Vercel Inc', 'Vercel'), true);
+  assert.equal(company.nameMatches('Scope Labs', 'Scope Labs, Inc.'), true);
+  assert.equal(company.nameMatches('ACME  Robotics LLC', 'acme robotics'), true);
+  assert.equal(company.nameMatches('Meow', 'Meow Wolf'), false);
+  assert.equal(company.nameMatches('Scope', 'Scope Labs'), false);
+  assert.equal(company.nameMatches('Scope Labs', 'Scope'), false);
+  assert.equal(company.nameMatches('', ''), false);
+  assert.equal(company.nameMatches('Inc', 'Co'), false, 'nothing is left after the suffix words');
+  assert.deepEqual(company.normName('The Meow-Wolf Company, Inc.'), ['the', 'meow', 'wolf']);
+  assert.equal(company.domainMatchesCompany('https://scopelabs.com', ['Scope Labs']), true);
+  assert.equal(company.domainMatchesCompany('https://scope-labs.com', ['Scope Labs, Inc.']), true);
+  assert.equal(company.domainMatchesCompany('https://scope.com', ['Scope Labs']), false, 'no containment for the domain either');
+  assert.equal(company.domainMatchesCompany('https://scopelabs.com', ['Scope']), false);
+  // "Meow" against a lookup that answers "Meow Wolf": the domain is not saved
+  const ing = await import(`${S}ingest.mjs`);
+  reset();
+  const j = job(60, { company: 'Meow' });
+  add(j);
+  const obj = { need: 'company_lookup', status: 'fulfilled', ...cl.adapter({ ...FX.company.step2.envelope.result, name: 'Meow Wolf', legalName: 'Meow Wolf Inc', domain: 'meowwolf.com' }, { jobKey: j.key }) };
+  await ing.ingest({ obj, state: store.loadState(), profile: {}, overlay: empty, fetch: fakeFetch({}), now: NOW });
+  assert.equal(store.loadState().jobs[j.key].employerWebsite, undefined, 'meowwolf.com is not saved for Meow');
+  assert.equal(store.loadState().jobs[j.key].companyLinkedinUrl, undefined);
+  // "Vercel Inc" answered for "Vercel": saved
+  reset();
+  const v = job(61, { company: 'Vercel' });
+  add(v);
+  await ing.ingest({ obj: { need: 'company_lookup', status: 'fulfilled', ...cl.adapter({ ...FX.company.step2.envelope.result, name: 'Vercel Inc', legalName: null }, { jobKey: v.key }) }, state: store.loadState(), profile: {}, overlay: empty, fetch: fakeFetch({}), now: NOW });
+  assert.equal(store.loadState().jobs[v.key].employerWebsite, 'vercel.com');
+  // the people search: a lead whose company name only contains the job's company is dropped; an equal name is kept
+  const res = { success: true, total: 3, leads: [lead(1, 'Meow Wolf'), lead(2, 'Meow'), lead(3, 'Meow Inc.')] };
+  assert.deepEqual(people.adapter(res, { jobKey: 'k', names: ['Meow'] }).contacts.map((c) => c.name), ['P2 X', 'P3 X']);
+  assert.deepEqual(people.adapter(res, { jobKey: 'k', names: ['Meow Wolf'] }).contacts.map((c) => c.name), ['P1 X']);
+});
