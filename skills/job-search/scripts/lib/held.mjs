@@ -1,3 +1,4 @@
+import { eeoTextOf } from './profile.mjs';
 import { updateState } from './store.mjs';
 import { unpark } from './work.mjs';
 
@@ -13,7 +14,7 @@ export function resumeHeld(profile) {
         unpark(j);
         j.missingFacts = [];
         n++;
-      } else if (r.length === 1 && r[0] === 'eeo_missing' && profile.eeo) {
+      } else if (r.length === 1 && r[0] === 'eeo_missing' && eeoTextOf(profile)) {
         unpark(j);
         n++;
       }

@@ -17,7 +17,7 @@ const J = (...a) => runJobs(home, a);
 const empty = { rules: [], lessons: [] };
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'live-'));
 const file = (v) => { const f = path.join(tmp(), 'x.json'); fs.writeFileSync(f, JSON.stringify(v)); return f; };
-const PROFILE = { eeo: 'decline_all', facts: { email: 'ada@example.test', first_name: 'Ada', last_name: 'L', phone: '+49 1', github: 'https://github.com/ada', current_company: 'Initech' } };
+const PROFILE = { eeoText: 'Decline every voluntary demographic question (test placeholder).', facts: { email: 'ada@example.test', first_name: 'Ada', last_name: 'L', phone: '+49 1', github: 'https://github.com/ada', current_company: 'Initech' } };
 const reset = (profile = {}) => {
   fs.rmSync(path.join(process.env.TENJIN_SKILLS_DIR, 'job-search', 'rules.json'), { force: true });
   store.updateState((s) => { Object.assign(s, store.emptyState()); });
@@ -90,7 +90,7 @@ test('a legal acknowledgment is asked before the fill and the fill ticks it; an 
 test('optional fields the profile or resume answers are filled', () => {
   reset();
   const qsList = [Q('Email'), Q('GitHub', { required: false }), Q('Current company', { required: false }), Q('Cover letter', { required: false })];
-  const s = sheet.buildSheet({ job: mkJob({}), questions: qsList, profile: { facts: PROFILE.facts, eeo: 'decline_all' } });
+  const s = sheet.buildSheet({ job: mkJob({}), questions: qsList, profile: { facts: PROFILE.facts, eeoText: 'Decline every voluntary demographic question (test placeholder).' } });
   assert.deepEqual(s.fields.map((f) => f.label), ['Email', 'GitHub', 'Current company'], 'answered optional fields are filled; one with no answer is left');
   assert.equal(s.unanswered.length, 0);
 });
@@ -121,7 +121,7 @@ test('a filled job offers Submit it now, I\'ll submit in Chrome and Not this one
   const q = J('ask', 'approval', '--key', job.key).json;
   assert.deepEqual(q.questions[0].options.map((o) => o.label), ['Submit it now (Recommended)', 'I\'ll submit in Chrome', 'Not this one']);
   assert.deepEqual(qs.validateAsk({ questions: q.questions }), []);
-  const profile = { eeo: 'decline_all', applyMode: 'fill_only' };
+  const profile = { eeoText: 'Decline every voluntary demographic question (test placeholder).', applyMode: 'fill_only' };
   const may = () => approval.maySubmit(store.loadState(), profile, empty, job.key, 'h50', true);
   assert.equal(may().why, 'fill_only', 'the fill-only mode never reaches a submit without that answer');
   const base = { overlay: empty, mode: 'attended', now: Date.now(), batchOpen: true, profile };

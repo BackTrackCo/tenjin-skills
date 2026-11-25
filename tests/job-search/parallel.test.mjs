@@ -15,7 +15,7 @@ const ep = (host, n) => ({ url: `https://${host}/acme/jobs/${n}`, system: 'emplo
 const job = (n, host, over = {}) => mkJob({ key: `https://${host}/acme/jobs/${n}`, status: 'apply_ready', company: `Co${n}`, fit: 100 - n, verifiedAt: new Date().toISOString(), employerPosting: ep(host, n), sheet: { hash: `h${n}`, passed: true, eeoMissing: false, fields: [] }, v: 1, ...over });
 const reset = (jobs) => {
   store.updateState((s) => { Object.assign(s, store.emptyState()); for (const j of jobs) { s.jobs[j.key] = j; s.approvals[j.key] = { sheetHash: j.sheet.hash }; } });
-  J('profile', 'set', JSON.stringify({ eeo: 'decline_all' }));
+  J('profile', 'set', JSON.stringify({ eeoText: 'Decline every voluntary demographic question (test placeholder).' }));
 };
 
 test('apply next --all hands out every passing job, one per host; the rest wait for their host and are not parked', () => {
@@ -52,7 +52,7 @@ test('claims and may-submit work per job; a stop on one job leaves the others ha
   assert.equal(r.json.handouts.length, 3);
   const st = store.loadState();
   for (const k of [a.key, b.key, c.key]) assert.ok(ap.inFlight(st.jobs[k]), 'each job has its own claim');
-  const may = (k) => approval.maySubmit(store.loadState(), { eeo: 'decline_all' }, empty, k, st.jobs[k].sheet.hash, true);
+  const may = (k) => approval.maySubmit(store.loadState(), { eeoText: 'Decline every voluntary demographic question (test placeholder).' }, empty, k, st.jobs[k].sheet.hash, true);
   assert.deepEqual([a.key, b.key, c.key].map((k) => may(k).ok), [true, true, true]);
   // a bot check on one job (attended) stops only that job
   const stop = J('stop', b.key, '--kind', 'upload_blocked');
@@ -63,7 +63,7 @@ test('claims and may-submit work per job; a stop on one job leaves the others ha
   // a Chrome disconnect closes the round: every open job answers no
   J('stop', c.key, '--kind', 'chrome_disconnected', '--unattended');
   store.updateState((s) => { s.batch = null; });
-  assert.deepEqual([a.key, c.key].map((k) => approval.maySubmit(store.loadState(), { eeo: 'decline_all' }, empty, k, st.jobs[k].sheet.hash, false).why), ['batch_closed', 'batch_closed']);
+  assert.deepEqual([a.key, c.key].map((k) => approval.maySubmit(store.loadState(), { eeoText: 'Decline every voluntary demographic question (test placeholder).' }, empty, k, st.jobs[k].sheet.hash, false).why), ['batch_closed', 'batch_closed']);
   assert.equal(J('may-submit', a.key, st.jobs[a.key].sheet.hash).code, 4, 'through the CLI too');
 });
 

@@ -1,3 +1,4 @@
+import { eeoTextOf } from './profile.mjs';
 import fs from 'node:fs';
 import { graph } from './graph.mjs';
 import { duplicateWithin, sha } from './dedupe.mjs';
@@ -39,7 +40,7 @@ export function unattendedProblems(profile) {
   if (!Array.isArray(u.places) || !u.places.length) p.push('no place');
   if (typeof u.minScore !== 'number') p.push('no lowest fit score');
   if (!Array.isArray(u.hosts) || !u.hosts.length || u.hosts.some((h) => typeof h !== 'string' || !h.trim())) p.push('no hiring systems (a list, or "*" for any)');
-  if (!profile.eeo) p.push('the EEO choice is not made');
+  if (!eeoTextOf(profile)) p.push('the voluntary demographic answers are not given');
   return p;
 }
 
@@ -213,7 +214,7 @@ export function jobFailure({ job, state, profile, overlay, mode, now, writingOk 
   if (job.noChromeTools) return 'no_chrome_tools';
   if (!job.verifiedAt || now - Date.parse(job.verifiedAt) > graph().unattendedWindow.verifiedHours * HOUR) return 'not_verified_recently';
   if (!job.sheet || !job.sheet.passed) return 'sheet_not_checked';
-  if (job.sheet.eeoMissing || !profile.eeo) return 'eeo_missing';
+  if (job.sheet.eeoMissing) return 'eeo_missing';
   // A resume given as text only has no file: a form that requires one holds this job, which asks once for the file.
   if (profile.resumeThin && [...(job.sheet.fields || []), ...(job.sheet.unanswered || [])].some((f) => /work history|employment history|job titles?|previous (employer|job|role)s?|current (title|role)/i.test(f.label))) return 'needs_resume_file';
   if ((job.sheet.fields || []).some((f) => f.tag === 'upload') && profile.resumeSource && !((profile.resumeUploadPath || profile.resumePath) && fs.existsSync(profile.resumeUploadPath || profile.resumePath))) return 'needs_resume_file';

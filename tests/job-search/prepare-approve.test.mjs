@@ -15,7 +15,7 @@ const qs = await import(`${S}questions.mjs`);
 const empty = { rules: [], lessons: [] };
 const dir = () => path.join(process.env.TENJIN_SKILLS_DIR, 'job-search');
 const J = (...a) => runJobs(home, a);
-const reset = (jobs = [], profile = { facts: { first_name: 'Ada', email: 'ada@example.test' }, eeo: 'decline_all', resumeText: 'Ada builds compilers.' }) => {
+const reset = (jobs = [], profile = { facts: { first_name: 'Ada', email: 'ada@example.test' }, eeoText: 'Decline every voluntary demographic question (test placeholder).', resumeText: 'Ada builds compilers.' }) => {
   fs.rmSync(path.join(dir(), 'rules.json'), { force: true });
   fs.rmSync(path.join(dir(), 'profile.json'), { force: true });
   store.updateState((s) => { Object.assign(s, store.emptyState()); for (const j of jobs) s.jobs[j.key] = j; });
@@ -81,7 +81,7 @@ test('attended: a missing fact is asked inside the approval, with its fixed answ
 
 test('in an auto mode nobody is asked: a missing fact holds the job as needs_facts', async () => {
   const j = planned(5, { questions: [...plain, citizen] });
-  const profile = reset([j], { facts: { first_name: 'Ada', email: 'ada@example.test' }, eeo: 'decline_all', applyMode: 'auto_no_new' });
+  const profile = reset([j], { facts: { first_name: 'Ada', email: 'ada@example.test' }, eeoText: 'Decline every voluntary demographic question (test placeholder).', applyMode: 'auto_no_new' });
   await prep.prepareInCode({ fetch: null, profile });
   const held = store.loadState().jobs[j.key];
   assert.deepEqual(held.parked.reasons, ['needs_facts']);

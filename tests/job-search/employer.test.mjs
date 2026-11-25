@@ -198,7 +198,7 @@ test('a Y Combinator link is never opened, and a YC-only posting with nothing el
 
 test('platform and YC URLs are never handed out, and no code fetch reaches them', async () => {
   const j = (url, over = {}) => mkJob({ status: 'apply_ready', fit: 90, sheet: { hash: 'h', passed: true, eeoMissing: false, fields: [] }, ...over, employerPosting: { url, system: 'greenhouse', token: 'x', jobId: '1', source: 'apply_link', confidence: 'exact', checkedAt: '' } });
-  const run1 = (job) => { const s = store.emptyState(); s.jobs[job.key] = job; s.approvals[job.key] = { sheetHash: 'h' }; return ap.applyNext({ state: s, profile: { eeo: 'decline_all' }, overlay: empty, mode: 'attended', now: NOW, batchOpen: true }); };
+  const run1 = (job) => { const s = store.emptyState(); s.jobs[job.key] = job; s.approvals[job.key] = { sheetHash: 'h' }; return ap.applyNext({ state: s, profile: { eeoText: 'Decline every voluntary demographic question (test placeholder).' }, overlay: empty, mode: 'attended', now: NOW, batchOpen: true }); };
   for (const url of ['https://www.linkedin.com/jobs/view/1', 'https://de.indeed.com/viewjob?jk=1', 'https://www.glassdoor.com/job-listing/1', 'https://www.ziprecruiter.com/c/x', 'https://www.workatastartup.com/jobs/1', 'https://news.ycombinator.com/item?id=1', 'https://www.ycombinator.com/companies/x']) {
     assert.equal(run1(j(url)).queue[0].reason, 'platform_url', url);
     assert.equal(plat.isNeverAutomated(url), true, url);
@@ -219,7 +219,7 @@ test('fill-only never submits, reaches fill_ready, and "I submitted it" makes th
   const j = mkJob({ status: 'apply_ready', fit: 90, company: 'Globex', sheet: { hash: 'h', passed: true, eeoMissing: false, fields: [] } });
   const s = store.emptyState();
   s.jobs[j.key] = j;
-  const next = (o = {}) => ap.applyNext({ state: s, profile: { eeo: 'decline_all' }, overlay: empty, mode: 'attended', now: NOW, batchOpen: true, ...o });
+  const next = (o = {}) => ap.applyNext({ state: s, profile: { eeoText: 'Decline every voluntary demographic question (test placeholder).' }, overlay: empty, mode: 'attended', now: NOW, batchOpen: true, ...o });
   assert.equal(next().queue[0].reason, 'no_recorded_yes');
   assert.equal(fo.isFillOnly(j, empty), false);
   j.fillOnly = true;

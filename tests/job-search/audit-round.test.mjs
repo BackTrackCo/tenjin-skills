@@ -161,7 +161,7 @@ test('no wake while code is still reading in the round (Hacker News in chunks); 
 // ---- item 7: prepare and the round's writer ----------------------------------------------------
 const qs = [{ label: 'First name', required: true, type: 'input_text' }, { label: 'Email', required: true, type: 'input_text' }, { label: 'Resume', required: true, type: 'input_file' }];
 const writes = [...qs, { label: 'Why do you want to work here?', required: true, type: 'textarea', maxLength: 500 }];
-const profile = { facts: { first_name: 'Sam', email: 'sam@example.test' }, eeo: 'decline_all', resumeText: 'text' };
+const profile = { facts: { first_name: 'Sam', email: 'sam@example.test' }, eeoText: 'Decline every voluntary demographic question (test placeholder).', resumeText: 'text' };
 
 test('a sheet with no new writing goes straight to apply_ready with no model; one that needs writing waits for the round', async () => {
   const a = mkJob({ key: 'https://boards.greenhouse.io/acme/jobs/71', status: 'shortlisted', questions: qs });

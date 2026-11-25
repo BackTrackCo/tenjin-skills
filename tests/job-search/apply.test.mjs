@@ -11,7 +11,7 @@ const GUARD = { ok: true };
 const DS_OFF = { enabled: false };
 const empty = () => ({ rules: [], lessons: [] });
 const U = { roles: ['engineer'], places: ['Berlin'], remote: false, minPay: 100000, excludeCompanies: ['Evilcorp'], excludeLevels: ['intern', 'junior'], minScore: 70, hosts: ['greenhouse', 'lever'] };
-const profile = () => ({ eeo: 'decline_all', unattended: { ...U } });
+const profile = () => ({ eeoText: 'Decline every voluntary demographic question (test placeholder).', unattended: { ...U } });
 const ready = (over = {}) => mkJob({ status: 'apply_ready', fit: 80, sheet: { hash: 'sh1', passed: true, eeoMissing: false, fields: [] }, verifiedAt: new Date(NOW - 3600000).toISOString(), ...over });
 const stateWith = (...jobs) => { const s = store.emptyState(); for (const j of jobs) s.jobs[j.key] = j; return s; };
 const run = (state, o = {}) => ap.applyNext({ state, profile: profile(), overlay: empty(), mode: 'attended', now: NOW, batchOpen: true, ...o });
@@ -53,7 +53,7 @@ test('both modes: each common check holds the job', () => {
   const j = ready();
   const s = stateWith(j);
   s.approvals[j.key] = { sheetHash: 'sh1' };
-  assert.equal(ap.jobFailure({ job: j, state: s, profile: { ...profile(), eeo: null }, overlay: empty(), mode: 'attended', now: NOW }), 'eeo_missing');
+  assert.equal(ap.jobFailure({ job: { ...j, sheet: { ...j.sheet, eeoMissing: true } }, state: s, profile: profile(), overlay: empty(), mode: 'attended', now: NOW }), 'eeo_missing');
 });
 
 test('both modes: no second application to the same company and title within 90 days', () => {
@@ -173,9 +173,9 @@ test('unattended refuses to start without an open batch', () => {
 
 test('consent needs complete rules and the EEO choice; no rule or lesson can record it', () => {
   const s = stateWith();
-  assert.throws(() => ap.recordConsent(s, { eeo: 'decline_all' }, empty()), /not set/);
-  assert.throws(() => ap.recordConsent(s, { unattended: U }, empty()), /EEO/);
-  assert.throws(() => ap.recordConsent(s, { eeo: 'decline_all', unattended: { ...U, hosts: [] } }, empty()), /hiring systems/);
+  assert.throws(() => ap.recordConsent(s, { eeoText: 'Decline every voluntary demographic question (test placeholder).' }, empty()), /not set/);
+  assert.throws(() => ap.recordConsent(s, { unattended: U }, empty()), /demographic/);
+  assert.throws(() => ap.recordConsent(s, { eeoText: 'Decline every voluntary demographic question (test placeholder).', unattended: { ...U, hosts: [] } }, empty()), /hiring systems/);
   assert.equal(s.consent.unattended, null);
   for (const effect of ['unattended_consent', 'consent']) assert.throws(() => ov.addRule({ effect, value: true, words: 'yes do it' }), /vocabulary/);
   assert.throws(() => ov.addLesson({ effect: 'unattended_consent', subject: 'x' }), /tighten-only/);

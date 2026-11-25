@@ -1,4 +1,5 @@
 import { canonical } from './overlay.mjs';
+import { eeoTextOf } from './profile.mjs';
 import { sha } from './dedupe.mjs';
 import { normLabel } from './store.mjs';
 import { matchAnswer } from './answers.mjs';
@@ -57,7 +58,7 @@ export function checkDraft(text, { limit = null, profile = {} } = {}) {
 export const TAGS = ['fact', 'upload', 'answer', 'record', 'ack', 'new_writing'];
 
 // Every field carries one source tag:
-//   fact: a profile value (the EEO choice and a select option chosen from a fact included)
+//   fact: a profile value (a voluntary demographic answer matched from the person's own text included)
 //   upload: the resume file
 //   answer: an earlier answer that matches by the code-only rule (answers.mjs)
 //   record: a value from the skill's own records about this job (where it was found), mapped to the form's own option by code
@@ -138,21 +139,17 @@ export function buildSheet({ job, questions, profile, answers = [], drafts = {} 
         continue;
       }
     } else if (EEO.test(q.label)) {
-      const e = profile.eeo;
-      // A per-field answer is reused only for the same option text; a field with no answer, or an answer the form no longer
-      // offers, is asked (the form's own options, one field at a time).
-      const mine = e && e !== 'decline_all' ? (e.answers || {})[nl] : null;
+      // The person's own text (profile.eeoText) is kept in code; matching it to this form's own options is judgment in the skill,
+      // recorded per job and field with `J eeo answer`. A field the text does not answer is never guessed: it is asked again, as a
+      // plain question, before the fill.
+      const mine = (job.eeoAnswers || {})[nl];
       const offered = !q.options || !q.options.length || q.options.includes(mine);
-      if (!e) eeoMissing = true;
-      else if (e === 'decline_all') {
-        value = 'Decline to self-identify';
-        tag = 'fact';
-      } else if (mine && offered) {
+      if (mine && offered && eeoTextOf(profile)) {
         value = mine;
         tag = 'fact';
       } else {
         eeoMissing = true;
-        eeoFields.push({ label: q.label, options: q.options || [] });
+        eeoFields.push({ label: q.label, options: q.options || [], required: q.required === true, noText: !eeoTextOf(profile) });
       }
     } else {
       const earlier = matchAnswer(q, answers);
@@ -193,7 +190,7 @@ export function checkSheet(sheet, live = null) {
   const problems = [];
   if (sheet.forbidden.length) problems.push(`form asks for something the profile never holds: ${sheet.forbidden.join(', ')}`);
   if (sheet.unanswered.length) problems.push(`unanswered required fields: ${sheet.unanswered.map((u) => u.label).join(', ')}`);
-  if (sheet.eeoMissing) problems.push('the EEO choice is not made');
+  if (sheet.eeoMissing) problems.push('a voluntary demographic field has no answer from the person\'s own text yet');
   if (sheet.fields.some((f) => !TAGS.includes(f.tag))) problems.push('a field has no source tag');
   if (live) {
     const known = new Set(sheet.fields.map((f) => normLabel(f.label)));
@@ -231,6 +228,18 @@ export function completeFromLive(job, live, profile = {}) {
   for (const f of live || []) {
     const nl = normLabel(f.label);
     if (!f.required || known.has(nl) || asked.has(nl) || FORBIDDEN.test(f.label)) continue;
+    // A required voluntary demographic field: asked in the session before the fill, as a plain question, never guessed.
+    if (EEO.test(f.label)) {
+      const mine = (job.eeoAnswers || {})[nl];
+      if (mine && eeoTextOf(profile) && (!(f.options || []).length || f.options.includes(mine))) {
+        sheet.fields.push({ label: f.label, value: mine, tag: 'fact', required: true });
+        changed = true;
+      } else {
+        (sheet.eeoFields ||= []).push({ label: f.label, options: f.options || [], required: true, noText: !eeoTextOf(profile) });
+        sheet.eeoMissing = true;
+      }
+      continue;
+    }
     const kind = /check|bool/i.test(f.type || 'checkbox') ? ackKind(f.label) : null;
     if (kind && (job.acks || {})[nl]) {
       sheet.fields.push({ label: f.label, value: 'checked', tag: 'ack', required: true });

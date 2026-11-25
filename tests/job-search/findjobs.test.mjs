@@ -167,11 +167,11 @@ test('a job whose open state is not confirmed stays in the report and never ente
   const s = store.emptyState();
   s.jobs[j.key] = j;
   s.approvals[j.key] = { sheetHash: 'h' };
-  const r = ap.applyNext({ state: s, profile: { eeo: 'decline_all' }, overlay: empty, mode: 'attended', now: NOW, batchOpen: true });
+  const r = ap.applyNext({ state: s, profile: { eeoText: 'Decline every voluntary demographic question (test placeholder).' }, overlay: empty, mode: 'attended', now: NOW, batchOpen: true });
   assert.deepEqual(r.queue, [{ key: j.key, reason: 'not_confirmed_open' }]);
   assert.equal(r.handout, null);
   j.openConfirmed = true;
-  assert.ok(ap.applyNext({ state: s, profile: { eeo: 'decline_all' }, overlay: empty, mode: 'attended', now: NOW, batchOpen: true }).handout);
+  assert.ok(ap.applyNext({ state: s, profile: { eeoText: 'Decline every voluntary demographic question (test placeholder).' }, overlay: empty, mode: 'attended', now: NOW, batchOpen: true }).handout);
   const u = mkJob({ employerPosting: null, openConfirmed: false, unresolved: 'no_board', warnings: ['not confirmed open'], applyLinks: ['https://x.test/1'] });
   const s2 = store.emptyState();
   s2.jobs[u.key] = u;

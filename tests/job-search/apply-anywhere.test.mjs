@@ -42,14 +42,14 @@ test('apply next hands that job out on a host that is on no list, and never gate
   const s = store.emptyState();
   s.jobs[job.key] = job;
   s.approvals[job.key] = { sheetHash: 'sh1' };
-  const r = ap.applyNext({ state: s, profile: { eeo: 'decline_all' }, overlay: empty, mode: 'attended', now: NOW, batchOpen: true });
+  const r = ap.applyNext({ state: s, profile: { eeoText: 'Decline every voluntary demographic question (test placeholder).' }, overlay: empty, mode: 'attended', now: NOW, batchOpen: true });
   assert.equal(r.handout.url, 'https://acme.wd1.test/en/job/77');
   // a deny-listed host is the only host gate
   job.employerPosting.url = 'https://www.linkedin.com/jobs/view/5';
-  assert.equal(ap.applyNext({ state: s, profile: { eeo: 'decline_all' }, overlay: empty, mode: 'attended', now: NOW, batchOpen: true }).queue[0].reason, 'platform_url');
+  assert.equal(ap.applyNext({ state: s, profile: { eeoText: 'Decline every voluntary demographic question (test placeholder).' }, overlay: empty, mode: 'attended', now: NOW, batchOpen: true }).queue[0].reason, 'platform_url');
   // unattended rules may name any hiring system, or any
   const u = { roles: ['engineer'], places: ['Berlin'], minScore: 70, hosts: ['*'] };
-  assert.deepEqual(ap.unattendedProblems({ eeo: 'decline_all', unattended: u }), []);
+  assert.deepEqual(ap.unattendedProblems({ eeoText: 'Decline every voluntary demographic question (test placeholder).', unattended: u }), []);
 });
 
 test('the deny list holds the sites named in the plan, and only the deny list gates the browser', () => {
@@ -165,7 +165,7 @@ const liJob = (i, over = {}) => mkJob({ key: `https://boards.greenhouse.io/acme/
 test('under the LinkedIn choice apply next never hands the job out; the link is shown with the answers', () => {
   const j = liJob(41);
   reset([j]);
-  const profile = { eeo: 'decline_all', apply: { where: 'linkedin', source: 'person' } };
+  const profile = { eeoText: 'Decline every voluntary demographic question (test placeholder).', apply: { where: 'linkedin', source: 'person' } };
   assert.equal(ap.applyPathOf(j, profile), 'linkedin');
   const s = store.loadState();
   s.approvals[j.key] = { sheetHash: 'h' };

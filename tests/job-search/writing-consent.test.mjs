@@ -16,7 +16,7 @@ const g = await import('../../skills/job-search/scripts/lib/batch.mjs');
 const NOW = Date.parse('2026-11-23T12:00:00Z');
 const empty = { rules: [], lessons: [] };
 const U = { roles: ['engineer'], places: ['Berlin'], remote: false, minScore: 70, hosts: ['greenhouse'] };
-const profile = { eeo: 'decline_all', resumePath: '/r.pdf', facts: { first_name: 'Ada', email: 'ada@example.com', authorized_to_work: 'Yes' }, unattended: U };
+const profile = { eeoText: 'Decline every voluntary demographic question (test placeholder).', resumePath: '/r.pdf', facts: { first_name: 'Ada', email: 'ada@example.com', authorized_to_work: 'Yes' }, unattended: U };
 const Q = [
   { label: 'First Name', required: true, type: 'input_text' },
   { label: 'Resume/CV', required: true, type: 'input_file' },
@@ -26,7 +26,7 @@ const Q = [
   { label: 'Preferred start date', required: true, type: 'select', options: ['Immediately', 'In a month'] },
 ];
 const DRAFTS = { 'Why do you want to work here?': 'I enjoy building developer tools.', 'Anything else?': 'Happy to talk.', 'Preferred start date': 'Immediately' };
-const build = (over = {}) => sheet.buildSheet({ job: mkJob({ key: 'k1' }), questions: Q, profile, drafts: DRAFTS, answers: [], ...over });
+const build = (over = {}) => sheet.buildSheet({ job: mkJob({ key: 'k1', eeoAnswers: { gender: 'Decline to self-identify' } }), questions: Q, profile, drafts: DRAFTS, answers: [], ...over });
 const tagOf = (sh, label) => sh.fields.find((f) => f.label === label).tag;
 
 test('each source tag is set correctly', () => {
@@ -96,7 +96,7 @@ test('writing_needs_yes: no submit without the writing consent', () => {
 });
 
 test('a fact-only and an earlier-answer-only job go through with no writing consent', () => {
-  const factOnly = readyJob(sheet.buildSheet({ job: mkJob({ key: 'k2' }), questions: [Q[0], Q[1]], profile, answers: [], drafts: {} }), { key: 'k2' });
+  const factOnly = readyJob(sheet.buildSheet({ job: mkJob({ key: 'k2', eeoAnswers: { gender: 'Decline to self-identify' } }), questions: [Q[0], Q[1]], profile, answers: [], drafts: {} }), { key: 'k2' });
   assert.ok(next(consentedState(factOnly)).handout);
   const entries = [{ q: 'why do you want to work here', answer: 'I like compilers.', how: 'approved', type: 'textarea', options: null }, { q: 'preferred start date', answer: 'Immediately', how: 'approved', type: 'select', options: ['Immediately', 'In a month'] }];
   const reuse = readyJob(build({ answers: entries, drafts: {} }), { key: 'k3' });
@@ -132,7 +132,7 @@ test('a submit goes through once the writing consent exists; a changed writing r
 
 test('revoking writing stops only submits with new writing; revoking unattended stops every unattended submit', () => {
   const nw = readyJob(build(), { key: 'k4' });
-  const fact = readyJob(sheet.buildSheet({ job: mkJob({ key: 'k5' }), questions: [Q[0], Q[1]], profile, answers: [], drafts: {} }), { key: 'k5' });
+  const fact = readyJob(sheet.buildSheet({ job: mkJob({ key: 'k5', eeoAnswers: { gender: 'Decline to self-identify' } }), questions: [Q[0], Q[1]], profile, answers: [], drafts: {} }), { key: 'k5' });
   const s = consentedState(nw);
   s.jobs[fact.key] = fact;
   ap.recordWritingConsent(s, '', NOW);
@@ -147,7 +147,7 @@ test('revoking writing stops only submits with new writing; revoking unattended 
 });
 
 test('optional writing fields skip or wait as recorded', () => {
-  const sh = sheet.buildSheet({ job: mkJob({ key: 'k6' }), questions: Q.filter((q) => ['First Name', 'Resume/CV', 'Anything else?'].includes(q.label)), profile, answers: [], drafts: DRAFTS });
+  const sh = sheet.buildSheet({ job: mkJob({ key: 'k6', eeoAnswers: { gender: 'Decline to self-identify' } }), questions: Q.filter((q) => ['First Name', 'Resume/CV', 'Anything else?'].includes(q.label)), profile, answers: [], drafts: DRAFTS });
   const j = readyJob(sh, { key: 'k6' });
   const skip = next(consentedState(j, 'skip'));
   assert.deepEqual(skip.handout.skipFields, ['Anything else?']);
@@ -179,7 +179,7 @@ test('attended mode is unchanged: the person sees the draft and says yes', () =>
 
 test('approving the text, as it is or edited, makes each field an earlier answer and returns the job to the queue', () => {
   runJobs(home, ['profile', 'set', JSON.stringify(profile)]);
-  const j = mkJob({ key: 'https://boards.greenhouse.io/acme/jobs/77', url: 'https://boards.greenhouse.io/acme/jobs/77', status: 'apply_ready', company: 'Acme', fit: 90 });
+  const j = mkJob({ key: 'https://boards.greenhouse.io/acme/jobs/77', url: 'https://boards.greenhouse.io/acme/jobs/77', status: 'apply_ready', company: 'Acme', fit: 90, eeoAnswers: { gender: 'Decline to self-identify' } });
   store.updateState((s) => { Object.assign(s, store.emptyState()); s.jobs[j.key] = j; });
   const q = path.join(home, 'q.json');
   fs.writeFileSync(q, JSON.stringify(Q));

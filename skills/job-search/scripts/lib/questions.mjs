@@ -120,13 +120,14 @@ export function followUpQuestion({ company, title }) {
 }
 export const followUpDetail = ({ company }) => plain(`What did ${company} say? You can answer in a sentence, or skip it.`);
 
-// One voluntary demographic field, per field: the form's own options word for word when they fit the tool (at most 4, "decline"
-// among them when the form has it); otherwise a plain question that lists them. The answer is kept per field and reused on a
-// later form only for the same option text.
-export function eeoFieldQuestion({ label, options = [] }) {
-  const opts = options.filter(Boolean);
-  if (opts.length >= 2 && opts.length <= 4) return { questions: [q('EEO', `The form asks (voluntary): ${label}`, opts.map((o) => ({ label: o, description: `Answer "${o}" for "${label}", and reuse it for the same option text.` })))] };
-  return plain(`The form asks (voluntary): ${label}${opts.length ? ` Its options are: ${opts.join('; ')}.` : ''} Which should I answer? You can say decline if the form has that option.`);
+// The voluntary demographic fields (gender, race or ethnicity, veteran status, disability) are never a choice question: the answers
+// are the person's own text. At the first form that has them the skill asks this one plain question, built here, naming the fields
+// this form asks. The answer is saved as text (`J eeo set`); on later forms the browser step matches it to the form's own options,
+// and a field the text does not answer is asked again, plainly, with only that field (`fields` of one).
+export function eeoPlainQuestion({ fields = [], company = '' } = {}) {
+  const names = fields.map((f) => (typeof f === 'string' ? f : f.label)).filter(Boolean);
+  if (!names.length) return plain('The form asks some voluntary demographic questions. Answer each in your own words, or say decline.');
+  return plain(`${company ? `The ${company} form` : 'The form'} asks these voluntary demographic questions: ${names.join('; ')}. Answer each one in your own words, or say decline. I keep your words and match them to each form's own options.`);
 }
 
 export function optionalWritingQuestion() {
@@ -285,7 +286,7 @@ export function approvePickQuestions(sheets, { chromeOff = false } = {}) {
 // The question tool shows its own free-text option; no question or option text may name it ("type under Other"). A form's own
 // option that happens to start with "Other" (for example "Other job boards") is fine.
 const NAMES_OTHER = /\b(under|through|via|in|use|choose|pick|select|type|write|enter)\s+(?:\w+\s+){0,3}["']?Other["']?\b|\bOther:|\bor\s+["']?Other["']?\s*[.?]|\bOther\s+(?:option|field)\b/i;
-const NO_MARKER = new Set(['Missing fact', 'EEO', 'Terms']);
+const NO_MARKER = new Set(['Missing fact', 'Terms']);
 export function validateAsk(p) {
   const bad = [];
   if (!p || !Array.isArray(p.questions) || p.questions.length < 1 || p.questions.length > 4) return ['1 to 4 questions per call'];

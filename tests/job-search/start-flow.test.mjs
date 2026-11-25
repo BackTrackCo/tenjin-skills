@@ -95,7 +95,7 @@ test('a missing form fact holds only its job as needs_facts, names what is missi
   const other = mkJob({ key: 'https://boards.greenhouse.io/acme/jobs/61', status: 'prepared' });
   reset();
   store.updateState((s) => { s.jobs[j.key] = j; s.jobs[other.key] = other; });
-  runJobs(home, ['profile', 'set', JSON.stringify({ facts: { first_name: 'Ada' }, eeo: 'decline_all', applyMode: 'auto_no_new' })]); // an auto mode holds the job; attended asks in the approval
+  runJobs(home, ['profile', 'set', JSON.stringify({ facts: { first_name: 'Ada' }, eeoText: 'Decline every voluntary demographic question (test placeholder).', applyMode: 'auto_no_new' })]); // an auto mode holds the job; attended asks in the approval
   const qf = path.join(home, 'qf.json');
   fs.writeFileSync(qf, JSON.stringify([{ label: 'First Name', required: true, type: 'input_text' }, { label: 'Phone', required: true, type: 'input_text' }, { label: 'Are you legally authorized to work in the US?', required: true, type: 'input_text' }]));
   runJobs(home, ['sheet', 'build', j.key, '--questions', qf]);
@@ -116,7 +116,7 @@ test('a missing form fact holds only its job as needs_facts, names what is missi
   assert.equal(runJobs(home, ['sheet', 'check', j.key]).code, 0);
 });
 
-test('the EEO choice is asked at the first form that has it, and the held job resumes', () => {
+test('the voluntary demographic answers are asked at the first form that has them, and the held job resumes once the person\'s text is saved', () => {
   const j = mkJob({ key: 'https://boards.greenhouse.io/acme/jobs/62', status: 'prepared' });
   reset();
   store.updateState((s) => { s.jobs[j.key] = j; });
@@ -127,7 +127,7 @@ test('the EEO choice is asked at the first form that has it, and the held job re
   runJobs(home, ['sheet', 'build', j.key, '--questions', qf]);
   assert.equal(runJobs(home, ['sheet', 'check', j.key]).code, 4);
   assert.deepEqual(store.loadState().jobs[j.key].parked.reasons, ['eeo_missing']);
-  const r = runJobs(home, ['profile', 'set', JSON.stringify({ eeo: 'decline_all' })]);
+  const r = runJobs(home, ['profile', 'set', JSON.stringify({ eeoText: 'Decline every voluntary demographic question (test placeholder).' })]);
   assert.equal(r.json.resumed, 1);
   assert.equal(store.loadState().jobs[j.key].parked, null);
 });
@@ -142,7 +142,7 @@ function awaitBatch() {
   const refused = runJobs(home, ['fact', 'set', 'phone', '1']);
   runJobs(home, ['batch', 'close']);
   const ok = runJobs(home, ['fact', 'set', 'phone', '1']);
-  return refused.code === 4 && ok.code === 0 && runJobs(home, ['ask', 'eeo']).code === 0;
+  return refused.code === 4 && ok.code === 0;
 }
 
 // ---- the watch list builds itself --------------------------------------------
@@ -255,7 +255,7 @@ test('intro length checks per channel; no consent gate and no writing_needs_yes'
 // ---- consent changes are visible (safety without a hook) -----------------------------------
 test('every consent change and writing approval gets a notification and a report line', () => {
   reset();
-  runJobs(home, ['profile', 'set', JSON.stringify({ eeo: 'decline_all', unattended: { roles: ['engineer'], places: ['Berlin'], minScore: 70, hosts: ['greenhouse'] } })]);
+  runJobs(home, ['profile', 'set', JSON.stringify({ eeoText: 'Decline every voluntary demographic question (test placeholder).', unattended: { roles: ['engineer'], places: ['Berlin'], minScore: 70, hosts: ['greenhouse'] } })]);
   runJobs(home, ['consent', 'record', 'writing']);
   runJobs(home, ['consent', 'record', 'unattended', '--optional-writing', 'wait']);
   const w = runJobs(home, ['work', '--commit']);

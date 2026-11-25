@@ -35,7 +35,7 @@ import * as qs from './lib/questions.mjs';
 import { FREQUENCIES, frequencyOf, periodStart } from './lib/schedule.mjs';
 import { observations } from './lib/signals.mjs';
 import { ingest, joinLeads, leadKey } from './lib/ingest.mjs';
-import { validateProfile } from './lib/profile.mjs';
+import { eeoTextOf, validateProfile } from './lib/profile.mjs';
 import { routeContacts, routedRounds } from './lib/routed.mjs';
 import { resumeHeld } from './lib/held.mjs';
 import { DEFAULT_BUDGET_MS, runHn } from './lib/hn.mjs';
@@ -744,17 +744,47 @@ const commands = {
     }
     return out({ opened: res.filter((x) => x.opened).length, results: res, next: 'show each opened job\'s sheet as text; the outcome is the person\'s word: J submitted <key>' });
   },
-  // A voluntary demographic answer, per field, kept for a later form only when the same option text is offered.
-  async eeo([sub, label, ...rest]) {
-    if (sub !== 'set' || !label || !rest.length) return out({ error: 'eeo set <field label> <answer>' }, 2);
+  // The voluntary demographic fields are never a choice question. `question` builds the one plain question that names this form's
+  // fields; `set` and `add` save the person's own words as text; `answer` records, per job and field, which of the form's own options
+  // the saved text means (that match is judgment in the skill; code keeps it and checks the value is one of the options).
+  async eeo([sub, ...rest], flags) {
     const profile = readProfile();
-    const cur = profile.eeo && typeof profile.eeo === 'object' ? profile.eeo : { answers: {} };
-    const nl = String(label).normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
-    const next = { ...profile, eeo: { answers: { ...(cur.answers || {}), [nl]: rest.join(' ') } } };
-    const bad = validateProfile(next);
-    if (bad.length) return out({ error: bad.join('; ') }, 2);
-    writeJsonAtomic(profileFile(), next);
-    return out({ saved: label });
+    if (sub === 'question') {
+      const job = flags.key ? loadState().jobs[flags.key] : null;
+      const fields = job && job.sheet ? (job.sheet.eeoFields || []) : [];
+      const open = fields.filter((f) => !f.noText);
+      const q = qs.eeoPlainQuestion({ fields: fields.length ? (eeoTextOf(profile) ? open : fields) : [], company: job ? job.company : '' });
+      return out({ ...q, saved: Boolean(eeoTextOf(profile)), fields: fields.map((f) => ({ label: f.label, options: f.options })), next: 'ask it as a plain question, then J eeo set "<their words>" (or J eeo add for one more field)' });
+    }
+    if (sub === 'set' || sub === 'add') {
+      const text = rest.join(' ').trim();
+      if (!text) return out({ error: 'eeo set|add "<the person\'s own words>"' }, 2);
+      const cur = eeoTextOf(profile);
+      const nextText = sub === 'add' && cur ? `${cur}\n${text}` : text;
+      const { eeo, ...base } = profile;
+      const next = { ...base, eeoText: nextText };
+      const bad = validateProfile(next);
+      if (bad.length) return out({ error: bad.join('; ') }, 2);
+      writeJsonAtomic(profileFile(), next);
+      return out({ saved: true, resumed: resumeHeld(next), next: 'match the saved text to each field of the form\'s own options and record each with J eeo answer <key> <field label> <option>; a field it does not answer is asked again as a plain question and added with J eeo add' });
+    }
+    if (sub === 'answer') {
+      const [key, label, ...val] = rest;
+      const value = val.join(' ').trim();
+      if (!key || !label || !value) return out({ error: 'eeo answer <key> <field label> <the form\'s option or the person\'s words>' }, 2);
+      return out(updateState((s) => {
+        const job = s.jobs[key];
+        if (!job) throw new Error(`unknown job: ${key}`);
+        const nl = normLabelFn(label);
+        const field = ((job.sheet && job.sheet.eeoFields) || []).find((f) => normLabelFn(f.label) === nl) || ((job.questions || []).find((q) => normLabelFn(q.label) === nl));
+        const options = field && field.options ? field.options : [];
+        if (options.length && !options.includes(value)) throw new Error(`${value} is not one of the form's options for ${label}: ${options.join('; ')}`);
+        (job.eeoAnswers ||= {})[nl] = value;
+        bump(job);
+        return { recorded: label, next: `rebuild and check the sheet: J sheet build ${key} --questions <file>, then J sheet check ${key} --live <file>` };
+      }));
+    }
+    return out({ error: 'eeo question [--key job] | set <text> | add <text> | answer <key> <field label> <option>' }, 2);
   },
   async fillonly([key, onoff]) {
     return out(updateState((s) => {
@@ -858,7 +888,8 @@ const commands = {
       if (!job || !job.linkedinShownAt) return out({ error: 'ask applied --key <job>: its LinkedIn link was not shown yet' }, 2);
       return out(qs.appliedQuestion(job));
     }
-    const make = { approve: () => qs.approveListQuestion(readySheets(loadState()).length, { chromeOff: loadState().chrome === 'off' }), start: () => qs.startQuestions({ chromeOff: loadState().chrome === 'off', rc: loadState().rc || 'unknown', pushSent: loadState().pushSent === true, settings: pushSettings() }), auto: () => qs.autoModeQuestion({ chromeOff: loadState().chrome === 'off' }), place: () => qs.placeQuestion(arg), role: () => qs.roleQuestion(arg), acknowledge: () => qs.acknowledgeQuestion(arg), follow_up_detail: () => qs.followUpDetail(arg), resume: () => qs.resumeChoiceQuestion(arg), tenjin: () => qs.tenjinAsk(arg), eeo: () => qs.eeoFieldQuestion(arg), follow_up: () => qs.followUpQuestion(arg), contacts: () => qs.contactsCountQuestion(), 'optional-writing': () => qs.optionalWritingQuestion(), fact: () => qs.factQuestion(arg), yes: () => qs.sheetYesQuestion(arg), email: () => qs.emailBatchQuestion(em.addBatchPeek(loadState()), flags.group === undefined ? null : Number(flags.group)), 'email-mode': () => qs.emailModeQuestion() }[kind];
+    if (kind === 'eeo') return out({ error: 'EEO is never a choice question and never goes through the question tool: ask the plain question J eeo question --key <job> prints, then save the answer with J eeo set' }, 2);
+    const make = { approve: () => qs.approveListQuestion(readySheets(loadState()).length, { chromeOff: loadState().chrome === 'off' }), start: () => qs.startQuestions({ chromeOff: loadState().chrome === 'off', rc: loadState().rc || 'unknown', pushSent: loadState().pushSent === true, settings: pushSettings() }), auto: () => qs.autoModeQuestion({ chromeOff: loadState().chrome === 'off' }), place: () => qs.placeQuestion(arg), role: () => qs.roleQuestion(arg), acknowledge: () => qs.acknowledgeQuestion(arg), follow_up_detail: () => qs.followUpDetail(arg), resume: () => qs.resumeChoiceQuestion(arg), tenjin: () => qs.tenjinAsk(arg), follow_up: () => qs.followUpQuestion(arg), contacts: () => qs.contactsCountQuestion(), 'optional-writing': () => qs.optionalWritingQuestion(), fact: () => qs.factQuestion(arg), yes: () => qs.sheetYesQuestion(arg), email: () => qs.emailBatchQuestion(em.addBatchPeek(loadState()), flags.group === undefined ? null : Number(flags.group)), 'email-mode': () => qs.emailModeQuestion() }[kind];
     if (!make) return out({ error: 'ask start | auto | place --json {guess,remote} | role --json {guess} | acknowledge --json {company,text,link} | follow_up_detail --json {company} | resume --json {header,question,guess,next} | tenjin --json {line,status} | eeo --json {label,options} | optional-writing | fact --json {label,options} | yes --json {company,title} | email | email-mode | approve | approve-pick | approval --key <job>' }, 2);
     if (batch.isActive() && batch.batchMode() === 'unattended') return out({ error: 'no questions in an unattended turn: nobody can answer; hold the job and notify' }, 4);
     const p = make();

@@ -3,6 +3,27 @@ const isStr = (v) => typeof v === 'string';
 const strList = (v) => Array.isArray(v) && v.every(isStr);
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
 
+// The voluntary demographic answers (gender, race or ethnicity, veteran status, disability) are the person's own text, never a
+// choice. An older profile stored them as `eeo`: "decline_all" or {answers: {<field>: <answer>}}. Both shapes are converted to text
+// once, on read.
+export function eeoTextOf(p) {
+  if (!p || typeof p !== 'object') return null;
+  if (typeof p.eeoText === 'string' && p.eeoText.trim()) return p.eeoText.trim();
+  const e = p.eeo;
+  if (e === 'decline_all') return 'Decline to answer every voluntary demographic question.';
+  if (e && typeof e === 'object' && e.answers && typeof e.answers === 'object') {
+    const lines = Object.entries(e.answers).map(([k, v]) => `${k}: ${v}`);
+    return lines.length ? lines.join('\n') : null;
+  }
+  return null;
+}
+export function normalizeProfile(p) {
+  if (!p || typeof p !== 'object' || p.eeo === undefined) return p;
+  const { eeo, ...rest } = p;
+  const t = eeoTextOf(p);
+  return t ? { ...rest, eeoText: t } : rest;
+}
+
 export function validateProfile(p) {
   const bad = [];
   const need = (ok, msg) => ok || bad.push(msg);
@@ -31,7 +52,8 @@ export function validateProfile(p) {
     }
   }
   if (has('facts')) need(p.facts && typeof p.facts === 'object' && !Array.isArray(p.facts) && Object.values(p.facts).every((v) => ['string', 'number', 'boolean'].includes(typeof v)), 'facts must be an object of text, number or true/false values');
-  if (has('eeo')) need(p.eeo === 'decline_all' || (p.eeo && typeof p.eeo === 'object' && p.eeo.answers && typeof p.eeo.answers === 'object'), 'eeo must be "decline_all" or {"answers": {"<question>": "<answer>"}}');
+  if (has('eeo')) bad.push('eeo is no longer a profile field: the voluntary demographic answers are the person\'s own text (J eeo set), asked as a plain question (J eeo question)');
+  if (has('eeoText')) need(isStr(p.eeoText), 'eeoText must be the person\'s own text');
   if (has('unattended')) {
     const u = p.unattended;
     if (!u || typeof u !== 'object') bad.push('unattended must be an object');

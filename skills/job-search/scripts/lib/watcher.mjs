@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { normalizeProfile } from './profile.mjs';
 import { ALIVE_MS, TICK_MS, beat, claimLease, heartbeat, leaseFresh, releaseLease } from './lease.mjs';
 import { checkRelease, recordRelease } from './release.mjs';
 import { SKILL_DIR, readJson, stateDir } from './paths.mjs';
@@ -18,7 +19,7 @@ import { hnDue, runHn } from './hn.mjs';
 
 const DAY = 86400000;
 
-export const readProfile = () => readJson(path.join(stateDir(), 'profile.json'), {});
+export const readProfile = () => normalizeProfile(readJson(path.join(stateDir(), 'profile.json'), {})); // the old EEO shapes become the person's text on read
 
 export function watcherCodeHash() {
   const h = crypto.createHash('sha256');

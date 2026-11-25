@@ -11,7 +11,7 @@ const ans = await import('../../skills/job-search/scripts/lib/answers.mjs');
 const ov = await import('../../skills/job-search/scripts/lib/overlay.mjs');
 
 const U = { roles: ['engineer'], places: ['Berlin'], remote: false, minScore: 70, hosts: ['greenhouse'] };
-const profile = { eeo: 'decline_all', resumePath: path.join(home, 'resume.pdf'), facts: { first_name: 'Ada' }, unattended: U };
+const profile = { eeoText: 'Decline every voluntary demographic question (test placeholder).', resumePath: path.join(home, 'resume.pdf'), facts: { first_name: 'Ada' }, unattended: U };
 
 // Every command that changes what a submit may do. With no hook, the CLI is the line that holds.
 const LIMIT_COMMANDS = [

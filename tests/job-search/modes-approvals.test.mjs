@@ -49,24 +49,6 @@ test('a place or a role is a plain question with the guess in its text; a fact u
   assert.match(qs.factQuestion({ label: 'Phone?' }).plain, /What should I answer/);
 });
 
-test('EEO is asked per field with the form\'s own options, and reused only for the same option text', () => {
-  const four = qs.eeoFieldQuestion({ label: 'Gender', options: ['Man', 'Woman', 'Non-binary', 'Decline to answer'] });
-  assert.deepEqual(four.questions[0].options.map((o) => o.label), ['Man', 'Woman', 'Non-binary', 'Decline to answer']);
-  assert.deepEqual(qs.validateAsk(four), []);
-  assert.match(qs.eeoFieldQuestion({ label: 'Race', options: ['a', 'b', 'c', 'd', 'e'] }).plain, /Its options are/);
-  const job = mkJob({});
-  const q = [{ label: 'Gender', required: false, type: 'multi_value_single_select', options: ['Man', 'Woman', 'Decline to answer'] }];
-  const withAnswer = sheet.buildSheet({ job, questions: q, profile: { eeo: { answers: { gender: 'Decline to answer' } } } });
-  assert.equal(withAnswer.fields[0].value, 'Decline to answer');
-  const changed = sheet.buildSheet({ job, questions: [{ ...q[0], options: ['Male', 'Female'] }], profile: { eeo: { answers: { gender: 'Decline to answer' } } } });
-  assert.equal(changed.eeoMissing, true, 'an option the form no longer offers is asked again');
-  assert.deepEqual(changed.eeoFields[0].options, ['Male', 'Female']);
-  const none = sheet.buildSheet({ job, questions: q, profile: { eeo: { answers: {} } } });
-  assert.equal(none.eeoMissing, true, 'no per-field default any more');
-  J('eeo', 'set', 'Gender', 'Decline to answer');
-  assert.equal(J('profile', 'get').json.eeo.answers.gender, 'Decline to answer');
-});
-
 test('the follow-up has no "through Other" option and asks what they said in a plain question', () => {
   const f = qs.followUpQuestion({ company: 'Acme', title: 'Engineer' });
   assert.deepEqual(f.questions[0].options.map((o) => o.label), ['No reply yet (Recommended)', 'They replied', 'Interview', 'Rejected']);
@@ -76,7 +58,7 @@ test('the follow-up has no "through Other" option and asks what they said in a p
 
 // ---- answers from the skill's own records ---------------------------------------------------------
 const HEAR = (options, type = 'multi_value_single_select') => [{ label: 'How did you hear about this role?', required: true, type, options, maxLength: null }];
-const build = (job, questions, extra = {}) => sheet.buildSheet({ job, questions, profile: { facts: {}, eeo: 'decline_all' }, ...extra });
+const build = (job, questions, extra = {}) => sheet.buildSheet({ job, questions, profile: { facts: {}, eeoText: 'Decline every voluntary demographic question (test placeholder).' }, ...extra });
 test('record: where you heard comes from the recorded source, mapped to the form\'s own option, with a record tag', () => {
   const board = mkJob({});
   assert.deepEqual(build(board, HEAR(['LinkedIn', 'Other job boards', 'Referral', 'LLMs'])).fields[0], { label: 'How did you hear about this role?', value: 'Other job boards', tag: 'record', required: true });
@@ -128,10 +110,10 @@ test('the fill-only mode: every job is handed out as fill-only with no per-job y
   const s = store.emptyState();
   s.jobs[j.key] = j;
   const base = { state: s, overlay: empty, mode: 'attended', now: NOW, batchOpen: true };
-  assert.equal(ap.applyNext({ ...base, profile: { eeo: 'decline_all' } }).queue[0].reason, 'no_recorded_yes');
-  const h = ap.applyNext({ ...base, profile: { eeo: 'decline_all', applyMode: 'fill_only' } }).handout;
+  assert.equal(ap.applyNext({ ...base, profile: { eeoText: 'Decline every voluntary demographic question (test placeholder).' } }).queue[0].reason, 'no_recorded_yes');
+  const h = ap.applyNext({ ...base, profile: { eeoText: 'Decline every voluntary demographic question (test placeholder).', applyMode: 'fill_only' } }).handout;
   assert.deepEqual([h.fillOnly, h.submit], [true, false]);
-  assert.equal(ap.applyNext({ ...base, profile: { eeo: 'decline_all', applyMode: 'open_only' } }).queue[0].reason, 'open_only_mode');
+  assert.equal(ap.applyNext({ ...base, profile: { eeoText: 'Decline every voluntary demographic question (test placeholder).', applyMode: 'open_only' } }).queue[0].reason, 'open_only_mode');
   reset([]);
   assert.equal(J('start', 'record', '--mode', 'fill_only').code, 0);
   assert.equal(J('profile', 'get').json.applyMode, 'fill_only');
@@ -263,7 +245,7 @@ test('J chrome set on clears chrome_disconnected and no_chrome_tools holds and j
   const s = store.loadState();
   assert.deepEqual(s.held.map((h) => h.reason), ['update_waiting']);
   assert.equal(s.jobs[j.key].noChromeTools, false);
-  assert.equal(ap.jobFailure({ job: s.jobs[j.key], state: s, profile: { eeo: 'decline_all' }, overlay: empty, mode: 'attended', now: Date.now() }) === 'no_chrome_tools', false);
+  assert.equal(ap.jobFailure({ job: s.jobs[j.key], state: s, profile: { eeoText: 'Decline every voluntary demographic question (test placeholder).' }, overlay: empty, mode: 'attended', now: Date.now() }) === 'no_chrome_tools', false);
   assert.equal(J('chrome', 'set', 'maybe').code, 2);
 });
 

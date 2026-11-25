@@ -15,7 +15,7 @@ const q = await import('../../skills/job-search/scripts/lib/questions.mjs');
 const NOW = Date.parse('2026-11-23T12:00:00');
 const empty = { rules: [], lessons: [] };
 const rule = (value) => ({ rules: [{ id: 'r', effect: 'period_max', value, words: 'x', date: '2026-11-23' }], lessons: [] });
-const profile = { eeo: 'decline_all', unattended: { roles: ['engineer'], places: ['Berlin'], minScore: 70, hosts: ['greenhouse'] }, search: { role: 'engineer' } };
+const profile = { eeoText: 'Decline every voluntary demographic question (test placeholder).', unattended: { roles: ['engineer'], places: ['Berlin'], minScore: 70, hosts: ['greenhouse'] }, search: { role: 'engineer' } };
 
 // ---- the start questions: four in one call after the resume ------------------
 test('the start: the resume is a plain question, then one call with four questions and a /rc reminder', () => {
@@ -38,10 +38,10 @@ test('the start: the resume is a plain question, then one call with four questio
 });
 
 test('the other questions go through the same tool: resume choice, Tenjin ask, EEO, optional writing, facts, the yes', () => {
-  const all = [q.resumeChoiceQuestion({ header: 'Role', question: 'Which role?', guess: 'Backend engineer', next: 'Data engineer' }), q.tenjinAsk({ line: 'Tenjin adds X.', status: 'missing' }), q.tenjinAsk({ line: 'Tenjin adds X.', status: 'unfunded' }), q.eeoFieldQuestion({ label: 'Gender', options: ['Male', 'Female', 'Decline to self-identify'] }), q.optionalWritingQuestion(), q.factQuestion({ label: 'Work authorization', options: ['Yes', 'No'] }), q.sheetYesQuestion({ company: 'Acme', title: 'Engineer' })];
+  const all = [q.resumeChoiceQuestion({ header: 'Role', question: 'Which role?', guess: 'Backend engineer', next: 'Data engineer' }), q.tenjinAsk({ line: 'Tenjin adds X.', status: 'missing' }), q.tenjinAsk({ line: 'Tenjin adds X.', status: 'unfunded' }), q.optionalWritingQuestion(), q.factQuestion({ label: 'Work authorization', options: ['Yes', 'No'] }), q.sheetYesQuestion({ company: 'Acme', title: 'Engineer' })];
   for (const p of all) assert.deepEqual(q.validateAsk(p), [], JSON.stringify(p).slice(0, 80));
   assert.match(all[0].questions[0].options[0].label, /\(from your resume\)$/);
-  assert.equal(all[5].questions[0].options.at(-1).label, 'Skip this job');
+  assert.equal(all[4].questions[0].options.at(-1).label, 'Skip this job');
   assert.deepEqual(q.validateAsk({ questions: [] }), ['1 to 4 questions per call']);
   assert.ok(q.validateAsk({ questions: [{ header: 'A', question: 'q', options: [{ label: 'only', description: 'one' }] }] }).length);
 });

@@ -156,7 +156,7 @@ test('a LinkedIn link gives a thin profile: the role is confirmed with the guess
   const upload = mkJob({ status: 'apply_ready', sheet: { hash: 'h', passed: true, eeoMissing: false, fields: [{ label: 'Resume', value: '<resume>', tag: 'upload', required: true }] } });
   const history = mkJob({ status: 'apply_ready', sheet: { hash: 'h', passed: true, eeoMissing: false, fields: [{ label: 'Email', value: 'a@b.test', tag: 'fact', required: true }], unanswered: [{ label: 'Work history with job titles', why: 'no fact' }] } });
   const plain = mkJob({ status: 'apply_ready', sheet: { hash: 'h', passed: true, eeoMissing: false, fields: [{ label: 'Email', value: 'a@b.test', tag: 'fact', required: true }] } });
-  const call = (job, profile) => ap.jobFailure({ job, state: { approvals: { [job.key]: { sheetHash: 'h' } }, applications: [], consent: {} }, profile: { eeo: 'decline_all', ...profile }, overlay: empty, mode: 'attended', now: Date.now() });
+  const call = (job, profile) => ap.jobFailure({ job, state: { approvals: { [job.key]: { sheetHash: 'h' } }, applications: [], consent: {} }, profile: { eeoText: 'Decline every voluntary demographic question (test placeholder).', ...profile }, overlay: empty, mode: 'attended', now: Date.now() });
   const thin = { resumeSource: 'link', resumeThin: true };
   assert.equal(call(upload, thin), 'needs_resume_file');
   assert.equal(call(history, thin), 'needs_resume_file');
@@ -296,7 +296,7 @@ test('attended with many sheets: the report lists them in rank order, one questi
 
 test('a form that needs a file holds the job when the resume is text only, and not when a file exists', () => {
   const j = mkJob({ status: 'apply_ready', sheet: { hash: 'h', passed: true, eeoMissing: false, fields: [{ label: 'Resume', value: '<resume>', tag: 'upload', required: true }] } });
-  const call = (profile) => ap.jobFailure({ job: j, state: { approvals: { [j.key]: { sheetHash: 'h' } }, applications: [], consent: {} }, profile: { eeo: 'decline_all', ...profile }, overlay: empty, mode: 'attended', now: Date.now() });
+  const call = (profile) => ap.jobFailure({ job: j, state: { approvals: { [j.key]: { sheetHash: 'h' } }, applications: [], consent: {} }, profile: { eeoText: 'Decline every voluntary demographic question (test placeholder).', ...profile }, overlay: empty, mode: 'attended', now: Date.now() });
   assert.equal(call({ resumeSource: 'text' }), 'needs_resume_file');
   assert.equal(call({ resumeSource: 'link' }), 'needs_resume_file');
   const f = path.join(os.tmpdir(), `cv-${Date.now()}.pdf`);

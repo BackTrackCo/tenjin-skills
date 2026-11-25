@@ -19,7 +19,7 @@ const NOW = Date.parse('2026-11-23T10:00:00Z');
 const empty = { rules: [], lessons: [] };
 const reset = () => store.updateState((s) => { Object.assign(s, store.emptyState()); });
 const rule = (effect, value) => ({ rules: [{ id: effect, effect, value, words: 'w', date: '2026-11-23' }], lessons: [] });
-const profile = { eeo: 'decline_all', unattended: { roles: ['engineer'], places: ['Berlin'], minScore: 70, hosts: ['greenhouse'] } };
+const profile = { eeoText: 'Decline every voluntary demographic question (test placeholder).', unattended: { roles: ['engineer'], places: ['Berlin'], minScore: 70, hosts: ['greenhouse'] } };
 
 // ---- fix 4: limits that loosen need a new consent ---------------------------------
 test('adding or lowering period_max, or adding fill_only, only tightens and keeps the consent', () => {

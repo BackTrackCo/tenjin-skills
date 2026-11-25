@@ -56,7 +56,7 @@ test('apply next refuses without an open batch', () => {
 
 test('consent is refused until the unattended rules and the EEO choice are set', () => {
   assert.equal(runJobs(home, ['consent', 'record', 'unattended', '--optional-writing', 'skip']).code, 2);
-  runJobs(home, ['profile', 'set', JSON.stringify({ eeo: 'decline_all', unattended: { roles: ['engineer'], places: ['Berlin'], minScore: 70, hosts: ['greenhouse'] } })]);
+  runJobs(home, ['profile', 'set', JSON.stringify({ eeoText: 'Decline every voluntary demographic question (test placeholder).', unattended: { roles: ['engineer'], places: ['Berlin'], minScore: 70, hosts: ['greenhouse'] } })]);
   const r = runJobs(home, ['consent', 'record', 'unattended', '--optional-writing', 'skip']);
   assert.equal(r.code, 0);
   assert.match(r.json.rulesHash, /^[0-9a-f]{64}$/);
@@ -83,7 +83,7 @@ test('sheet build, check and approve through the CLI, then apply next in an open
   store.updateState((s) => { s.jobs = { [j.key]: j }; s.notified = {}; s.held = []; s.applications = []; });
   const q = path.join(home, 'q.json');
   fs.writeFileSync(q, JSON.stringify([{ label: 'First Name', required: true, type: 'input_text' }, { label: 'Email', required: true, type: 'input_text' }]));
-  runJobs(home, ['profile', 'set', JSON.stringify({ facts: { first_name: 'Ada', email: 'ada@example.com' }, eeo: 'decline_all', resumePath: path.join(home, 'resume.pdf') })]);
+  runJobs(home, ['profile', 'set', JSON.stringify({ facts: { first_name: 'Ada', email: 'ada@example.com' }, eeoText: 'Decline every voluntary demographic question (test placeholder).', resumePath: path.join(home, 'resume.pdf') })]);
   const built = runJobs(home, ['sheet', 'build', j.key, '--questions', q]);
   assert.equal(built.json.fields.length, 2);
   assert.equal(runJobs(home, ['sheet', 'check', j.key]).code, 0);
