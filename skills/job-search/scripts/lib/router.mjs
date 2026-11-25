@@ -155,7 +155,7 @@ export async function runNeed(client, need, { save = saveResult } = {}) {
   }
   // A `failed` answer that says the provider rejected the input before any payment is the mapper's bug: hold it, never resend.
   if (env.status !== 'fulfilled') return held(need, env.status || 'failed', env.reason ? `the router answered ${env.status}: ${env.reason}` : `the router answered ${env.status}`, env);
-  if (String(env.supplier || '').toLowerCase() !== sup.host) return held(need, 'supplier_mismatch', 'the envelope names a different supplier than the spec');
+  if (!sup.any && String(env.supplier || '').toLowerCase() !== sup.host) return held(need, 'supplier_mismatch', 'the envelope names a different supplier than the spec');
   let result;
   try {
     result = typeof env.result === 'string' ? JSON.parse(env.result) : env.result;

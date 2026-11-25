@@ -97,7 +97,7 @@ export function tenjinAsk({ line, status }) {
 
 // Asked the first time the person asks for contacts. No answer means 5; the answer is kept as the contact_count rule.
 export function contactsCountQuestion() {
-  const cost = 'The free ways are a Haiku step; the router\'s people search runs in code at the router\'s price for each job the free ways left without a contact.';
+  const cost = 'The free ways are a Haiku step; the router\'s people search runs in code at the router\'s price for each job the free ways left without a contact, plus a company lookup (about 1.2 cents) for a job whose website is not known.';
   return { questions: [q('Contacts', 'For how many jobs should I find someone to write to?', [
     { label: '5 jobs (Recommended)', description: `The 5 best-fitting jobs. ${cost}` },
     { label: '10 jobs', description: `The 10 best-fitting jobs, about twice the work and router price. ${cost}` },

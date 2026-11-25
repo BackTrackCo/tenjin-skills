@@ -243,13 +243,13 @@ export const OFFER_LINES = {
   sources: 'more job sources: postings gathered from job boards across the web, and hiring posts on X',
   boards: 'the employer board search in code, in place of a model web search each round',
   posting: 'the employer\'s own application page for a job seen elsewhere',
-  contacts: 'a hiring manager or team lead where the free ways found nobody, so the skill can draft an intro for them',
+  contacts: 'a hiring manager or team lead where the free ways found nobody, with the company looked up first when its website is not known, so the skill can draft an intro for them',
   linkedin: 'a LinkedIn link as the resume',
   background: 'these searches and lookups run in the background in code, so they use none of your Claude usage and do not wake the session',
 };
 export const OFFER_COST = 'Pay per use from a funded wallet, within your spending limits: an estimated few cents a day at the default pace.';
 // Every routed need in graph.json has a line here, so a new need cannot be left out (a test checks it).
-export const NEED_LINES = { job_postings: 'sources', x_hiring_posts: 'sources', web_search: 'boards', careers_page: 'posting', people_search: 'contacts', linkedin_profile: 'linkedin' };
+export const NEED_LINES = { job_postings: 'sources', x_hiring_posts: 'sources', web_search: 'boards', careers_page: 'posting', people_search: 'contacts', company_lookup: 'contacts', linkedin_profile: 'linkedin' };
 const MOMENT_LINE = { daily_search: 'sources', employer_posting: 'posting', contacts: 'contacts', linkedin_resume: 'linkedin' };
 export function tenjinOffer(moment, state = {}) {
   const t = state.tenjin || {};

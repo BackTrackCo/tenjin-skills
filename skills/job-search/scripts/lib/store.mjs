@@ -184,7 +184,7 @@ export function applyOp(state, op) {
       if (!String(op.cares || '').trim()) throw new Error('a contact needs one thing they care about');
       if (op.basis === 'likely' && op.notConfirmed !== true) throw new Error('a likely person is shown only when marked not confirmed');
       if (op.channel !== undefined && !CHANNELS.includes(op.channel)) throw new Error(`a contact's channel is one of ${CHANNELS.join(', ')}`);
-      (state.contacts[op.key] ||= []).push({ name: op.name, title: op.title, sourceUrl: op.sourceUrl, how: op.how, cares: op.cares, channel: op.channel || null, notConfirmed: op.notConfirmed === true });
+      (state.contacts[op.key] ||= []).push({ name: op.name, title: op.title, sourceUrl: op.sourceUrl, how: op.how, cares: op.cares, channel: op.channel || null, notConfirmed: op.notConfirmed === true, ...(op.weak === true ? { weak: true } : {}) });
       break;
     case 'intro': {
       // An example intro for a contact who can be messaged. A draft, never sent. It fits its channel.

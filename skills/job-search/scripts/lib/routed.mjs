@@ -1,10 +1,11 @@
 import { graph } from './graph.mjs';
-import { RouterClient, runRound } from './router.mjs';
+import { RouterClient, runNeed, runRound } from './router.mjs';
 import { SUPPLIERS } from './suppliers/index.mjs';
 import { ingest } from './ingest.mjs';
 import { loadState, updateState } from './store.mjs';
 import { loadOverlay } from './overlay.mjs';
 import { advanceSearch, searchRound, variantFor } from './work.mjs';
+import { companyNames, websiteOf } from './company.mjs';
 
 // With Tenjin, a search round runs in code, with no model step before review: the needs go to the router one at a time
 // (router.mjs), each result is ingested, and the same rule as the model-run rounds decides whether the next role-word
@@ -27,7 +28,7 @@ export function roundNeeds(profile, state, now, round) {
 
 // Needs for one job: the employer's careers page for a reviewed job with no employer posting, and the people search for a
 // job the person asked contacts for. Each is tried once; the model's Haiku step stays as the fallback.
-export function jobNeeds(state, profile, overlay, { kinds = ['careers_page', 'people_search'], keys = null } = {}) {
+export function jobNeeds(state, profile, overlay, { kinds = ['careers_page', 'people_search'], keys = null, skips = null } = {}) {
   const out = [];
   const count = (() => { const r = (overlay.rules || []).filter((x) => x.effect === 'contact_count').pop(); return r && r.value !== 'all' ? Number(r.value) : undefined; })();
   for (const j of kinds.includes('careers_page') ? Object.values(state.jobs) : []) {
@@ -36,10 +37,15 @@ export function jobNeeds(state, profile, overlay, { kinds = ['careers_page', 'pe
       out.push({ kind: 'careers_page', text: fill('careers_page', { company: j.company, url: site }), fields: { jobKey: j.key, website: site, company: j.company }, query: null, jobKey: j.key });
     }
   }
+  // The people search never needs an employer website: with one it filters by the company's domain; without one it runs by company
+  // name and city, and its results are weak unless their company matches a known domain or the board's company name. A job it does
+  // not search is named in `skips` with the reason, never skipped in silence.
   for (const key of kinds.includes('people_search') ? keys || state.contactsRequested || [] : []) {
     const j = state.jobs[key];
-    if (!j || !j.employerWebsite || (state.contacts[key] || []).length || j.contactsSearched || (j.routedTried || {}).people_search) continue;
-    out.push({ kind: 'people_search', text: fill('people_search', { company: j.company, url: j.employerWebsite, where: j.city ? ` in ${j.city}` : '' }), fields: { jobKey: key, website: j.employerWebsite, titles: graph().peopleTitles, city: j.city || '', count }, query: null, jobKey: key });
+    const why = !j ? 'unknown job' : (state.contacts[key] || []).length ? 'a contact is already recorded' : j.contactsSearched ? 'already searched' : (j.routedTried || {}).people_search ? 'tried once and held' : !j.company ? 'no company name' : null;
+    if (why) { if (skips) skips.push({ key, reason: why }); continue; }
+    const site = websiteOf(j);
+    out.push({ kind: 'people_search', text: fill('people_search', { company: j.company, url: site ? site.url : j.url || '', where: j.city ? ` in ${j.city}` : '' }), fields: { jobKey: key, website: site ? site.url : null, company: j.company, names: companyNames(j), titles: graph().peopleTitles, city: j.city || '', count }, query: null, jobKey: key });
   }
   return out;
 }
@@ -107,24 +113,65 @@ export async function readLinkedIn({ url, client = new RouterClient() }) {
   return { ok: true, text: r.ingest.text, cost: r.cost };
 }
 
-// The router's people search for the jobs asked, in code. Held, never retried; the free ways stay a Haiku step.
+// The router's people search for the jobs asked, in code. First the company: from what code has (a link field, the posting's website,
+// a board page's homepage), else with Tenjin a company lookup (one routed need, a free spec first); a domain is saved only after code
+// checks it against the company name. Then the people search, by domain or, with no website, by name and city. Held, never retried;
+// the free ways stay a Haiku step. Every job it did not search is reported with its reason.
 export async function routeContacts({ keys, profile, fetch, client = new RouterClient(), now = Date.now() }) {
-  const needs = jobNeeds(loadState(), profile, loadOverlay(), { kinds: ['people_search'], keys });
   const log = [];
-  if (!needs.length) return log;
-  const results = await runRound(needs, { client });
-  for (let k = 0; k < results.length; k++) {
-    const r = results[k];
-    const need = needs[k];
-    if (r.ok) {
-      const out = await ingest({ obj: r.ingest, state: loadState(), profile, overlay: loadOverlay(), fetch, now });
-      updateState((s) => { s.routed.lastCost = r.cost || s.routed.lastCost; });
-      log.push({ job: need.jobKey, ok: true, contacts: out.contacts });
-    } else {
-      hold(r, now, { clock: false });
-      updateState((s) => { if (s.jobs[need.jobKey]) (s.jobs[need.jobKey].routedTried ||= {})[need.kind] = true; });
-      log.push({ job: need.jobKey, ok: false, status: r.status });
+  const skips = [];
+  const want = jobNeeds(loadState(), profile, loadOverlay(), { kinds: ['people_search'], keys, skips });
+  for (const sk of skips) {
+    log.push({ job: sk.key, ok: false, status: 'not_searched', reason: sk.reason });
+    updateState((s) => { if (s.jobs[sk.key]) s.jobs[sk.key].contactsStatus = { state: 'not_searched', reason: sk.reason, at: new Date(now).toISOString() }; });
+  }
+  if (!want.length) return log;
+  // 1. the company lookup, for the jobs whose website no field gives
+  const lookups = want.filter((n) => !n.fields.website).map((n) => {
+    const j = loadState().jobs[n.jobKey];
+    return { kind: 'company_lookup', text: fill('company_lookup', { company: j.company, url: j.url || '', where: j.city ? `, in ${j.city}` : '' }), fields: { jobKey: n.jobKey, company: j.company, url: j.url || '', city: j.city || '' }, query: null, jobKey: n.jobKey };
+  });
+  // One `tenjin mcp` process for the lookups and the people search (the search needs the lookup's answer first); closed after.
+  try {
+    await client.start();
+  } catch (e) {
+    await client.close();
+    const status = e.code === 'tenjin_missing' ? 'tenjin_missing' : 'wallet_unavailable';
+    for (const n of want) {
+      hold({ need: n.kind, status, reason: e.message }, now, { clock: false });
+      updateState((s) => { if (s.jobs[n.jobKey]) s.jobs[n.jobKey].contactsStatus = { state: 'not_searched', reason: `Tenjin could not start (${status})`, at: new Date(now).toISOString() }; });
+      log.push({ job: n.jobKey, ok: false, status, reason: e.message });
     }
+    return log;
+  }
+  try {
+    for (const n of lookups) {
+      const r = await runNeed(client, n);
+      if (r.ok) {
+        await ingest({ obj: r.ingest, state: loadState(), profile, overlay: loadOverlay(), fetch, now });
+        updateState((s) => { s.routed.lastCost = r.cost || s.routed.lastCost; });
+        log.push({ job: n.jobKey, ok: true, status: 'company_lookup', website: (loadState().jobs[n.jobKey] || {}).employerWebsite || null });
+      } else {
+        hold(r, now, { clock: false });
+        log.push({ job: n.jobKey, ok: false, status: r.status, step: 'company_lookup' });
+      }
+    }
+    // 2. the people search, with the website now known where it could be found
+    const needs = jobNeeds(loadState(), profile, loadOverlay(), { kinds: ['people_search'], keys: want.map((n) => n.jobKey) });
+    for (const need of needs) {
+      const r = await runNeed(client, need);
+      if (r.ok) {
+        const out = await ingest({ obj: r.ingest, state: loadState(), profile, overlay: loadOverlay(), fetch, now });
+        updateState((s) => { s.routed.lastCost = r.cost || s.routed.lastCost; });
+        log.push({ job: need.jobKey, ok: true, contacts: out.contacts, searchedBy: need.fields.website ? 'website' : 'name and city' });
+      } else {
+        hold(r, now, { clock: false });
+        updateState((s) => { if (s.jobs[need.jobKey]) { (s.jobs[need.jobKey].routedTried ||= {})[need.kind] = true; s.jobs[need.jobKey].contactsStatus = { state: 'not_searched', reason: `the search was held (${r.status})`, at: new Date(now).toISOString() }; } });
+        log.push({ job: need.jobKey, ok: false, status: r.status });
+      }
+    }
+  } finally {
+    await client.close();
   }
   return log;
 }

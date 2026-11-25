@@ -1,0 +1,46 @@
+{
+ "_note": "HAND-MADE, not recorded: no paid call was made. The company lookup's spec and answer shapes are the builder's reading, so the mapper is marked unrecorded until a recorded answer replaces this file.",
+ "need": "company_lookup",
+ "step1": {
+  "json": {
+   "status": "spec",
+   "id": "00000000-0000-4000-8000-00000000000c",
+   "nextStep": "Call request({id: \"00000000-0000-4000-8000-00000000000c\", input: {...}}) with the inputs above.",
+   "cost": [
+    "provider price 0 USD"
+   ]
+  },
+  "text": "A company, found by name or link: returns the company's website and name.\nPrice: $0.012 per call, paid by this machine's wallet straight to the provider.\nInputs: name, url, location."
+ },
+ "step2": {
+  "envelope": {
+   "status": "fulfilled",
+   "supplier": "company-lookup.example",
+   "cost": [
+    "provider price 0.012 USD"
+   ],
+   "providerContentUntrusted": true,
+   "result": {
+    "company": {
+     "name": "Acme Robotics",
+     "website": "https://www.acmerobotics.test"
+    }
+   }
+  }
+ },
+ "step2_mismatch": {
+  "envelope": {
+   "status": "fulfilled",
+   "supplier": "company-lookup.example",
+   "cost": [
+    "provider price 0.012 USD"
+   ],
+   "result": {
+    "company": {
+     "name": "Zeta Holdings",
+     "website": "https://zetaholdings.test"
+    }
+   }
+  }
+ }
+}

@@ -491,7 +491,7 @@ const commands = {
       // The router's people search, in code, for the jobs asked (or every requested job). Held, never retried.
       const st = loadState();
       const log = await routeContacts({ keys: keys.length ? keys : st.contactsRequested || [], profile: readProfile(), fetch: globalThis.fetch });
-      return out({ routed: log });
+      return out({ routed: log, notSearched: log.filter((l) => l.status === 'not_searched').map((l) => ({ job: l.job, reason: l.reason })) });
     }
     if (sub !== 'request') return out({ error: 'contacts request [key...] | count <n|all> | route [key...]' }, 2);
     if (!keys.length) {

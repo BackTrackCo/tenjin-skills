@@ -1,6 +1,7 @@
 import { graph } from './graph.mjs';
 import { boardTarget, fetchBoard } from './boards.mjs';
 import { employerName } from './employer.mjs';
+import { companyNames, domainMatchesCompany } from './company.mjs';
 import { applyOp, bump, normLabel } from './store.mjs';
 import { careersFromLinks, classifyLinks, probeBoards, resolveFromCareersPage } from './employer.mjs';
 import { HN_SITE, isNeverAutomated, isYc, linkedinOf } from './platforms.mjs';
@@ -19,7 +20,7 @@ import { postLinks, boardLinksOf, emailsIn, handleOf } from './postinfo.mjs';
 // One status word for every need, model-written files included: the router envelope's word, `fulfilled`. Any other word
 // holds the source, and the refusal names the word to write.
 export const DELIVERED = ['fulfilled'];
-const NEEDS = ['job_postings', 'x_hiring_posts', 'hn_hiring_posts', 'careers_page', 'web_search', 'people_search'];
+const NEEDS = ['job_postings', 'x_hiring_posts', 'hn_hiring_posts', 'careers_page', 'web_search', 'people_search', 'company_lookup'];
 const POSTING_NEEDS = ['job_postings', 'hn_hiring_posts'];
 export const OUTCOMES = ['job', 'lead', 'not_hiring', 'no_fit'];
 const isStr = (v) => typeof v === 'string' && v.trim() !== '';
@@ -28,6 +29,12 @@ const isStr = (v) => typeof v === 'string' && v.trim() !== '';
 export function validateIngest(o) {
   if (!o || typeof o !== 'object' || Array.isArray(o)) return 'not an object';
   if (!NEEDS.includes(o.need)) return `need must be one of ${NEEDS.join(', ')}`;
+  if (o.need === 'company_lookup') {
+    if (!isStr(o.status) || !DELIVERED.includes(o.status)) return `status "${o.status}" is not a delivered result: write "fulfilled"`;
+    if (!isStr(o.jobKey)) return 'company_lookup needs jobKey';
+    if (o.website !== null && o.website !== undefined && typeof o.website !== 'string') return 'website must be text or null';
+    return null;
+  }
   if (o.need === 'people_search') {
     if (!isStr(o.status)) return 'status is missing';
     if (!DELIVERED.includes(o.status)) return `status "${o.status}" is not a delivered result: write "fulfilled" (any other word holds the source)`;
@@ -147,6 +154,7 @@ export async function planIngest({ obj: given, state, profile, overlay, fetch, n
   }
   if (need === 'careers_page') return planCareers({ obj, state, fetch, now, plan });
   if (need === 'people_search') return planPeople({ obj, state, plan, now });
+  if (need === 'company_lookup') return planCompany({ obj, state, plan });
   if (need === 'x_hiring_posts') {
     const known = new Set((state.posts || []).map((p) => p.url));
     const seenAlready = (p) => known.has(p.url) || postSeen(state, p);
@@ -238,13 +246,13 @@ export async function planIngest({ obj: given, state, profile, overlay, fetch, n
     }
     if (tooOld) screen.warnings.push(`posted ${String(p.postedAt).slice(0, 10)}, still open`);
     if (ep) {
-      plan.jobs.push({ ...boardJob, openConfirmed: true, company: boardJob.company && boardJob.company !== ep.token ? boardJob.company : p.employer, salary: boardJob.salary || salaryText(p.salary), posted: boardJob.posted || p.postedAt, warnings: screen.warnings, via, employerPosting: ep, employerWebsite: p.employerWebsite || null, fromPost: p.sourceUrl, ...(linkedinOf(p.applyLinks) ? { linkedinUrl: linkedinOf(p.applyLinks) } : {}) });
+      plan.jobs.push({ ...boardJob, openConfirmed: true, company: boardJob.company && boardJob.company !== ep.token ? boardJob.company : p.employer, salary: boardJob.salary || salaryText(p.salary), posted: boardJob.posted || p.postedAt, warnings: screen.warnings, via, employerPosting: ep, employerWebsite: p.employerWebsite || null, ...(p.employerWebsite ? { employerWebsiteSource: 'posting' } : {}), fromPost: p.sourceUrl, ...(linkedinOf(p.applyLinks) ? { linkedinUrl: linkedinOf(p.applyLinks) } : {}) });
       continue;
     }
     // Unresolved: kept as a job so review can run; it never reaches the apply queue without an exact or confirmed posting.
     const key = p.applyLinks.length ? p.applyLinks[0].url : p.sourceUrl;
     const yc = p.applyLinks.map((l) => l.url).find((u) => /workatastartup\.com/.test(u)) || p.applyLinks.map((l) => l.url).find(isYc) || null;
-    plan.jobs.push({ url: key, ats: null, board: null, title: p.title, company: p.employer, city: p.city, region: p.region, country: p.country, remote: p.remote, posted: p.postedAt, type: p.employmentType, salary: salaryText(p.salary), desc: p.description, applyLinks: p.applyLinks.map((l) => l.url), place: `${p.city}|${p.region}`, warnings: [...screen.warnings, 'not confirmed open'], via, employerPosting: null, unresolved, fromPost: p.sourceUrl, otherSystem: cl.other, workAtStartupUrl: unresolved === 'yc_platform_only' ? yc : null, platformLinks: cl.platform, employerWebsite: p.employerWebsite || null, sourceUrl: p.sourceUrl, openConfirmed: false, ...(linkedinOf(p.applyLinks) ? { linkedinUrl: linkedinOf(p.applyLinks) } : {}) });
+    plan.jobs.push({ url: key, ats: null, board: null, title: p.title, company: p.employer, city: p.city, region: p.region, country: p.country, remote: p.remote, posted: p.postedAt, type: p.employmentType, salary: salaryText(p.salary), desc: p.description, applyLinks: p.applyLinks.map((l) => l.url), place: `${p.city}|${p.region}`, warnings: [...screen.warnings, 'not confirmed open'], via, employerPosting: null, unresolved, fromPost: p.sourceUrl, otherSystem: cl.other, workAtStartupUrl: unresolved === 'yc_platform_only' ? yc : null, platformLinks: cl.platform, employerWebsite: p.employerWebsite || null, ...(p.employerWebsite ? { employerWebsiteSource: 'posting' } : {}), sourceUrl: p.sourceUrl, openConfirmed: false, ...(linkedinOf(p.applyLinks) ? { linkedinUrl: linkedinOf(p.applyLinks) } : {}) });
     plan.unresolved++;
   }
   // a job the person's career-ops folder already has is not added again
@@ -339,6 +347,19 @@ async function webPostings(results, getBoard, state) {
 
 // The router's people search for one job: a normal empty answer is not an error. Each person is a likely contact, marked
 // not confirmed, stored as a contact on the job; the intro comes from the writer call.
+// The company lookup: the domain is saved as the job's employer website only after code checks it against the company name and the
+// board's company name. A domain that does not match is not saved, and the people search then runs by name and city.
+function planCompany({ obj, state, plan }) {
+  const job = state.jobs[obj.jobKey];
+  if (!job) {
+    plan.held.push({ reason: 'source_empty', detail: `routed:company_lookup: unknown job ${obj.jobKey}` });
+    return plan;
+  }
+  const ok = obj.website && domainMatchesCompany(obj.website, companyNames(job)) && !isNeverAutomated(obj.website);
+  plan.company = { key: obj.jobKey, website: ok ? obj.website : null, rejected: obj.website && !ok ? obj.website : null };
+  return plan;
+}
+
 function planPeople({ obj, state, plan }) {
   if (!state.jobs[obj.jobKey]) {
     plan.held.push({ reason: 'source_empty', detail: `routed:people_search: unknown job ${obj.jobKey}` });
@@ -387,6 +408,14 @@ export function persistIngest(plan, now = Date.now()) {
   const at = new Date(now).toISOString();
   return updateState((state) => {
     const added = mergeJobs(state, plan.jobs, at);
+    if (plan.company) {
+      const cj = state.jobs[plan.company.key];
+      if (plan.company.website) {
+        cj.employerWebsite = plan.company.website;
+        cj.employerWebsiteSource = 'company_lookup';
+      }
+      cj.companyLookedUp = at;
+    }
     if (plan.people) {
       const job = state.jobs[plan.people.key];
       for (const c of plan.people.contacts) {
@@ -396,6 +425,7 @@ export function persistIngest(plan, now = Date.now()) {
         } catch {} // a contact the rules refuse is simply not stored
       }
       job.contactsSearched = at;
+      job.contactsStatus = { state: 'searched', found: plan.people.contacts.length, at };
       state.contactsRequested = (state.contactsRequested || []).filter((k) => k !== job.key);
     }
     for (const pj of plan.jobs) authorContact(state, pj, plan);

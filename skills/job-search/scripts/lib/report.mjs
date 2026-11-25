@@ -242,13 +242,19 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
   const hints = ['employer_posting'].map((m) => tenjinHint(state, m)).filter(Boolean);
   const stuckNoPosting = jobs.filter((j) => !j.employerPosting && j.unresolved && !['skipped', 'closed'].includes(j.status)).length;
   if (hints.length && stuckNoPosting) L.push('', hints[0].line);
+  // Every job the contacts search did not cover says so with its reason; "returned nothing" only after a search ran.
+  const contactNotes = jobs.filter((j) => j.contactsStatus && !(state.contacts[j.key] || []).length && (state.contactsRequested || []).concat(j.contactsStatus.state === 'searched' ? [j.key] : []).includes(j.key));
+  if (contactNotes.length) {
+    L.push('', '## Contacts search');
+    for (const j of contactNotes) L.push(`- ${j.title}, ${j.company}: ${j.contactsStatus.state === 'not_searched' ? `not searched: ${j.contactsStatus.reason}` : 'searched, returned nothing'}`);
+  }
   const withContacts = jobs.filter((j) => (state.contacts[j.key] || []).length);
   if (withContacts.length) {
     L.push('', '## Contacts');
     for (const j of withContacts) {
       L.push(`- ${j.title}, ${j.company}`);
       for (const c of state.contacts[j.key]) {
-        L.push(`  - ${c.name}${c.title ? `, ${c.title}` : ''}${c.notConfirmed ? ' (not confirmed)' : ''}: ${c.how}. Cares about: ${c.cares}. ${c.sourceUrl}`);
+        L.push(`  - ${c.name}${c.title ? `, ${c.title}` : ''}${c.weak ? ' (weak match: the company is not confirmed)' : c.notConfirmed ? ' (not confirmed)' : ''}: ${c.how}. Cares about: ${c.cares}. ${c.sourceUrl}`);
         if (c.intro) L.push(`    ${introNote(c.intro, c.channel === 'x' ? handleIn(c.how) : null, c.channel === 'email' ? c.email || c.how : null, c.emailFromPost)}`);
       }
     }

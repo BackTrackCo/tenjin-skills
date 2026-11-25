@@ -214,6 +214,7 @@
     "x_hiring_posts": "hiring posts on X for {role} roles in {place} from the last {days} days",
     "careers_page": "find the careers page of {company} from its website {url} and the job board it uses",
     "linkedin_profile": "read the public LinkedIn profile at {url}: return the profile as JSON",
+    "company_lookup": "a company, found by name or link: {company}, from the job board page {url}{where}; return its website",
     "people_search": "people search: engineering leaders at {company} ({url}){where}"
   },
   "peopleTitles": [
