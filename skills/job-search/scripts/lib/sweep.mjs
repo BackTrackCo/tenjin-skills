@@ -2,7 +2,7 @@ import { graph } from './graph.mjs';
 import { fetchBoard, parseCareersUrl } from './boards.mjs';
 import { mergeJobs, normalizeUrl } from './dedupe.mjs';
 import { effectiveProfile } from './overlay.mjs';
-import { screenJob, titleMatchesRole } from './verify.mjs';
+import { screenJob } from './verify.mjs';
 import { frequencyOf, searchIsDue } from './schedule.mjs';
 import { bump, updateState } from './store.mjs';
 
@@ -23,8 +23,8 @@ export function catchUpDays(state, now, fallback = 14) {
   return Math.min(Math.max(days, 2), graph().sweep.maxCatchUpDays);
 }
 
-// Watched companies are careers URLs the person pastes: [{url, name?}]. No cap.
-export function resolveWatchList(profile, state = null) {
+// Watched companies are the boards the person asked for, kept in profile.watch: [{url, name?}]. No cap, and nothing joins or drops by itself.
+export function resolveWatchList(profile) {
   const entries = [];
   const unresolved = [];
   const seen = new Set();
@@ -39,13 +39,6 @@ export function resolveWatchList(profile, state = null) {
     seen.add(id);
     entries.push({ name: w.name || p.token, ats: p.ats, token: p.token, region: p.region || 'us' });
   }
-  // Boards the skill found itself (a job passed review with an exact or confirmed posting) join the list, no cap.
-  for (const b of (state && state.found) || []) {
-    const id = `${b.ats}:${b.region || 'us'}:${b.token}`;
-    if (seen.has(id) || (state.removedBoards || []).includes(b.board)) continue;
-    seen.add(id);
-    entries.push({ name: b.name, ats: b.ats, token: b.token, region: b.region || 'us', found: true });
-  }
   return { entries, unresolved };
 }
 
@@ -53,13 +46,12 @@ export function resolveWatchList(profile, state = null) {
 export async function runSweep({ state, profile, overlay, fetch, now = Date.now() }) {
   const eff = effectiveProfile(profile, overlay);
   eff.windowDays = catchUpDays(state, now, profile.windowDays || 14);
-  const { entries, unresolved } = resolveWatchList(profile, state);
+  const { entries, unresolved } = resolveWatchList(profile);
   const jobs = [];
   const dropped = [];
   const held = [];
   const closedKeys = [];
   const sources = {};
-  const foundSeen = [];
   for (const name of unresolved) held.push({ reason: 'source_empty', detail: `${name}: no board link found, paste the board link (Greenhouse, Lever or Ashby careers page)` });
   for (const e of entries) {
     const id = `${e.ats}:${e.token}`;
@@ -71,7 +63,6 @@ export async function runSweep({ state, profile, overlay, fetch, now = Date.now(
     }
     sources[id] = { ok: true, count: res.jobs.length, at: new Date(now).toISOString() };
     const present = new Set(res.jobs.map((j) => normalizeUrl(j.url)));
-    if (e.found && res.jobs.some((j) => titleMatchesRole(j.title, eff))) foundSeen.push(`${e.ats}:${e.token}`);
     for (const j of Object.values(state.jobs)) if (j.board === id && !present.has(j.key)) closedKeys.push(j.key);
     for (const j of res.jobs) {
       const screen = screenJob(j, eff, overlay, now, { source: 'watched' });
@@ -84,7 +75,7 @@ export async function runSweep({ state, profile, overlay, fetch, now = Date.now(
   }
   const dropCounts = {};
   for (const d of dropped) for (const r of d.reasons) dropCounts[r.replace(/:.*/, '')] = (dropCounts[r.replace(/:.*/, '')] || 0) + 1;
-  return { at: new Date(now).toISOString(), jobs, dropped, held, closedKeys, sources, dropCounts, foundSeen };
+  return { at: new Date(now).toISOString(), jobs, dropped, held, closedKeys, sources, dropCounts };
 }
 
 // Writes a sweep's output. Closed means absent from the board's list.
@@ -103,14 +94,6 @@ export function persist(payload) {
       } else j.warnings = [...new Set([...(j.warnings || []), 'closed on its board'])];
     }
     state.sources = { ...state.sources, ...payload.sources };
-    // A found board with no job in the role for 90 days drops off, with a line in the report. A pasted board never does.
-    for (const b of state.found || []) if ((payload.foundSeen || []).includes(b.board)) b.lastRoleJobAt = payload.at;
-    const keep = [];
-    for (const b of state.found || []) {
-      if (Date.parse(payload.at) - Date.parse(b.lastRoleJobAt || b.date) > 90 * 86400000) (state.dropLines ||= []).push(`Dropped ${b.name} (${b.board}) from the watch list: no job in your role for 90 days.`);
-      else keep.push(b);
-    }
-    state.found = keep;
     state.lastSweep = { at: payload.at, kept: (payload.jobs || []).length, dropCounts: payload.dropCounts || {} };
     state.watched = { checked: Object.keys(payload.sources || {}).length, ok: Object.values(payload.sources || {}).filter((x) => x.ok).length, at: payload.at };
     state.held = [...state.held.filter((h) => !(h.reason === 'source_empty' && !String(h.detail).startsWith('routed:'))), ...(payload.held || [])];

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { graph } from './lib/graph.mjs';
 import { SKILL_DIR, ensureDir, readJson, stateDir, writeJsonAtomic } from './lib/paths.mjs';
-import { applyOp, applyOps, bump, companyTitleKey, loadState, updateState, view } from './lib/store.mjs';
+import { applyOp, applyOps, bump, companyTitleKey, loadState, oldStateError, readOldStateFields, updateState, view } from './lib/store.mjs';
 
 import { addRule, deriveLessons, loadOverlay, removeRule } from './lib/overlay.mjs';
 import { markShown, refreshClaims, releaseClaims, itemVersion, LEAVE_REASONS, ITEM_LEAVE_REASONS, advanceSearch, askFirst, itemKind, leaveItem, leaveRecord, park, unpark, workList } from './lib/work.mjs';
@@ -33,6 +33,7 @@ import { copyToUploads, uploadBlockedStep, uploadsDir, uploadsGranted, uploadsLi
 import * as qs from './lib/questions.mjs';
 import { FREQUENCIES, frequencyOf, periodStart } from './lib/schedule.mjs';
 import { ingest, joinLeads, leadKey } from './lib/ingest.mjs';
+import { addWatch, removeWatch } from './lib/watchlist.mjs';
 import { eeoTextOf, oldFieldError, oldFields, validateProfile } from './lib/profile.mjs';
 import { routeContacts, routedRounds } from './lib/routed.mjs';
 import { resumeHeld } from './lib/held.mjs';
@@ -531,9 +532,7 @@ const commands = {
       st.lastReportAt = new Date().toISOString();
       if (all) {
         st.updateLines = [];
-        st.dropLines = [];
         st.hostsReported = [...new Set([...(st.hostsReported || []), ...firstApplicationHosts(st).map((h) => h.host)])];
-        if ((st.found || []).length) st.watchTipShown = true;
       }
       for (const c of st.consentLog || []) c.acked = true;
       markShown(st); // the person is shown the waiting items now: no push repeats them
@@ -892,7 +891,7 @@ const commands = {
     writeJsonAtomic(profileFile(), next);
     return out({ saved: name, resumed: resumeHeld(next) });
   },
-  // Watched boards the skill found itself, and the person's removals. A removed company is never added again.
+  // The watch list: boards the person asked for in their own message, kept in profile.watch until they remove them.
   async watch([sub, name], flags) {
     if (!sub) {
       // the watcher: a background command that exits when work is due
@@ -900,15 +899,25 @@ const commands = {
       process.exitCode = r.exit;
       return;
     }
-    if (sub === 'list') return out({ found: loadState().found || [], pasted: readProfile().watch || [], removed: loadState().removedBoards || [] });
-    if (sub !== 'remove' || !name) return out({ error: 'watch list | remove <company or board>' }, 2);
-    return out(updateState((s) => {
-      const hit = (b) => [b.board, b.name].some((x) => String(x).toLowerCase() === name.toLowerCase());
-      const gone = (s.found || []).filter(hit);
-      s.found = (s.found || []).filter((b) => !hit(b));
-      s.removedBoards = [...new Set([...(s.removedBoards || []), ...gone.map((b) => b.board), name.toLowerCase()])];
-      return { removed: gone.length, never_again: name };
-    }));
+    if (sub === 'list') return out({ watch: readProfile().watch || [] });
+    const save = (watch) => {
+      ensureDir(stateDir());
+      const next = { ...readProfile(), watch };
+      const bad = validateProfile(next);
+      if (bad.length) throw new Error(`the profile was not saved: ${bad.join('; ')}`);
+      writeJsonAtomic(profileFile(), next);
+    };
+    if (sub === 'add' && name) {
+      const r = await addWatch(name, readProfile().watch, { fetch: globalThis.fetch });
+      if (r.watch && !r.already) save(r.watch);
+      return out(r.line ? { line: r.line } : { added: r.added, board: r.board, already: r.already, watching: r.watch.length });
+    }
+    if (sub === 'remove' && name) {
+      const r = removeWatch(name, readProfile().watch);
+      if (r.removed) save(r.watch);
+      return out({ removed: r.removed, watching: r.watch.length });
+    }
+    return out({ error: 'watch list | add <company or careers link> | remove <company or board>' }, 2);
   },
   // Example intros: one writer call per job, for the contacts with a channel. Never sent.
   async intros([sub, key], flags) {
@@ -1105,6 +1114,9 @@ async function main() {
     const old = oldFields(readProfile());
     if (old.length) return out({ error: oldFieldError(old) }, 2);
   }
+  // A state that holds a field from an older version is refused with the field's name, never converted.
+  const oldState = readOldStateFields();
+  if (oldState.length) return out({ error: oldStateError(oldState) }, 2);
   // A command that changes what a submit may do is refused while a batch is open, whoever calls it.
   if (batch.isBatchDenied(cmd, pos[0]) && batch.isActive()) return out({ error: `${cmd} ${pos[0] || ''} is refused while a batch is open; close it in an attended session first`.replace('  ', ' ') }, 4);
   try {

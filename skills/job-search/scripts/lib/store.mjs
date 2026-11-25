@@ -38,12 +38,10 @@ export function emptyState() {
     stops: [],
     answerV: 0,
     watcher: { sent: [], fingerprint: null, notify: null },
-    found: [],
     wakes: [],
     updateLines: [],
     leads: [],
     postOutcomes: {},
-    removedBoards: [],
     handouts: [],
     consentLog: [],
     batch: null,
@@ -166,7 +164,6 @@ export function applyOp(state, op) {
       job.status = op.to;
       bump(job);
       job.statusAt = op.at || new Date().toISOString();
-      if (op.to === 'reviewed') addFoundBoard(state, job, job.statusAt);
       if (op.to === 'submitted') { job.fillReady = null; job.submitNow = null; job.inFlight = null; }
       if (op.to === 'skipped') job.skipReason = String(op.reason || 'no reason given').slice(0, 160);
       if (op.to === 'submitted') {
@@ -214,16 +211,21 @@ export function applyOp(state, op) {
   }
 }
 
-// A board joins the watch list when one of its jobs passes review with an exact or confirmed employer posting.
-// A removed company is never added again; a pasted board is already on the list.
-export function addFoundBoard(state, job, at) {
-  const ep = job.employerPosting;
-  if (!ep || !['exact', 'confirmed'].includes(ep.confidence)) return;
-  const board = `${ep.system}:${ep.token}`;
-  state.found ||= [];
-  if (state.found.some((b) => b.board === board)) return;
-  if ((state.removedBoards || []).some((r) => r === board || String(r).toLowerCase() === String(job.company).toLowerCase())) return;
-  state.found.push({ board, ats: ep.system, token: ep.token, region: 'us', name: job.company, source: 'found', job: job.key, date: at, lastRoleJobAt: at });
+// Fields an older version of the skill wrote to state.json. There is no converter: a state that holds one is refused with its
+// name, and the person (or the model) removes it from state.json. The watch list is the profile's `watch` list, kept only on the
+// person's own request.
+const OLD_STATE_FIELDS = {
+  found: 'boards are no longer added by the skill; the watch list is profile.watch, from the person\'s own request (J watch add)',
+  removedBoards: 'it only guarded the automatic adds, which are gone',
+  watchTipShown: 'the skill no longer suggests a watch list',
+  dropLines: 'boards no longer drop by themselves',
+};
+export function oldStateFields(raw) {
+  return raw && typeof raw === 'object' ? Object.keys(OLD_STATE_FIELDS).filter((k) => raw[k] !== undefined).map((k) => ({ field: k, why: OLD_STATE_FIELDS[k] })) : [];
+}
+export const oldStateError = (list) => `state.json has ${list.length > 1 ? 'old fields' : 'an old field'} the skill no longer reads: ${list.map((o) => `${o.field} (${o.why})`).join('; ')}. Remove ${list.length > 1 ? 'them' : 'it'} from state.json, then run the command again.`;
+export function readOldStateFields() {
+  return oldStateFields(readJson(stateFile(), null));
 }
 
 export function normLabel(s) {

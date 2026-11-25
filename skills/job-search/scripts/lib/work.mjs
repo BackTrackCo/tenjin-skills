@@ -7,6 +7,7 @@ import { applyPathOf, periodLimit } from './apply.mjs';
 import { openUrlOf } from './open.mjs';
 import { hintLines, offerItems, outdatedLine, pricesCheckedAt, paceText, searchRoundNote } from './prices.mjs';
 import { employerName } from './employer.mjs';
+import { resolveWatchList } from './sweep.mjs';
 import { sha } from './dedupe.mjs';
 import { canonical } from './overlay.mjs';
 import { cleanupStale, isActive, batchMode } from './batch.mjs';
@@ -111,7 +112,7 @@ export const hasAccount = (profile, job) => {
 // said they have an account at that host; `other_system` on the deny list. Form facts and saved answers are in none of them.
 export function inputsHash(state, job, overlay, profile = {}, reason = null) {
   const co = employerName(job.company);
-  const boards = (state.found || []).filter((b) => employerName(b.name) === co).map((b) => b.board).sort();
+  const boards = resolveWatchList(profile).entries.filter((b) => employerName(b.name) === co).map((b) => `${b.ats}:${b.token}`).sort();
   const ep = job.employerPosting;
   const base = { hash: job.hash, closed: job.status === 'closed' };
   const search = profile.search || {};

@@ -4,6 +4,10 @@ Runs when `J work` lists `search_due`; its `query` carries `role`, `place`, `rem
 
 In an attended run, say one line after each search step ("web: 14 results, 9 new").
 
+## Watched boards
+
+The boards in `profile.watch` are read free in every round, with Tenjin or without. A board is there only because the person asked for it in their own message (`J watch add <company or careers link>`); code adds none by itself, and none drops by itself (`J watch remove`). The report shows "Watched boards checked" only when the list has a board.
+
 ## 0. With Tenjin, in code
 
 `scripts/lib/router.mjs` is the only file that talks to the router: it starts one `tenjin mcp` process per round, sends each need as text built from a template in `graph.json` (it names no seller), then runs the offer it is given, saves the result to a file (`fullResultPath`) and passes it to an adapter for that supplier. Only a `fulfilled` answer delivers; any other status (`needs_approval`, `needs_input`, `unverified`, `failed`, `unpaid`, `blocked`, ...) holds that one search with its reason, and nothing is sent twice. The router's own limits and `needs_approval` apply; the skill adds no money rule. Adapters exist for the job-posting search, the X hiring-post search, the careers-page finder (a company URL in, the vendor and board out, then the board probe and job match for `confirmed`) and the people search (an empty answer is a normal answer; a person found is a likely contact, marked not confirmed, and one whose address does not name the job's city is dropped).

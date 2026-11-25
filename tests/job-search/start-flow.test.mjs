@@ -144,66 +144,71 @@ function awaitBatch() {
   return refused.code === 4 && ok.code === 0;
 }
 
-// ---- the watch list builds itself --------------------------------------------
-test('a board joins the list when one of its jobs passes review with an exact or confirmed posting', () => {
-  reset();
-  const ok = mkJob({ key: 'https://boards.greenhouse.io/figma/jobs/1', status: 'new', company: 'Figma', employerPosting: { url: 'https://boards.greenhouse.io/figma/jobs/1', system: 'greenhouse', token: 'figma', jobId: '1', source: 'apply_link', confidence: 'exact', checkedAt: '' } });
-  const unconfirmed = mkJob({ key: 'https://boards.greenhouse.io/zed/jobs/2', status: 'new', company: 'Zed', employerPosting: { url: 'https://boards.greenhouse.io/zed/jobs/2', system: 'greenhouse', token: 'zed', jobId: '2', source: 'board_probe', confidence: 'unconfirmed', checkedAt: '' } });
-  store.updateState((s) => { s.jobs[ok.key] = ok; s.jobs[unconfirmed.key] = unconfirmed; });
-  store.applyOps([{ op: 'transition', key: unconfirmed.key, to: 'reviewed' }, { op: 'transition', key: ok.key, to: 'reviewed', at: '2026-11-23T00:00:00Z' }]);
-  const found = store.loadState().found;
-  assert.deepEqual(found.map((b) => [b.board, b.source, b.job, b.date]), [['greenhouse:figma', 'found', ok.key, '2026-11-23T00:00:00Z']]);
-  store.applyOps([{ op: 'transition', key: ok.key, to: 'shortlisted' }]);
-  assert.equal(store.loadState().found.length, 1, 'once');
-});
+// ---- the watch list only on the person's own request ------------------------
+const watchSrc = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'scripts', 'lib', 'store.mjs'), 'utf8');
+const profileOf = () => JSON.parse(fs.readFileSync(path.join(process.env.HOME, '.tenjin-skills', 'job-search', 'profile.json'), 'utf8'));
 
-test('the sweep reads found boards, with no list shipped and no cap', async () => {
+test('a job passing review with an exact or confirmed posting adds no board', () => {
   reset();
-  store.updateState((s) => { s.found = Array.from({ length: 60 }, (_, i) => ({ board: `greenhouse:co${i}`, ats: 'greenhouse', token: `co${i}`, region: 'us', name: `Co${i}`, source: 'found', job: 'x', date: '2026-11-20T00:00:00Z', lastRoleJobAt: '2026-11-20T00:00:00Z' })); });
-  const r = sweep.resolveWatchList({ watch: [{ url: 'https://boards.greenhouse.io/pasted' }] }, store.loadState());
-  assert.equal(r.entries.length, 61);
-  assert.equal(r.entries.filter((e) => e.found).length, 60);
-  assert.equal(fs.existsSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'data')), false, 'no list is shipped');
-});
-
-test('a found board with no job in the role for 90 days drops off with a report line; a pasted board never drops', async () => {
-  reset();
-  const profile = { search: { role: 'software engineer' }, watch: [{ url: 'https://boards.greenhouse.io/pasted' }], includeOld: true };
-  store.updateState((s) => { s.found = [
-    { board: 'greenhouse:stale', ats: 'greenhouse', token: 'stale', region: 'us', name: 'Stale', source: 'found', job: 'x', date: '2026-07-01T00:00:00Z', lastRoleJobAt: '2026-07-01T00:00:00Z' },
-    { board: 'greenhouse:fresh', ats: 'greenhouse', token: 'fresh', region: 'us', name: 'Fresh', source: 'found', job: 'x', date: '2026-07-01T00:00:00Z', lastRoleJobAt: '2026-07-01T00:00:00Z' },
-  ]; });
-  const f = fakeFetch({
-    [`${GH}/stale/`]: ghBoard('Stale', [{ id: 1, title: 'Account Executive' }]),
-    [`${GH}/fresh/`]: ghBoard('Fresh', [{ id: 2, title: 'Software Engineer' }]),
-    [`${GH}/pasted/`]: ghBoard('Pasted', [{ id: 3, title: 'Cook' }]),
-  });
-  const payload = await sweep.runSweep({ state: store.loadState(), profile, overlay: empty, fetch: f, now: NOW });
-  sweep.persist(payload);
+  const ok = mkJob({ key: 'https://boards.greenhouse.io/figma/jobs/1', status: 'new', company: 'Figma', employerPosting: { url: 'https://boards.greenhouse.io/figma/jobs/1', system: 'greenhouse', token: 'figma', jobId: '1', confidence: 'exact' } });
+  store.updateState((s) => { s.jobs[ok.key] = ok; });
+  store.applyOps([{ op: 'transition', key: ok.key, to: 'reviewed' }]);
   const s = store.loadState();
-  assert.deepEqual(s.found.map((b) => b.name), ['Fresh']);
-  assert.equal(s.found[0].lastRoleJobAt, payload.at);
-  assert.match(s.dropLines[0], /Dropped Stale \(greenhouse:stale\) from the watch list: no job in your role for 90 days/);
-  assert.match(report.renderReport(s, empty, { now: NOW }), /Dropped Stale/);
-  // the pasted board has no role job and is still read the next time
-  assert.ok(sweep.resolveWatchList(profile, s).entries.some((e) => e.token === 'pasted'));
+  assert.equal(s.found, undefined);
+  assert.equal(sweep.resolveWatchList({}).entries.length, 0);
+  assert.doesNotMatch(watchSrc, /addFoundBoard/);
 });
 
-test('a removed company is never added again; one report tip says a careers link can be pasted, once', () => {
+test('J watch add: a pasted link joins profile.watch, once; remove takes it off; nothing else changes the list', () => {
   reset();
-  store.updateState((s) => { s.found = [{ board: 'greenhouse:figma', ats: 'greenhouse', token: 'figma', region: 'us', name: 'Figma', source: 'found', job: 'x', date: 'd', lastRoleJobAt: 'd' }]; });
+  const a = runJobs(home, ['watch', 'add', 'https://boards.greenhouse.io/figma/jobs/77']);
+  assert.equal(a.json.added, 'figma');
+  assert.deepEqual(profileOf().watch.map((w) => w.url), ['https://boards.greenhouse.io/figma/jobs/77']);
+  assert.equal(runJobs(home, ['watch', 'add', 'https://job-boards.greenhouse.io/figma']).json.already, 'figma');
+  assert.equal(profileOf().watch.length, 1);
+  assert.equal(runJobs(home, ['watch', 'list']).json.watch.length, 1);
+  const needs = runJobs(home, ['watch', 'add', 'https://example.com/careers?gh_jid=5']);
+  assert.match(needs.json.line, /no board link/);
   assert.equal(runJobs(home, ['watch', 'remove', 'Figma']).json.removed, 1);
-  assert.deepEqual(store.loadState().found, []);
-  const j = mkJob({ key: 'https://boards.greenhouse.io/figma/jobs/9', status: 'new', company: 'Figma', employerPosting: { url: 'https://boards.greenhouse.io/figma/jobs/9', system: 'greenhouse', token: 'figma', jobId: '9', source: 'apply_link', confidence: 'exact', checkedAt: '' } });
-  store.updateState((s) => { s.jobs[j.key] = j; });
-  store.applyOps([{ op: 'transition', key: j.key, to: 'reviewed' }]);
-  assert.deepEqual(store.loadState().found, [], 'not added again');
-  store.updateState((s) => { s.found = [{ board: 'greenhouse:other', ats: 'greenhouse', token: 'other', region: 'us', name: 'Other', source: 'found', job: 'x', date: 'd', lastRoleJobAt: 'd' }]; });
-  const first = runJobs(home, ['report', '--all']).stdout;
-  assert.match(first, /Tip: you can paste a company's careers link/);
-  assert.doesNotMatch(runJobs(home, ['report', '--all']).stdout, /Tip: you can paste/, 'said once');
-  assert.equal(runJobs(home, ['watch', 'list']).json.removed.includes('greenhouse:figma'), true);
-  // no question asks for watched companies
+  assert.deepEqual(profileOf().watch, []);
+});
+
+test('J watch add with a company name uses the employer resolution; with no board it says so in one plain line', async () => {
+  const wl = await import('../../skills/job-search/scripts/lib/watchlist.mjs');
+  const f = fakeFetch({ [`${GH}/stripe/`]: ghBoard('Stripe', [{ id: 1, title: 'Engineer' }]) });
+  const hit = await wl.addWatch('Stripe', [], { fetch: f });
+  assert.equal(hit.added, 'Stripe');
+  assert.deepEqual(hit.watch.map((w) => [w.ats, w.token]), [['greenhouse', 'stripe']]);
+  const miss = await wl.addWatch('Nowhere Inc', [], { fetch: fakeFetch({}) });
+  assert.match(miss.line, /^I found no Greenhouse, Lever or Ashby board for Nowhere Inc/);
+  assert.equal(miss.watch, undefined);
+  assert.doesNotMatch(miss.line, /\?/, 'a statement, not a question');
+});
+
+test('the sweep reads every listed board, no cap; a board with no role job never drops; the report section shows only with a board', async () => {
+  reset();
+  const watch = Array.from({ length: 60 }, (_, i) => ({ url: `https://boards.greenhouse.io/co${i}` }));
+  assert.equal(sweep.resolveWatchList({ watch }).entries.length, 60);
+  assert.equal(fs.existsSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'data')), false, 'no list is shipped');
+  const profile = { search: { role: 'software engineer' }, watch: [{ url: 'https://boards.greenhouse.io/stale' }], includeOld: true };
+  const f = fakeFetch({ [`${GH}/stale/`]: ghBoard('Stale', [{ id: 1, title: 'Account Executive' }]) });
+  const later = NOW + 200 * 86400000;
+  sweep.persist(await sweep.runSweep({ state: store.loadState(), profile, overlay: empty, fetch: f, now: later }));
+  assert.equal(sweep.resolveWatchList(profile).entries.length, 1, 'still listed after 200 days');
+  assert.match(report.renderReport(store.loadState(), empty, { now: later, profile }), /## Watched boards checked/);
+  assert.doesNotMatch(report.renderReport(store.loadState(), empty, { now: later, profile: { search: profile.search } }), /Watched boards checked/);
+});
+
+test('old automatic state is refused with the field named; no tip, no question asks for watched companies', () => {
+  reset();
+  const file = path.join(process.env.HOME, '.tenjin-skills', 'job-search', 'state.json');
+  const st = JSON.parse(fs.readFileSync(file, 'utf8'));
+  fs.writeFileSync(file, JSON.stringify({ ...st, found: [], removedBoards: ['x'] }));
+  const r = runJobs(home, ['report', '--all']);
+  assert.equal(r.code, 2);
+  assert.match(r.json.error, /state\.json has old fields the skill no longer reads: found \(.*\); removedBoards/);
+  fs.writeFileSync(file, JSON.stringify(st));
+  assert.doesNotMatch(runJobs(home, ['report', '--all']).stdout, /Tip: you can paste/);
   const all = fs.readdirSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'references')).map((f) => fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'references', f), 'utf8')).join('\n');
   assert.doesNotMatch(all, /which companies|companies (do you|to) watch|watch list question/i);
 });

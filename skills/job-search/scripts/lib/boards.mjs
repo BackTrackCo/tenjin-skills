@@ -52,7 +52,7 @@ export function boardTarget(links, hosts = ['greenhouse', 'lever', 'ashby']) {
   return null;
 }
 
-// A watched company is a careers URL the person pastes. Code reads the system and the token.
+// A watched company is a careers link the person pastes, or a company they name (the employer resolution finds its board). Code reads the system and the token.
 // Returns {ats, region, token, jobId} or {needsBoard: true} (a page with only ?gh_jid=) or null.
 export function parseCareersUrl(raw) {
   const p = parseBoardUrl(raw);

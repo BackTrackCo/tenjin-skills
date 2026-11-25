@@ -184,7 +184,7 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
   const skip = noTenjin ? `no Tenjin (${noTenjin.detail})` : state.routed && state.routed.skipReason;
   if (skip) L.push('', `## The routed search did not run`, `- ${skip}. The watched boards still ran.`);
   const w = state.watched;
-  L.push('', `## Watched boards checked: ${w ? `${w.ok} of ${w.checked} answered` : 'none yet'}`);
+  if ((profile && profile.watch || []).length) L.push('', `## Watched boards checked: ${w ? `${w.ok} of ${w.checked} answered` : 'none yet'}`);
   L.push('', `Cost the router reported: ${(state.routed && state.routed.lastCost) || 'none reported'}`);
   const newRules = (overlay.rules || []).filter((r) => !since || r.date >= since.slice(0, 10));
   if (newRules.length) {
@@ -238,7 +238,6 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
     L.push('', '## Consent changes (check that each one was yours)');
     for (const c of consent) L.push(`- ${c.at.slice(0, 16).replace('T', ' ')}: ${c.what}. Say so if this was not you; \`consent revoke\` undoes it.`);
   }
-  if ((state.dropLines || []).length) L.push('', ...state.dropLines.map((d) => d));
   const hints = ['employer_posting'].map((m) => tenjinHint(state, m)).filter(Boolean);
   const stuckNoPosting = jobs.filter((j) => !j.employerPosting && j.unresolved && !['skipped', 'closed'].includes(j.status)).length;
   if (hints.length && stuckNoPosting) L.push('', hints[0].line);
@@ -259,7 +258,6 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
       }
     }
   }
-  if ((state.found || []).length && !state.watchTipShown) L.push('', 'Tip: you can paste a company\'s careers link and I will watch it directly.');
   if (plannedJobs(state, profile || {}, overlay, now).length) L.push('', CONTACTS_LINE);
   return L.join('\n');
 }

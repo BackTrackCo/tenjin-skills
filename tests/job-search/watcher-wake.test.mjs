@@ -97,10 +97,10 @@ test('a left item comes back only on its triggers: news about the job, the perso
   runJobs(home, ['leave', j.key, '--reason', 'sign_in']);
   runJobs(home, ['fact', 'set', 'account', 'example-jobs.test']);
   assert.ok(due().includes(j.key), 'the person says they have an account there: it comes back');
-  // a board that could match joins the watch list: it comes back
+  // the person asks for a board that could match: it comes back
   runJobs(home, ['leave', j.key, '--reason', 'no_match']);
   assert.deepEqual(due(), [k.key]);
-  store.updateState((st) => { st.found = [{ board: 'greenhouse:co7', ats: 'greenhouse', token: 'co7', region: 'us', name: 'Co7', source: 'found', job: 'x', date: 'd', lastRoleJobAt: 'd' }]; });
+  runJobs(home, ['profile', 'set', JSON.stringify({ watch: [{ url: 'https://boards.greenhouse.io/co7', name: 'Co7' }] })]);
   assert.ok(due().includes(j.key), 'a board that could match joins the list');
   // the person says "try again"
   runJobs(home, ['leave', j.key, '--reason', 'sign_in']);

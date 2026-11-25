@@ -385,5 +385,5 @@ test('watch: with no sub-command it is the watcher, watch list is the board list
   const text = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'scripts', 'jobs.mjs'), 'utf8');
   assert.equal((text.match(/^  async watch\(/gm) || []).length, 1, 'one watch command, not two');
   reset();
-  assert.ok(runJobs(home, ['watch', 'list']).json.found);
+  assert.ok(runJobs(home, ['watch', 'list']).json.watch);
 });
