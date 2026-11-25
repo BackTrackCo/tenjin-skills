@@ -47,7 +47,7 @@ const serve = (table) => { const calls = []; const f = async (url) => { calls.pu
 test('J start status asks for the resume itself, in any form, never "the path"', () => {
   reset();
   const r = J('start', 'status').json;
-  assert.equal(r.next, 'ask for the resume as a plain question: a file, a link or the text');
+  assert.equal(r.next, 'ask for the resume as a plain question: a file, a link or the text; end with: Waiting for your resume: drop the file here, paste a link, or paste the text.');
   assert.doesNotMatch(JSON.stringify(r), /path/i);
 });
 

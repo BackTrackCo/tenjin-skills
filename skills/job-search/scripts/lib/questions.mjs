@@ -21,10 +21,11 @@ export function startQuestions() {
         { label: 'Twice a day', description: 'Two search rounds a day, about twice the router price (with Tenjin) or Haiku usage (without) of a daily search.' },
         { label: 'Once a week', description: 'One search round a week, about a seventh of the daily router price or Haiku usage.' },
       ]),
-      q('Positions', 'How many positions should I make ready to apply to? Other: your own numbers, or no limit.', [
-        { label: '50 now, 10 daily (Recommended)', description: 'Up to 50 jobs from the last two weeks on the first run, then up to 10 a day.' },
-        { label: '100 now, 10 daily', description: 'Up to 100 jobs from the last two weeks on the first run, then up to 10 a day.' },
-        { label: '10 daily', description: 'No first-run catch-up: up to 10 a day from the start.' },
+      q('Positions', 'How many positions should I make ready to apply to? Other: your own numbers.', [
+        { label: '50 now, 10 daily (Recommended)', description: 'Up to fifty jobs from the last two weeks on the first run, then up to ten a day.' },
+        { label: '100 now, 20 daily', description: 'A big push: up to a hundred jobs from the last two weeks on the first run, then up to twenty a day.' },
+        { label: '20 now, 5 daily', description: 'A light search: up to twenty jobs on the first run, then up to five a day.' },
+        { label: 'No limit', description: 'Every job that fits, on the first run and after, with no number set.' },
       ]),
     ],
     reminder: RC_REMINDER,

@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { mkJob, runJobs, tmpHome } from './helpers/env.mjs';
 
 const home = tmpHome();
@@ -26,7 +28,7 @@ test('the start: the resume is a plain question, then one call with three questi
   assert.deepEqual(q.validateAsk(p), []);
   for (const x of p.questions) assert.match(x.options[0].label, /\(Recommended\)$/);
   assert.deepEqual(p.questions[1].options.map((o) => o.label), ['Every day (Recommended)', 'Twice a day', 'Once a week']);
-  assert.deepEqual(p.questions[2].options.map((o) => o.label), ['50 now, 10 daily (Recommended)', '100 now, 10 daily', '10 daily']);
+  assert.deepEqual(p.questions[2].options.map((o) => o.label), ['50 now, 10 daily (Recommended)', '100 now, 20 daily', '20 now, 5 daily', 'No limit']);
   assert.deepEqual(p.questions[0].options.map((o) => o.label), ['Ask me each time (Recommended)', 'Auto apply, approve new answers', 'Fully auto apply']);
   assert.match(p.questions[0].options[1].description, /the answer is drafted and that job waits for your yes/);
   assert.match(p.questions[1].options[0].description, /runs in code at the router's price, with no Claude usage for the searches/);
@@ -172,4 +174,27 @@ test('the positions rule keeps the words and date, and is a number or none', () 
   assert.throws(() => ov.addRule({ effect: 'daily_max', value: 5, words: 'x' }), /vocabulary/, 'replaced by the per-period rule');
   const r = ov.addRule({ effect: 'period_max', value: 7, words: 'seven a period', date: '2026-11-23' });
   assert.deepEqual([r.words, r.date], ['seven a period', '2026-11-23']);
+});
+
+test('the positions question has four options with both numbers varying, each with its numbers in words; No limit records no period_max', () => {
+  const opts = q.startQuestions().questions[2].options;
+  assert.equal(opts.length, 4);
+  assert.deepEqual(q.validateAsk({ questions: [q.startQuestions().questions[2]] }), []);
+  const daily = opts.map((o) => /(\d+) daily/.exec(o.label)).filter(Boolean).map((m) => m[1]);
+  assert.equal(new Set(daily).size, daily.length, 'no two options share a daily number');
+  const now = opts.map((o) => /^(\d+) now/.exec(o.label)).filter(Boolean).map((m) => m[1]);
+  assert.equal(new Set(now).size, now.length, 'and no two share a first-run number');
+  assert.match(opts[0].description, /fifty jobs.*ten a day/);
+  assert.match(opts[1].description, /hundred jobs.*twenty a day/);
+  assert.match(opts[2].description, /twenty jobs.*five a day/);
+  assert.equal(opts[3].label, 'No limit');
+  store.updateState((s) => { Object.assign(s, store.emptyState()); });
+  fs.rmSync(path.join(process.env.TENJIN_SKILLS_DIR, 'job-search', 'rules.json'), { force: true });
+  const r = runJobs(home, ['start', 'record', '--mode', 'attended', '--frequency', 'daily', '--no-limit']);
+  assert.equal(r.code, 0, r.stdout);
+  assert.equal(r.json.recorded.positions, 'skip');
+  assert.deepEqual(runJobs(home, ['rules']).json, [], 'No limit records no rule');
+  assert.equal(ap.periodLimit(ov.loadOverlay()), null);
+  const big = runJobs(home, ['start', 'record', '--mode', 'attended', '--frequency', 'daily', '--catch-up', '100', '--per-day', '20']);
+  assert.equal(big.json.recorded.positions, '100 now, 20 daily');
 });

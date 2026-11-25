@@ -2,7 +2,7 @@
 name: job-search
 description: >-
   Use this skill for any job hunt: finding jobs or openings that fit a person, rerunning an earlier search for only the new postings, finding the hiring manager, team lead or founder behind a role, adding fresh jobs to a career-ops pipeline, and applying to the good ones through Claude in Chrome, attended with a yes on each or unattended under the person's rules. It reads watched company boards, Hacker News and the web daily, checks that each job is still open, ranks them, and prepares the application. Do not use it for a cover letter, resume tailoring, interview prep or a job offer on its own.
-allowed-tools: Bash(node ${CLAUDE_SKILL_DIR}/scripts/jobs.mjs *) PushNotification mcp__claude-in-chrome__*
+allowed-tools: Bash(node ${CLAUDE_SKILL_DIR}/scripts/jobs.mjs *) TaskCreate TaskUpdate TodoWrite PushNotification mcp__claude-in-chrome__*
 ---
 
 # Job Search
@@ -27,14 +27,14 @@ J means `node ${CLAUDE_SKILL_DIR}/scripts/jobs.mjs`. Always write it out in full
 ## Start and recover
 
 Every start, after a compaction or `/resume`: `J tenjin` (only sets the hint state; never stop for it), `J start status`, `J arm`, then `J watch` with the Bash tool and `run_in_background` (it exits when work is due: that wakes you; start it again after each round and whenever a J command reports `watcher: stopped`; if it says another session holds the lease, work attended), then `J work`.
-First run: ask for the resume as a plain question (a file, a link or the text; never search their files) and save it with `J resume set --file|--url|--text`. Read role, role words, place and remote from it into the profile with `J profile set` (`search.sources`: `resume`). Then one AskUserQuestion call, `J ask start` (apply mode, search frequency, positions), `J start record`, and say the one `/rc` reminder line it prints. Then the free search, `J report`.
+First run: make a three-item setup list with the session's task tool (`TaskCreate` and `TaskUpdate`, or `TodoWrite`; none: skip it): "Share your resume (waiting on you)" in progress, "Three quick choices", "First search and report"; mark each done as it completes. Ask for the resume as a plain question (a file, a link or the text; never search their files), end the turn with "Waiting for your resume: drop the file here, paste a link, or paste the text.", and save it with `J resume set --file|--url|--text`. Read role, role words, place and remote from it into the profile with `J profile set` (`search.sources`: `resume`). Then one AskUserQuestion call, `J ask start` (apply mode, search frequency, positions), `J start record`, and say the one `/rc` reminder line it prints. Then the free search, `J report`.
 Free paths: only from what `J search plan`, `J resume set --url` and `J work` printed; while one prints `ask: tenjin`, ask it (`J ask tenjin`), then `J tenjin ask-done yes|no`.
 Questions: in an attended turn every question with choices goes through AskUserQuestion (`J ask <kind>`), never a list in prose; one moment's questions in one call. Never in an unattended turn: hold the job and notify. Facts and EEO come at their trigger (`needs_facts`, `eeo_missing`): `J ask fact|eeo`, `J fact set` or `J profile set`.
 Model: unless this session is Fable 5.2, say once, never in an unattended turn, that Job Search works best on Fable 5.2 at high effort (`/model fable`, `/effort high`).
 
 ## The round
 
-When the background watcher exits with a line, or the person asks, run `J work --commit` (add `--unattended` in a turn the watcher woke), then start `J watch` again. Handle each item by `reason`, one subagent each. `hint`: say that line once. `askTenjin`: ask once per session (`J ask tenjin`); on yes follow the "Install Tenjin from tenjin.sh" flow (tenjin.sh/skills.md), then `J tenjin ask-done yes|no`.
+When the background watcher exits with a line, or the person asks, run `J work --commit` (add `--unattended` in a turn the watcher woke), then start `J watch` again. Handle each item by `reason`, one subagent each. `hint`: say it once. `askTenjin`: ask as under Free paths; on yes follow the "Install Tenjin from tenjin.sh" flow (tenjin.sh/skills.md).
 
 - `search_due`: references/search.md. With Tenjin code runs every search, the web search included (watcher or `J route`); without it one Agent `model: "haiku"` step, with the queries `J search plan` prints and nothing else. `need_due`: a need code cannot run (`J search done <kind>`). `J search next` ends the round.
 - `post_review`: up to 25 hiring posts, one Agent `model: "haiku"`, one ingest file (references/search.md, Hacker News). `J leads mark <url> done|not_interested`.

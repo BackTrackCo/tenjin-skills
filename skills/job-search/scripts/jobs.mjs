@@ -609,9 +609,9 @@ const commands = {
       const missing = [];
       if (!profile.resumeText && !profile.resumePath) missing.push('resume');
       if (!profile.applyMode || !profile.frequency || !(st.start && st.start.positionsAt)) missing.push('start_questions');
-      return out({ missing, next: missing[0] === 'resume' ? 'ask for the resume as a plain question: a file, a link or the text' : missing.length ? 'J ask start, then J start record' : 'run the free search and the report', start: st.start || null });
+      return out({ missing, next: missing[0] === 'resume' ? 'ask for the resume as a plain question: a file, a link or the text; end with: Waiting for your resume: drop the file here, paste a link, or paste the text.' : missing.length ? 'J ask start, then J start record' : 'run the free search and the report', start: st.start || null });
     }
-    if (sub !== 'record') return out({ error: 'start status | record --mode m --frequency f --catch-up n --per-day n|none (or --positions n|none|skip) [--words text]' }, 2);
+    if (sub !== 'record') return out({ error: 'start status | record --mode m --frequency f --catch-up n --per-day n|none (or --positions n|none|skip, or --no-limit) [--words text]' }, 2);
     if (!['attended', 'auto_no_new', 'auto_write'].includes(flags.mode || 'attended')) return out({ error: 'mode must be attended, auto_no_new or auto_write' }, 2);
     if (flags.frequency && !FREQUENCIES.includes(flags.frequency)) return out({ error: 'frequency must be daily, twice_daily or weekly' }, 2);
     const mode = flags.mode || 'attended';
@@ -623,7 +623,9 @@ const commands = {
       const catchUp = flags['catch-up'] === undefined ? null : coerce(flags['catch-up']);
       positions = `${catchUp === null ? '' : `${catchUp} now, `}${perDay === 'none' ? 'no daily limit' : `${perDay} daily`}`;
       addRule({ effect: 'period_max', value: { catchUp, perDay, at: new Date().toISOString() }, words: String(flags.words || `positions: ${positions}`) });
-    } else if (flags.positions !== undefined && flags.positions !== true && flags.positions !== 'skip') {
+    } else if (flags['no-limit'] === true || flags.positions === undefined || flags.positions === true || flags.positions === 'skip') {
+      positions = 'skip'; // "No limit" and no answer record nothing
+    } else {
       positions = String(flags.positions);
       addRule({ effect: 'period_max', value: positions === 'none' ? 'none' : coerce(positions), words: String(flags.words || `positions per period: ${positions}`) });
     }
