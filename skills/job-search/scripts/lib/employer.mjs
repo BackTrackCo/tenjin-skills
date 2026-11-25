@@ -136,7 +136,7 @@ const systemName = (url) => {
   return o ? o.system.toLowerCase() : 'employer_site';
 };
 
-// A listing on the employer's own careers page counts as confirmed when its title and place match the job (v0-46): the
+// A listing on the employer's own careers page counts as confirmed when its title and place match the job: the
 // page is the open check, and the browser's first pass reads the live form. A listing on a deny-listed host is the
 // "apply yourself" case.
 export function matchListing(posting, page, website, now = Date.now()) {

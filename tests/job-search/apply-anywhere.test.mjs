@@ -25,7 +25,7 @@ const careers = (job, extra = {}) => ({ need: 'careers_page', jobKey: job.key, c
 const listing = (over = {}) => ({ title: 'Platform Engineer', url: 'https://acme.wd1.test/en/job/77', city: 'Berlin', remote: false, ...over });
 const ingestCareers = (obj) => ing.ingest({ obj, state: store.loadState(), profile: {}, overlay: empty, fetch: fakeFetch({}), now: NOW });
 
-// ---- v0-46: apply anywhere except a deny list ---------------------------------------------------------
+// ---- apply anywhere except a deny list ---------------------------------------------------------
 test('a careers page on the employer\'s own domain that lists the job confirms an application page on any other system', async () => {
   const job = noPosting(1);
   reset([job]);
@@ -148,8 +148,8 @@ test('B3: J rules add --from-choice keeps the option label as the person\'s word
   assert.equal(runJobs(home, ['rules', 'add', '--from-choice', '--effect', 'exclude_term', '--value', 'x']).code, 2, 'a label is needed');
 });
 
-// ---- v0-47: where the person prefers to apply ---------------------------------------------------------
-test('v0-47: the start records where to apply as the person\'s setting; no answer means the employer\'s site', () => {
+// ---- where the person prefers to apply ---------------------------------------------------------
+test('the start records where to apply as the person\'s setting; no answer means the employer\'s site', () => {
   reset();
   assert.equal(runJobs(home, ['start', 'record', '--mode', 'attended', '--frequency', 'daily', '--no-limit', '--where', 'linkedin']).code, 0);
   assert.deepEqual(runJobs(home, ['profile', 'get']).json.apply, { where: 'linkedin', source: 'person' });
@@ -162,7 +162,7 @@ test('v0-47: the start records where to apply as the person\'s setting; no answe
 const li = 'https://www.linkedin.com/jobs/view/12345';
 const liJob = (i, over = {}) => mkJob({ key: `https://boards.greenhouse.io/acme/jobs/${i}`, status: 'apply_ready', fit: 88, company: `Co${i}`, linkedinUrl: li, verifiedAt: new Date().toISOString(), sheet: { hash: 'h', passed: true, eeoMissing: false, fields: [{ label: 'Email', value: 'a@b.test', tag: 'fact', required: true }] }, v: 1, ...over });
 
-test('v0-47: under the LinkedIn choice apply next never hands the job out; the link is shown with the answers', () => {
+test('under the LinkedIn choice apply next never hands the job out; the link is shown with the answers', () => {
   const j = liJob(41);
   reset([j]);
   const profile = { eeo: 'decline_all', apply: { where: 'linkedin', source: 'person' } };
@@ -179,7 +179,7 @@ test('v0-47: under the LinkedIn choice apply next never hands the job out; the l
   assert.equal(work.workList({ now: Date.now() }).items.find((i) => i.key === j.key).reason, 'linkedin_applied', 'asked once after the link was shown');
 });
 
-test('v0-47: a job with no LinkedIn link takes the employer site, and the employer choice never shows a link', () => {
+test('a job with no LinkedIn link takes the employer site, and the employer choice never shows a link', () => {
   const none = mkJob({ status: 'apply_ready' });
   assert.equal(ap.applyPathOf(none, { apply: { where: 'linkedin', source: 'person' } }), 'employer');
   assert.equal(ap.applyPathOf(liJob(42), { apply: { where: 'employer', source: 'person' } }), 'employer');
@@ -188,7 +188,7 @@ test('v0-47: a job with no LinkedIn link takes the employer site, and the employ
   assert.equal(ap.applyPathOf(liJob(45, { employerPosting: null }), { apply: { where: 'ask', source: 'person' } }), 'linkedin', 'only LinkedIn exists: no choice to ask');
 });
 
-test('v0-47: "Did you apply?" is a question; applied is recorded only on the person\'s word, source person', () => {
+test('"Did you apply?" is a question; applied is recorded only on the person\'s word, source person', () => {
   const j = liJob(46);
   reset([j]);
   runJobs(home, ['profile', 'set', JSON.stringify({ apply: { where: 'linkedin', source: 'person' } })]);
@@ -207,7 +207,7 @@ test('v0-47: "Did you apply?" is a question; applied is recorded only on the per
   assert.deepEqual([after.jobs[j.key].applied.source, after.applications.at(-1).source], ['person', 'person']);
 });
 
-test('v0-47: "Ask me each job" puts the choice in the approval call, and a plain approve is refused until it is made', () => {
+test('"Ask me each job" puts the choice in the approval call, and a plain approve is refused until it is made', () => {
   const j = liJob(47);
   reset([j]);
   runJobs(home, ['profile', 'set', JSON.stringify({ apply: { where: 'ask', source: 'person' } })]);
@@ -223,7 +223,7 @@ test('v0-47: "Ask me each job" puts the choice in the approval call, and a plain
   assert.ok(store.loadState().approvals[k.key]);
 });
 
-test('v0-47: a LinkedIn job counts toward period_max once its link and answers are brought', () => {
+test('a LinkedIn job counts toward period_max once its link and answers are brought', () => {
   const jobs = [liJob(51, { fit: 90 }), liJob(52, { fit: 80 }), liJob(53, { fit: 70 })];
   reset(jobs);
   runJobs(home, ['profile', 'set', JSON.stringify({ apply: { where: 'linkedin', source: 'person' } })]);

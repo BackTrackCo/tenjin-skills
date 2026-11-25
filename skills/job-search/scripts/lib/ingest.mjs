@@ -358,7 +358,7 @@ async function planCareers({ obj, state, fetch, now, plan }) {
   }
   if (obj.careersPageOnly) {
     // The router found the employer's page but not what it lists: the page's address is kept, and the employer_page item
-    // has the model read the listings (the open check goes through that page, v0-46).
+    // has the model read the listings (the open check goes through that page).
     plan.careers = { key: obj.jobKey, pageOnly: obj.careersUrl, result: { reason: 'careers_page_found' } };
     return plan;
   }
@@ -366,7 +366,7 @@ async function planCareers({ obj, state, fetch, now, plan }) {
   const posting = { title: job.title, employer: job.company, city: job.city, remote: job.remote, postedAt: job.posted };
   const r = await resolveFromCareersPage(posting, page, { fetch, now, website: job.employerWebsite });
   // A job already confirmed from the careers page stays open while the page lists it; a page that lists jobs and no longer
-  // lists this one closes it (the re-verify, v0-46).
+  // lists this one closes it (the re-verify).
   const reverify = Boolean(job.employerPosting && !job.employerPosting.token && job.employerPosting.source === 'careers_page');
   plan.careers = { key: obj.jobKey, linkedinUrl: linkedinOf([obj.linkedinUrl]), closed: reverify && !r.match && page.kind === 'listing' && r.reason === 'no_match', reverify, result: r.match ? { employerPosting: r.match.employerPosting, job: r.match.job } : { reason: r.reason, other: r.other || null } };
   return plan;

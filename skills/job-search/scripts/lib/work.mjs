@@ -307,7 +307,7 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
       continue;
     }
     // A job confirmed from the employer's careers page (a system with no board API) is open while that page lists it: the
-    // re-verify reads the page again once the last check is a day old (v0-46).
+    // re-verify reads the page again once the last check is a day old.
     if (!holdSetup && ['reviewed', 'shortlisted', 'prepared', 'apply_ready'].includes(j.status) && j.employerPosting && !j.employerPosting.token && j.employerPosting.source === 'careers_page' && (!j.verifiedAt || now - Date.parse(j.verifiedAt) > graph().unattendedWindow.verifiedHours * HOUR)) {
       items.push({ key: j.key, reason: 'employer_page', title: j.title, company: j.company, website: j.employerWebsite || null, reverify: true, careersUrl: j.employerPosting.url, gate: GATES.employer_page });
       continue;

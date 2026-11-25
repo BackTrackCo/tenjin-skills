@@ -168,7 +168,7 @@ export function applyNext(ctx) {
   return out({});
 }
 
-// Where the person applies this job (v0-47): 'employer' (the skill applies on the employer's page), 'linkedin' (the person
+// Where the person applies this job: 'employer' (the skill applies on the employer's page), 'linkedin' (the person
 // applies on the job's own LinkedIn link, which the skill only shows) or 'ask' (both exist and the person chose to be asked).
 // A job with no LinkedIn link takes the employer site under the apply mode.
 export function applyPathOf(job, profile = {}) {

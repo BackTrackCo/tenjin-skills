@@ -272,7 +272,7 @@ const commands = {
   async approve(keys, flags) {
     let st = loadState();
     let list = keys;
-    // "Ask me each job" (v0-47): the choice joins the approval. LinkedIn means the person applies there; nothing is approved.
+    // "Ask me each job": the choice joins the approval. LinkedIn means the person applies there; nothing is approved.
     if (flags.via !== undefined) {
       if (keys.length !== 1 || !['employer', 'linkedin'].includes(flags.via)) return out({ error: 'approve <key> --via employer|linkedin takes one job' }, 2);
       const job = st.jobs[keys[0]];
@@ -615,7 +615,7 @@ const commands = {
     return out(await runHn({ fetch: globalThis.fetch, profile: readProfile(), state: loadState(), budgetMs }));
   },
   // Fill-only: per job, or with a fill_only rule. Fill, read back, never submit, leave the tab open.
-  // The person applies on LinkedIn (v0-47). The skill only shows the job's own link and the prepared answers; it never opens,
+  // The person applies on LinkedIn. The skill only shows the job's own link and the prepared answers; it never opens,
   // fetches or fills LinkedIn. `applied` is recorded only on the person's word.
   async linkedin([sub, key, answer]) {
     const profile = readProfile();
