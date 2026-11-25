@@ -78,7 +78,7 @@ test('the watcher logs each wake with its reason counts, and the report shows th
   assert.deepEqual(store.loadState().wakes.map((w) => w.counts), [{ employer_page: 2 }]);
   assert.deepEqual((await watcher.tick({ holder: 'w', now: NOW + 2000, seen: { sig: null } })).lines, []);
   assert.equal(store.loadState().wakes.length, 1, 'no wake, no log entry');
-  assert.match(report.renderReport(store.loadState(), empty, { now: NOW + 3000 }), /Model wakes in the last day: 1 \(2 employer_page\)/);
+  assert.match(report.renderReport(store.loadState(), empty, { now: NOW + 3000 }), /Model wakes in the last day: 1 \(items handled: 2 employer pages\)/);
   assert.doesNotMatch(report.renderReport(store.loadState(), empty, { now: NOW + 3 * 86400000 }), /Model wakes in the last day/);
 });
 
@@ -93,4 +93,17 @@ test('no script starts claude: the orchestrator and the Monitor stay, and no mod
   }
   const refs = [path.join(dir, 'SKILL.md'), ...fs.readdirSync(path.join(dir, 'references')).map((f) => path.join(dir, 'references', f))].map((f) => fs.readFileSync(f, 'utf8')).join('\n');
   assert.doesNotMatch(refs, /claude -p\b/);
+});
+
+test('the report shows the object form of period_max in words, and wakes apart from the items handled', () => {
+  const rule = (value) => ({ rules: [{ id: 'r1', effect: 'period_max', value, words: 'my numbers', date: '2026-11-24' }], lessons: [] });
+  const text = (v) => report.renderReport(store.loadState(), rule(v), { now: NOW });
+  reset();
+  assert.match(text({ catchUp: 100, perDay: 10, at: 'x' }), /\(period_max: 100 now, then 10 a day\) id r1/);
+  assert.match(text({ catchUp: null, perDay: 10 }), /\(period_max: 10 a day\) id r1/);
+  assert.match(text({ catchUp: 50, perDay: 'none' }), /\(period_max: 50 now, then no daily limit\) id r1/);
+  assert.match(text(5), /\(period_max 5\) id r1/, 'the older number form is unchanged');
+  assert.doesNotMatch(text({ catchUp: 100, perDay: 10 }), /\[object Object\]/);
+  store.updateState((s) => { s.wakes = [{ at: new Date(NOW - 1000).toISOString(), counts: { search_due: 1, post_review: 1, new_job: 13, employer_page: 3 }, notify: false }, { at: new Date(NOW - 2000).toISOString(), counts: {}, notify: true }, { at: new Date(NOW - 3000).toISOString(), counts: {}, notify: false }]; });
+  assert.match(report.renderReport(store.loadState(), empty, { now: NOW }), /Model wakes in the last day: 3 \(items handled: 1 search, 1 post review, 13 new jobs, 3 employer pages\)\./);
 });

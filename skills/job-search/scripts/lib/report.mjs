@@ -24,6 +24,20 @@ function introNote(intro, handle, email, published) {
   return `Intro to copy (${intro.channel}${intro.subject ? `, subject: ${intro.subject}` : ''}), you send it yourself: ${text}`;
 }
 
+// A rule's value in words. The object form of period_max reads "100 now, then 10 a day".
+export function ruleText(r) {
+  const v = r.value;
+  if (v === null || v === undefined) return r.effect;
+  if (r.effect === 'period_max' && typeof v === 'object') {
+    const day = v.perDay === 'none' || v.perDay === undefined || v.perDay === null ? 'no daily limit' : `${v.perDay} a day`;
+    return `${r.effect}: ${Number.isInteger(v.catchUp) ? `${v.catchUp} now, then ${day}` : day}`;
+  }
+  return `${r.effect} ${typeof v === 'object' ? JSON.stringify(v) : v}`;
+}
+// What the wake log counts: items handled, in words ("13 new jobs"), apart from the number of wakes.
+const REASON_WORDS = { new_job: 'new job', employer_page: 'employer page', search_due: 'search', post_review: 'post review', review_due: 'review', prepare_due: 'prepare', apply_ready: 'application', contacts_requested: 'contacts request', web_search_due: 'web search', need_due: 'search need', email_due: 'email batch' };
+export const itemWords = (reason, n) => { const w = REASON_WORDS[reason] || reason.replace(/_due$/, '').replace(/_/g, ' '); return `${n} ${w}${n > 1 ? 's' : ''}`; };
+
 // The report is rendered from state and the overlay, never written by the model.
 export function renderReport(state, overlay, { since = null, now = Date.now(), profile = null } = {}) {
   const jobs = Object.values(state.jobs);
@@ -99,7 +113,7 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
   const newRules = (overlay.rules || []).filter((r) => !since || r.date >= since.slice(0, 10));
   if (newRules.length) {
     L.push('', '## Rules (your words)');
-    for (const r of newRules) L.push(`- ${r.date}: "${r.words}" (${r.effect}${r.value !== null && r.value !== undefined ? ` ${r.value}` : ''}) id ${r.id}`);
+    for (const r of newRules) L.push(`- ${r.date}: "${r.words}" (${ruleText(r)}) id ${r.id}`);
   }
   const lessons = (overlay.lessons || []).filter((l) => Date.parse(l.expires) > now);
   if (lessons.length) {
@@ -135,7 +149,7 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
   if (today.length) {
     const sum = {};
     for (const w of today) for (const [k, n] of Object.entries(w.counts)) sum[k] = (sum[k] || 0) + n;
-    L.push('', `Model wakes in the last day: ${today.length}${Object.keys(sum).length ? ` (${Object.entries(sum).map(([k, n]) => `${n} ${k}`).join(', ')})` : ''}.`);
+    L.push('', `Model wakes in the last day: ${today.length}${Object.keys(sum).length ? ` (items handled: ${Object.entries(sum).map(([k, n]) => itemWords(k, n)).join(', ')})` : ''}.`);
   }
   const ran = (state.runs || []).filter((r) => now - Date.parse(r.at) < 86400000);
   if (ran.length) {
