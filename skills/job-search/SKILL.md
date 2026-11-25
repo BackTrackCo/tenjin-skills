@@ -34,7 +34,7 @@ Model: unless this session is Fable 5.2, say once, never in an unattended turn, 
 
 ## The round
 
-When the background watcher exits with a line, or the person asks, run `J work --commit` (add `--unattended` in a turn the watcher woke), start `J watch` last, after `J work --commit` claimed everything handed out (`J ops` or `J ingest` work needs another `J work --commit` first). Rewrite a refused ingest file, never `sed` it. Handle each item by `reason`, one subagent each; say a `hint` once. On `askTenjin` ask as under Free paths; on yes follow the "Install Tenjin from tenjin.sh" flow.
+When the background watcher exits with a line, or the person asks, run `J work --commit` (add `--unattended` in a turn the watcher woke), start `J watch` last, after `J work --commit` claimed everything handed out (`J ops` or `J ingest` work needs another `J work --commit` first). Rewrite a refused ingest file, never `sed` it. Handle each item by `reason`, one subagent each; say a `hint` as its one line, once, and an ask exactly as `J` prints it. On `askTenjin` ask as under Free paths; on yes follow the "Install Tenjin from tenjin.sh" flow.
 
 - `search_due`: references/search.md. With Tenjin the watcher runs every search in code (or `J route`), the board search included, with no model web search; without it one Agent `model: "haiku"` step with the queries `J search plan` prints. `need_due`: a need code cannot run (`J search done <kind>`). `J search next` ends the round.
 - `post_review`: up to 25 hiring posts, one Agent `model: "haiku"`, one ingest file (references/search.md). `J leads mark <url> done|not_interested`.

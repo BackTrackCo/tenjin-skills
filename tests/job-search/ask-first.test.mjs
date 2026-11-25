@@ -109,3 +109,36 @@ test('SKILL.md: run a free path only from what those commands printed', () => {
   const skill = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'SKILL.md'), 'utf8');
   assert.match(skill, /only from what `J search plan`, `J resume set --url` and `J work` printed/);
 });
+
+// ---- the ask lists everything --------------------------------------------------------------
+test('the ask lists every line: the moment\'s first, the cost line last, no writing line, no seller name', () => {
+  const L = work.OFFER_LINES;
+  for (const [moment, first] of [['daily_search', 'sources'], ['employer_posting', 'posting'], ['contacts', 'contacts'], ['linkedin_resume', 'linkedin']]) {
+    const t = work.tenjinOffer(moment, { tenjin: { status: 'missing' } });
+    const lines = t.split('\n');
+    assert.equal(lines[0], 'Tenjin adds:');
+    assert.equal(lines[1], `- ${L[first]}`, `${moment}: its own line first`);
+    for (const v of Object.values(L)) assert.ok(t.includes(v), `${moment}: ${v}`);
+    assert.equal(lines.at(-1), work.OFFER_COST);
+    assert.equal(work.OFFER_COST, 'Pay per use from a funded wallet, within your spending limits: an estimated few cents a day at the default pace.');
+    assert.doesNotMatch(t, /writ|Neon|exa|agentsearch|brave|rapidapi|openai/i, 'no writing line, no seller');
+  }
+  assert.match(L.background, /use none of your Claude usage and do not wake the session/);
+});
+
+test('every routed need in graph.json has a line in the ask', () => {
+  const g = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'graph.json'), 'utf8'));
+  for (const kind of [...Object.keys(g.needTemplates), 'web_search']) assert.ok(work.OFFER_LINES[work.NEED_LINES[kind]], `${kind} has a line`);
+});
+
+test('a hint is one line about its moment; the ask question carries the whole offer', () => {
+  for (const m of ['daily_search', 'employer_posting', 'contacts', 'linkedin_resume']) {
+    const h = work.tenjinHint({ tenjin: { status: 'missing' } }, m);
+    assert.ok(!h.line.includes('\n') && h.line === work.HINT_LINES[m]);
+    assert.doesNotMatch(h.line, /few cents|Pay per use/);
+  }
+  const a = work.askFirst({ tenjin: { status: 'missing' }, lease: null }, 'contacts');
+  const text = a.question.questions[0].question;
+  assert.ok(text.includes(work.OFFER_LINES.sources) && text.includes(work.OFFER_COST));
+  assert.doesNotMatch(JSON.stringify(a.question) + a.hint.line, /exa|agentsearch|brave/i);
+});

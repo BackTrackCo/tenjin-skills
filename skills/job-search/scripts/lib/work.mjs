@@ -234,6 +234,29 @@ export const HINT_LINES = {
   linkedin_resume: 'With Tenjin I can read a LinkedIn profile link; until then a PDF export of the profile or the text works.',
   outdated: 'Tenjin is out of date; after the update the CLI names, the routed search runs again.',
 };
+// The once-per-session ask lists everything Tenjin adds: this moment's line first, then every other line, then the cost line.
+// Lines are named by what they do, never by seller. A hint stays one line about its moment (HINT_LINES). There is no writing
+// line until the Neon switch.
+export const OFFER_LINES = {
+  sources: 'more job sources: postings gathered from job boards across the web, and hiring posts on X',
+  boards: 'the employer board search in code, in place of a model web search each round',
+  posting: 'the employer\'s own application page for a job seen elsewhere',
+  contacts: 'a hiring manager or team lead where the free ways found nobody, so the skill can draft an intro for them',
+  linkedin: 'a LinkedIn link as the resume',
+  background: 'these searches and lookups run in the background in code, so they use none of your Claude usage and do not wake the session',
+};
+export const OFFER_COST = 'Pay per use from a funded wallet, within your spending limits: an estimated few cents a day at the default pace.';
+// Every routed need in graph.json has a line here, so a new need cannot be left out (a test checks it).
+export const NEED_LINES = { job_postings: 'sources', x_hiring_posts: 'sources', web_search: 'boards', careers_page: 'posting', people_search: 'contacts', linkedin_profile: 'linkedin' };
+const MOMENT_LINE = { daily_search: 'sources', employer_posting: 'posting', contacts: 'contacts', linkedin_resume: 'linkedin' };
+export function tenjinOffer(moment, state = {}) {
+  const t = state.tenjin || {};
+  const order = Object.keys(OFFER_LINES).filter((k) => k !== 'background');
+  const first = MOMENT_LINE[moment];
+  const lines = [...(first ? [first] : []), ...order.filter((k) => k !== first), 'background'].map((k) => OFFER_LINES[k]);
+  const update = t.status === 'outdated' ? `${t.version ? `Tenjin ${t.version}` : 'Tenjin'} is out of date; the update the CLI names adds back what the routed searches did.\n` : '';
+  return `${update}Tenjin adds:\n${lines.map((l) => `- ${l}`).join('\n')}\n${OFFER_COST}`;
+}
 export function tenjinHint(state, moment) {
   const t = state.tenjin || {};
   if (!t.status || t.status === 'ready') return null;
@@ -250,7 +273,7 @@ export function askFirst(state, moment, { unattended = false } = {}) {
   if (!askDue(state, { unattended })) return null;
   const hint = tenjinHint(state, moment);
   if (!hint) return null;
-  return { ask: 'tenjin', moment, hint, question: tenjinAskQuestion({ line: hint.line, status: state.tenjin.status }), next: 'ask it with the question tool, then J tenjin ask-done yes|no' };
+  return { ask: 'tenjin', moment, hint, question: tenjinAskQuestion({ line: tenjinOffer(moment, state), status: state.tenjin.status }), next: 'ask it with the question tool, then J tenjin ask-done yes|no' };
 }
 // On a yes the moment holds as `tenjin_setup` for this period, until `J tenjin` says ready; then it runs through the router.
 export const setupActive = (state, profile, now = Date.now()) => {
