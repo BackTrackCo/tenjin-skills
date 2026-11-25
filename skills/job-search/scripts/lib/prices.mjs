@@ -10,22 +10,26 @@ const tenths = (cents) => Math.round(cents * 10);
 export const fmt = (cents) => `${Number.isInteger(cents) ? cents : (Math.round(cents * 10) / 10).toString()}¢`;
 const sumTenths = (...needs) => needs.reduce((n, k) => n + tenths(price(k)), 0);
 
-// One search round covers the role and its variants: postings, X and the board search for each.
-export const roundCents = () => (sumTenths('job_postings', 'x_hiring_posts', 'board_search') * graph().prices.variantsPerRound) / 10;
+// A search round runs the postings, X and the board search for the role and for each variant in the person's own list, so its
+// price follows the real number of variants (the role alone when there are none). A round that adds no new job stops early, so
+// this is the most one round costs.
+export const variantCount = (profile = {}) => 1 + (Array.isArray((profile.search || {}).variants) ? profile.search.variants.length : 0);
+export const roundCents = (profile = {}) => (sumTenths('job_postings', 'x_hiring_posts', 'board_search') * variantCount(profile)) / 10;
+const roundWords = (profile) => { const n = variantCount(profile); return n > 1 ? `a round, the role and ${n - 1} variant${n > 2 ? 's' : ''}` : 'a round'; };
 export const contactsCents = () => price('people_search');
 export const contactsWithLookupCents = () => (tenths(price('people_search')) + tenths(price('company_lookup'))) / 10;
 
-export function paceText(frequency = 'daily') {
-  const round = roundCents();
+export function paceText(frequency = 'daily', profile = {}) {
+  const round = roundCents(profile);
   if (frequency === 'twice_daily') return `At two search rounds a day, that is about ${fmt(round * 2)} a day`;
   if (frequency === 'weekly') return `At one search round a week, that is about ${fmt(round)} a week`;
   return `At one search round a day, that is about ${fmt(round)} a day`;
 }
 
 // The hint lines, one per moment, said once. Writing has no line until the Neon switch.
-export function hintLines() {
+export function hintLines(profile = {}) {
   return {
-    daily_search: `With Tenjin, each search round can also cover job postings from LinkedIn, Indeed and other job boards, and hiring posts on X, and search company job boards directly, without using your Claude usage. About ${fmt(roundCents())} a round.`,
+    daily_search: `With Tenjin, each search round can also cover job postings from LinkedIn, Indeed and other job boards, and hiring posts on X, and search company job boards directly, without using your Claude usage. About ${fmt(roundCents(profile))} ${roundWords(profile)}.`,
     employer_posting: `With Tenjin, I can look up this company's careers page to find its own application page, for about ${fmt(price('careers_page'))}.`,
     contacts: `With Tenjin, I can search for a hiring manager or team lead for the jobs where I found nobody: about ${fmt(contactsCents())} a job, or about ${fmt(contactsWithLookupCents())} when I first need to look up the company's website.`,
     linkedin_resume: `With Tenjin, I can read your LinkedIn profile from this link, once, for about ${fmt(price('linkedin_profile'))}.`,
@@ -44,5 +48,5 @@ export function offerItems() {
     background: 'These searches run in the background, so they use none of your Claude usage',
   };
 }
-export const searchRoundNote = () => `  These two run in each search round, for about ${fmt(roundCents())} a round.`;
+export const searchRoundNote = (profile = {}) => `  These two run in each search round, for about ${fmt(roundCents(profile))} ${roundWords(profile)}.`;
 export const pricesCheckedAt = () => graph().prices.checkedAt;

@@ -49,11 +49,13 @@ test('the ask: at most once per session, a recorded no with its date, only a men
   assert.equal(ask({}), true);
   assert.equal(ask({ unattended: true }), false, 'nobody can answer in an unattended run');
   assert.equal(runJobs(home, ['tenjin', 'ask-done', 'no']).code, 0);
-  assert.equal(ask({}), false, 'no more asks in this session');
+  assert.equal(ask({}), false, 'no more asks after a no');
   const t = store.loadState().tenjin;
   assert.match(t.declinedAt, /^\d{4}-\d{2}-\d{2}T/);
   store.updateState((s) => { s.lease = { holder: 'sess2', heartbeat: new Date().toISOString() }; });
-  assert.equal(ask({}), true, 'a new session may ask once more');
+  assert.equal(ask({}), false, 'a recorded no is honoured: a new watcher lease is not a new session');
+  store.updateState((s) => { s.tenjin.declinedAt = null; s.tenjin.askedAt = new Date(Date.now() - 13 * 3600000).toISOString(); });
+  assert.equal(ask({}), true, 'an ask that was not a no may come once more after twelve hours');
   assert.equal(work.tenjinAsk({ tenjin: { status: 'ready' } }, {}), false);
 });
 

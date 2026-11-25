@@ -69,11 +69,14 @@ test('the adapter output passes the ingest schema; platform-only postings become
 test('only fulfilled delivers: every other status holds that search with its reason, and nothing is sent twice', async () => {
   for (const status of ['needs_approval', 'needs_input', 'unverified', 'failed', 'unpaid', 'blocked', 'running', 'native']) {
     const f = fake({ answers: [J.spec, { ...J.fulfilled, status, job: 'job-9' }] });
-    const [r] = await router.runRound([need], { client: client(f) });
+    const [r] = await router.runRound([need], { client: client(f, { collect: 40, poll: 10 }) });
     assert.equal(r.ok, false, status);
     assert.equal(r.status, status);
     assert.match(r.reason, new RegExp(status));
-    assert.equal(f.log().filter((l) => l.call).length, 2, `${status}: the run was sent once, never retried`);
+    // a running answer is asked for again with the free {job} check; no other status is sent again
+    const calls = f.log().filter((l) => l.call).map((l) => l.call);
+    assert.equal(calls.filter((c) => !c.job).length, 2, `${status}: the run was sent once, never retried`);
+    if (status === 'running') assert.match(r.reason, /job-9/);
   }
   const specf = fake({ answers: [{ status: 'needs_approval', nextStep: 'ask the person' }] });
   const [r] = await router.runRound([need], { client: client(specf) });

@@ -20,6 +20,7 @@ export const POST_BATCH = 25;
 const HOUR = 3600000;
 const DAY = 24 * HOUR;
 const GATES = {
+  need_due_answered: 'The router already answered this need and code has no reader for its answer; the routing fee is paid. Do not send the need to the router again. Run it as free web searches (`J search plan` prints the queries) and ingest them (references/search.md, section 2), or leave it: `J leave need:<kind> --reason no_web_search`.',
   need_due: 'A routed need that code cannot run (no adapter for its supplier). One Haiku step: state it in plain words through `request` if the tool is there, write the ingest file for it (references/search.md, section 2), `J ingest`, then `J search done <kind>`. No Tenjin tool: `J leave need:<kind> --reason no_web_search`.',
   email_due: 'Intro emails to addresses the poster published. Attended: `J email batch`, `J ask email`, `J email approve <ids> --skip-rest`. Then `J email next` (add --unattended under the email consent) and send only what it hands out; `J email sent <id>` after each.',
   fill_ready: 'Filled and waiting. Do not submit. The person checks the open tab, presses submit and says so; then `J submitted <key>`.',
@@ -234,20 +235,20 @@ export function plannedJobs(state, profile, overlay, now = Date.now()) {
 export const HINT_LINES = { ...hintLines(), outdated: outdatedLine(null) };
 // The ask lists each capability with its own price: this moment's hint line first, then the list, then the pace line. A hint stays one
 // line about its moment. Writing has no line until the Neon switch.
-export function tenjinOffer(moment, state = {}, frequency = 'daily') {
+export function tenjinOffer(moment, state = {}, frequency = 'daily', profile = {}) {
   const t = state.tenjin || {};
-  const first = t.status === 'outdated' ? outdatedLine(t.version) : hintLines()[moment] || null;
+  const first = t.status === 'outdated' ? outdatedLine(t.version) : hintLines(profile)[moment] || null;
   const o = offerItems();
-  const list = [`- ${o.sources}`, `- ${o.boards}`, searchRoundNote(), `- ${o.posting}`, `- ${o.contacts}`, `- ${o.linkedin}`, `- ${o.background}`].join('\n');
+  const list = [`- ${o.sources}`, `- ${o.boards}`, searchRoundNote(profile), `- ${o.posting}`, `- ${o.contacts}`, `- ${o.linkedin}`, `- ${o.background}`].join('\n');
   const head = 'Set up Tenjin? It adds these to Job Search. You pay per use from a funded wallet, within your spending limits:';
-  const tail = `${paceText(frequency)}, plus any lookups and contact searches. Prices are estimates, checked on ${pricesCheckedAt()}.`;
+  const tail = `${paceText(frequency, profile)}, plus any lookups and contact searches. Prices are estimates, checked on ${pricesCheckedAt()}.`;
   return `${first ? `${first}\n\n` : ''}${head}\n${list}\n${tail}`;
 }
-export function tenjinHint(state, moment) {
+export function tenjinHint(state, moment, profile = {}) {
   const t = state.tenjin || {};
   if (!t.status || t.status === 'ready') return null;
   // An outdated Tenjin gets the same hint at every moment, naming the installed version.
-  const line = t.status === 'outdated' ? outdatedLine(t.version) : HINT_LINES[moment];
+  const line = t.status === 'outdated' ? outdatedLine(t.version) : (profile && profile.search ? hintLines(profile) : HINT_LINES)[moment];
   return line ? { moment, status: t.status, line } : null;
 }
 // The shared `askDue` state: Tenjin not ready, an attended turn, and the session's one ask not yet answered. Every command
@@ -259,7 +260,7 @@ export function askFirst(state, moment, { unattended = false } = {}) {
   if (!askDue(state, { unattended })) return null;
   const hint = tenjinHint(state, moment);
   if (!hint) return null;
-  return { ask: 'tenjin', moment, hint, question: tenjinAskQuestion({ line: tenjinOffer(moment, state, frequencyOf(readJson(path.join(stateDir(), 'profile.json'), {}))), status: state.tenjin.status }), next: 'ask it with the question tool, then J tenjin ask-done yes|no' };
+  return { ask: 'tenjin', moment, hint, question: tenjinAskQuestion({ line: tenjinOffer(moment, state, frequencyOf(readJson(path.join(stateDir(), 'profile.json'), {})), readJson(path.join(stateDir(), 'profile.json'), {})), status: state.tenjin.status }), next: 'ask it with the question tool, then J tenjin ask-done yes|no' };
 }
 // On a yes the moment holds as `tenjin_setup` for this period, until `J tenjin` says ready; then it runs through the router.
 export const setupActive = (state, profile, now = Date.now()) => {
@@ -271,8 +272,10 @@ export const setupActive = (state, profile, now = Date.now()) => {
 export function tenjinAsk(state, { unattended = false } = {}) {
   const t = state.tenjin || {};
   if (!t.status || t.status === 'ready' || unattended) return false;
-  const holder = state.lease ? state.lease.holder : 'none';
-  return t.askedHolder !== holder;
+  // A recorded "Not now" is honoured: the ask never comes back after it. Otherwise it is made once; a new watcher lease (a new
+  // holder) is not a new session, so the time of the last ask decides: not again within twelve hours.
+  if (t.declinedAt) return false;
+  return !(t.askedAt && Date.now() - Date.parse(t.askedAt) < 12 * 3600000);
 }
 
 export function buildWorkList(state, overlay, now = Date.now(), profile = {}, opts = {}) {
@@ -283,11 +286,11 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
     const round = searchRound(state, profile, now);
     const last = state.routed.lastSearchAt;
     const since = last ? new Date(Math.max(Date.parse(last) - 86400000, now - 14 * 86400000)) : new Date(now - 14 * 86400000);
-    items.push({ key: 'search', reason: 'search_due', title: 'Daily routed search', company: '', gate: GATES.search_due, hint: tenjinHint(state, 'daily_search'), askTenjin: tenjinAsk(state, { unattended: opts.unattended === true }), query: { role: profile.search.role, place: profile.search.place || '', remote: profile.search.remote === true, since: since.toISOString().slice(0, 10), variant: variantFor(profile, round), round }, routed: !state.held.some((h) => h.reason === 'tenjin_missing') && !['missing', 'outdated', 'unfunded'].includes((state.tenjin || {}).status) });
+    items.push({ key: 'search', reason: 'search_due', title: 'Daily routed search', company: '', gate: GATES.search_due, hint: tenjinHint(state, 'daily_search', profile), askTenjin: tenjinAsk(state, { unattended: opts.unattended === true }), query: { role: profile.search.role, place: profile.search.place || '', remote: profile.search.remote === true, since: since.toISOString().slice(0, 10), variant: variantFor(profile, round), round }, routed: !state.held.some((h) => h.reason === 'tenjin_missing') && !['missing', 'outdated', 'unfunded'].includes((state.tenjin || {}).status) });
   }
   // The web search stays a model step with Tenjin (the router answers native): one item per round, until recorded as done.
   // A routed need that code could not run (no adapter, an unknown supplier) is one Haiku item in the round's wake.
-  for (const n of state.search.needPending || []) if (!itemStillLeft(state, `need:${n.kind}`, profile, now)) items.push({ key: `need:${n.kind}`, reason: 'need_due', title: `Search: ${n.kind.replace(/_/g, ' ')}`, company: '', gate: GATES.need_due, query: { ...n.query, kind: n.kind, text: n.text, round: n.round } });
+  for (const n of state.search.needPending || []) if (!itemStillLeft(state, `need:${n.kind}`, profile, now)) items.push({ key: `need:${n.kind}`, reason: 'need_due', title: `Search: ${n.kind.replace(/_/g, ' ')}`, company: '', gate: n.routerAnswered ? GATES.need_due_answered : GATES.need_due, query: { ...n.query, kind: n.kind, text: n.text, round: n.round } });
   // One Haiku subagent takes a batch of hiring posts and writes one ingest file. 25 posts is about 6,000 tokens of
   // input, the size of one review round, and keeps one bad batch from costing the rest.
   const fresh = (state.posts || []).filter((p) => p.status === 'new');

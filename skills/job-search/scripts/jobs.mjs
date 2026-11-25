@@ -8,7 +8,7 @@ import { SKILL_DIR, ensureDir, readJson, stateDir, writeJsonAtomic } from './lib
 import { applyOp, applyOps, bump, companyTitleKey, loadState, oldStateError, readOldStateFields, updateState, view } from './lib/store.mjs';
 
 import { addRule, deriveLessons, loadOverlay, removeRule } from './lib/overlay.mjs';
-import { markShown, refreshClaims, releaseClaims, itemVersion, LEAVE_REASONS, ITEM_LEAVE_REASONS, advanceSearch, askFirst, itemKind, leaveItem, leaveRecord, park, unpark, workList } from './lib/work.mjs';
+import { markShown, refreshClaims, releaseClaims, itemVersion, LEAVE_REASONS, ITEM_LEAVE_REASONS, advanceSearch, askFirst, tenjinHint, itemKind, leaveItem, leaveRecord, park, unpark, workList } from './lib/work.mjs';
 import { applyRoundDrafts, checkJobSheet, prepareInCode, writableFields } from './lib/prepare.mjs';
 import { logRun } from './lib/runlog.mjs';
 import * as em from './lib/email.mjs';
@@ -83,13 +83,22 @@ function loadQuestions(file) {
   return Array.isArray(j) ? j : parseGreenhouseQuestions(j);
 }
 
+// The routed commands run only when Tenjin is ready; an outdated, missing or unfunded Tenjin pays nothing and gets its hint.
+function tenjinReady() {
+  const r = hintState();
+  updateState((s) => { s.tenjin = { ...(s.tenjin || {}), status: r.status, version: r.version || null, checkedAt: new Date().toISOString() }; });
+  if (r.status === 'ready') return null;
+  const hint = tenjinHint(loadState(), 'daily_search', readProfile());
+  return { ran: false, tenjin: r.status, hint: hint ? hint.line : null, next: 'nothing was sent to the router; the free searches still run' };
+}
+
 const commands = {
   // Only sets the hint state the hint moments read. It never stops the start and asks nothing.
   async tenjin([sub, answer]) {
     if (sub === 'ask-done') {
       // The ask is made at most once per session; a no is recorded with its date.
       return out(updateState((s) => {
-        s.tenjin = { ...(s.tenjin || {}), askedHolder: s.lease ? s.lease.holder : 'none', ...(answer === 'no' ? { declinedAt: new Date().toISOString() } : {}) };
+        s.tenjin = { ...(s.tenjin || {}), askedAt: new Date().toISOString(), ...(answer === 'no' ? { declinedAt: new Date().toISOString() } : {}) };
         // A yes holds the moment as tenjin_setup for this period, until `J tenjin` says ready; then it runs in code.
         if (answer === 'yes') {
           s.tenjinSetup = { at: new Date().toISOString(), period: periodStart(Date.now(), frequencyOf(readProfile())) };
@@ -453,6 +462,8 @@ const commands = {
     }
     if (sub === 'route') {
       // The router's people search, in code, for the jobs asked (or every requested job). Held, never retried.
+      const gate = tenjinReady();
+      if (gate) return out(gate, 4);
       const st = loadState();
       const log = await routeContacts({ keys: keys.length ? keys : st.contactsRequested || [], profile: readProfile(), fetch: globalThis.fetch });
       return out({ routed: log, notSearched: log.filter((l) => l.status === 'not_searched').map((l) => ({ job: l.job, reason: l.reason })) });
@@ -991,6 +1002,8 @@ const commands = {
   async route() {
     const profile = readProfile();
     if (!profile.search || !profile.search.role) return out({ error: 'no search role in the profile' }, 2);
+    const gate = tenjinReady();
+    if (gate) return out(gate, 4);
     const log = await routedRounds({ profile, fetch: globalThis.fetch });
     return out({ rounds: log });
   },

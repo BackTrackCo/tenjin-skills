@@ -229,7 +229,6 @@
   "prices": {
     "checkedAt": "2026-11-25",
     "routingFeeShare": 0.15,
-    "variantsPerRound": 2,
     "note": "estimate = the recorded provider price, plus the 15% routing fee for a routed query only, rounded up to a tenth of a cent; a call by catalog tool id carries no routing fee (confirmed from the router's own call records, 2026-11-25)",
     "needs": {
       "board_search": {

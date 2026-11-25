@@ -28,7 +28,7 @@ test('askDue: Tenjin not ready, attended, and the session\'s ask unanswered; one
   assert.equal(work.askDue(st({ status: 'unfunded' })), true);
   assert.equal(work.askDue(st({ status: 'ready' })), false);
   assert.equal(work.askDue(st({ status: 'missing' }), { unattended: true }), false, 'nobody there: no ask');
-  assert.equal(work.askDue(st({ status: 'missing', askedHolder: 'none' })), false, 'answered this session');
+  assert.equal(work.askDue(st({ status: 'missing', askedAt: new Date().toISOString() })), false, 'answered this session');
   assert.equal(work.askFirst(st({ status: 'missing' }), 'daily_search').moment, 'daily_search');
   assert.equal(work.askFirst(st({ status: 'ready' }), 'daily_search'), null);
 });
@@ -139,7 +139,7 @@ test('a call by catalog tool id carries no routing fee: the board search and the
 });
 
 test('the hint lines are the approved copy, built from the prices; one line each, once; none for writing', () => {
-  assert.equal(work.HINT_LINES.daily_search, 'With Tenjin, each search round can also cover job postings from LinkedIn, Indeed and other job boards, and hiring posts on X, and search company job boards directly, without using your Claude usage. About 2.8¢ a round.');
+  assert.equal(work.HINT_LINES.daily_search, 'With Tenjin, each search round can also cover job postings from LinkedIn, Indeed and other job boards, and hiring posts on X, and search company job boards directly, without using your Claude usage. About 1.4¢ a round.');
   assert.equal(work.HINT_LINES.employer_posting, 'With Tenjin, I can look up this company\'s careers page to find its own application page, for about 0.6¢.');
   assert.equal(work.HINT_LINES.contacts, 'With Tenjin, I can search for a hiring manager or team lead for the jobs where I found nobody: about 1.2¢ a job, or about 2.5¢ when I first need to look up the company\'s website.');
   assert.equal(work.HINT_LINES.linkedin_resume, 'With Tenjin, I can read your LinkedIn profile from this link, once, for about 2.3¢.');
@@ -156,7 +156,7 @@ test('the ask is the approved copy word for word, the moment\'s line first, with
   const LIST = `Set up Tenjin? It adds these to Job Search. You pay per use from a funded wallet, within your spending limits:
 - More job sources: postings from LinkedIn, Indeed and other job boards across the web, and hiring posts on X
 - A direct search of company job boards (Greenhouse, Lever, Ashby)
-  These two run in each search round, for about 2.8¢ a round.
+  These two run in each search round, for about 1.4¢ a round.
 - The company's own application page for a job you saw on another site: about 0.6¢ a job
 - A hiring manager or team lead to contact when the free search finds nobody: about 1.2¢ a job, or about 2.5¢ when the company's website must be looked up first
 - Your LinkedIn profile link read as your resume: about 2.3¢, once
@@ -164,11 +164,11 @@ test('the ask is the approved copy word for word, the moment\'s line first, with
 `;
   const tail = (pace) => `${pace}, plus any lookups and contact searches. Prices are estimates, checked on 2026-11-25.`;
   const missing = { tenjin: { status: 'missing' } };
-  assert.equal(work.tenjinOffer('daily_search', missing), `${work.HINT_LINES.daily_search}\n\n${LIST}${tail('At one search round a day, that is about 2.8¢ a day')}`);
-  assert.equal(work.tenjinOffer('contacts', missing, 'twice_daily'), `${work.HINT_LINES.contacts}\n\n${LIST}${tail('At two search rounds a day, that is about 5.6¢ a day')}`);
-  assert.equal(work.tenjinOffer('linkedin_resume', missing, 'weekly'), `${work.HINT_LINES.linkedin_resume}\n\n${LIST}${tail('At one search round a week, that is about 2.8¢ a week')}`);
+  assert.equal(work.tenjinOffer('daily_search', missing), `${work.HINT_LINES.daily_search}\n\n${LIST}${tail('At one search round a day, that is about 1.4¢ a day')}`);
+  assert.equal(work.tenjinOffer('contacts', missing, 'twice_daily'), `${work.HINT_LINES.contacts}\n\n${LIST}${tail('At two search rounds a day, that is about 2.8¢ a day')}`);
+  assert.equal(work.tenjinOffer('linkedin_resume', missing, 'weekly'), `${work.HINT_LINES.linkedin_resume}\n\n${LIST}${tail('At one search round a week, that is about 1.4¢ a week')}`);
   // out of date: the out-of-date line first, the list and the pace line unchanged
-  assert.equal(work.tenjinOffer('daily_search', { tenjin: { status: 'outdated', version: '0.9.0' } }), `Your Tenjin (0.9.0) is out of date. Update it to turn these on again.\n\n${LIST}${tail('At one search round a day, that is about 2.8¢ a day')}`);
+  assert.equal(work.tenjinOffer('daily_search', { tenjin: { status: 'outdated', version: '0.9.0' } }), `Your Tenjin (0.9.0) is out of date. Update it to turn these on again.\n\n${LIST}${tail('At one search round a day, that is about 1.4¢ a day')}`);
 });
 
 test('every hint and offer line names its price, no seller name appears, and every routed need has a line', () => {

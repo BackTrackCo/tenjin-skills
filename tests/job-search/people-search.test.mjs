@@ -169,14 +169,24 @@ test('J contacts route reports every job it did not search; the report says not 
   assert.match(report.renderReport(store.loadState(), empty, { now: NOW, profile: {} }), /not searched: a contact is already recorded/);
 });
 
+// A `tenjin` the commands find under the test home: it answers its version and a funded balance, and nothing else.
+function installReadyTenjin() {
+  const dir = path.join(home, '.local', 'bin');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'tenjin'), '#!/bin/sh\ncase "$1" in --version) echo "0.1.0-alpha.99";; balance) echo \'{"ok":true,"data":{"balance":{"atomic":"5000000","usd":"5"}}}\';; *) exit 1;; esac\n', { mode: 0o755 });
+  return () => fs.rmSync(path.join(dir, 'tenjin'), { force: true });
+}
+
 test('J contacts route prints the reasons through the CLI', () => {
-  reset();
+  const remove = installReadyTenjin();
+  try { reset();
   const b = job(31, { contactsSearched: '2026-11-24' });
   add(b);
   const r = runJobs(home, ['contacts', 'route']);
   assert.equal(r.code, 0, r.stdout);
   assert.deepEqual(r.json.notSearched, [{ job: b.key, reason: 'already searched' }]);
   assert.notDeepEqual(r.json.routed, [], 'never the silent {"routed": []}');
+  } finally { remove(); }
 });
 
 test('the contacts question and the Tenjin ask cover the company lookup; no seller name appears', () => {

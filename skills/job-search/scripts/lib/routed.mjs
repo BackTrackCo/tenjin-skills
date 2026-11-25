@@ -4,7 +4,7 @@ import { SUPPLIERS } from './suppliers/index.mjs';
 import { ingest } from './ingest.mjs';
 import { loadState, updateState } from './store.mjs';
 import { loadOverlay } from './overlay.mjs';
-import { advanceSearch, searchRound, variantFor } from './work.mjs';
+import { advanceSearch, inPeriodSet, searchRound, stillLeft, variantFor } from './work.mjs';
 import { companyNames, websiteOf } from './company.mjs';
 
 // With Tenjin, a search round runs in code, with no model step before review: the needs go to the router one at a time
@@ -28,12 +28,13 @@ export function roundNeeds(profile, state, now, round) {
 
 // Needs for one job: the employer's careers page for a reviewed job with no employer posting, and the people search for a
 // job the person asked contacts for. Each is tried once; the model's Haiku step stays as the fallback.
-export function jobNeeds(state, profile, overlay, { kinds = ['careers_page', 'people_search'], keys = null, skips = null } = {}) {
+export function jobNeeds(state, profile, overlay, { kinds = ['careers_page', 'people_search'], keys = null, skips = null, now = Date.now() } = {}) {
   const out = [];
   const count = (() => { const r = (overlay.rules || []).filter((x) => x.effect === 'contact_count').pop(); return r && r.value !== 'all' ? Number(r.value) : undefined; })();
   for (const j of kinds.includes('careers_page') ? Object.values(state.jobs) : []) {
     const site = j.employerWebsite;
-    if (j.status === 'reviewed' && !j.employerPosting && !j.careersChecked && !(j.routedTried || {}).careers_page && site && ['no_board', 'unconfirmed_board', 'no_match', 'no_apply_link', 'yc_platform_only'].includes(j.unresolved)) {
+    // The same jobs the free employer-page step would take: above the score floor, within this period's most, and not left.
+    if (j.status === 'reviewed' && !j.employerPosting && !j.careersChecked && !(j.routedTried || {}).careers_page && site && !stillLeft(state, j, overlay, profile) && inPeriodSet(state, j, profile, overlay, now) && ['no_board', 'unconfirmed_board', 'no_match', 'no_apply_link', 'yc_platform_only'].includes(j.unresolved)) {
       out.push({ kind: 'careers_page', text: fill('careers_page', { company: j.company, url: site }), fields: { jobKey: j.key, website: site, company: j.company }, query: null, jobKey: j.key });
     }
   }
@@ -59,56 +60,93 @@ const hold = (r, now, { clock = true } = {}) => updateState((s) => {
 
 const covered = (kind) => SUPPLIERS.some((x) => x.kind === kind);
 // A need code cannot run (no adapter for its kind, or a supplier it does not know) becomes one model item for the round.
-const leaveForModel = (need, round, now) => updateState((s) => {
-  s.search.needPending = [...(s.search.needPending || []).filter((n) => n.kind !== need.kind), { kind: need.kind, text: need.text, query: need.query, round, at: new Date(now).toISOString() }];
+const leaveForModel = (need, round, now, routerAnswered) => updateState((s) => {
+  s.search.needPending = [...(s.search.needPending || []).filter((n) => n.kind !== need.kind), { kind: need.kind, text: need.text, query: need.query, round, at: new Date(now).toISOString(), ...(routerAnswered ? { routerAnswered: true } : {}) }];
 });
 
+const LOCK_MS = 15 * 60 * 1000;
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+// One routed round at a time: a watcher tick and a `J route` never both pay for the same needs. A lock left by a process that is
+// gone, or older than the longest round, is taken over.
+function takeLock(now) {
+  return updateState((s) => {
+    const l = s.routed.roundLock;
+    if (l && now - Date.parse(l.at) < LOCK_MS && l.pid !== process.pid && alive(l.pid)) return false;
+    s.routed.roundLock = { pid: process.pid, at: new Date(now).toISOString() };
+    return true;
+  });
+}
+const dropLock = () => updateState((s) => { if (s.routed.roundLock && s.routed.roundLock.pid === process.pid) s.routed.roundLock = null; });
+
 // Each need runs on its own: one that cannot run in code never stops the others. An uncovered need is left as a Haiku item
-// for the round's wake.
+// for the round's wake. A paid result is kept in state the moment it arrives and ingested at once, so a run that is killed
+// between paying and ingesting finishes the ingest first at the next start and never pays for it again.
 export async function routedRounds({ profile, fetch, client = new RouterClient(), now = Date.now(), maxRounds = 20 }) {
   const log = [];
-  for (let i = 0; i < maxRounds; i++) {
-    const state = loadState();
-    const round = searchRound(state, profile, now);
-    if (round === null) break;
-    const all = [...roundNeeds(profile, state, now, round), ...(i === 0 ? jobNeeds(state, profile, loadOverlay(), { kinds: ['careers_page'] }) : [])];
-    const needs = all.filter((n) => covered(n.kind));
-    for (const n of all) if (!needs.includes(n)) {
-      leaveForModel(n, round, now);
-      log.push({ round, need: n.kind, ok: false, status: 'model' });
-    }
-    const results = await runRound(needs, { client });
-    for (let k = 0; k < results.length; k++) {
-      const r = results[k];
-      const need = needs[k];
-      if (r.ok) {
-        // A paid result is never paid for twice: a result that cannot be ingested is held with its reason, the rest of the round
-        // goes on, and every attempt on a job's careers lookup counts as tried.
-        let out;
-        try {
-          out = await ingest({ obj: r.ingest, state: loadState(), profile, overlay: loadOverlay(), fetch, now });
-        } catch (e) {
-          hold({ need: need.kind, status: 'ingest_failed', reason: e.message }, now);
-          if (need.jobKey) updateState((s) => { if (s.jobs[need.jobKey]) (s.jobs[need.jobKey].routedTried ||= {})[need.kind] = true; });
-          log.push({ round, need: need.kind, ok: false, status: 'ingest_failed' });
-          continue;
-        }
-        updateState((s) => { s.routed.lastCost = r.cost || s.routed.lastCost; });
-        if (need.jobKey) updateState((s) => { if (s.jobs[need.jobKey]) (s.jobs[need.jobKey].routedTried ||= {})[need.kind] = true; });
-        log.push({ round, need: need.kind, ok: true, status: 'fulfilled', added: out.added });
-      } else if (r.status === 'no_adapter' && need.kind !== 'web_search') {
-        leaveForModel(need, round, now);
-        log.push({ round, need: need.kind, ok: false, status: 'model' });
-      } else {
-        hold(r, now);
-        if (need.jobKey) updateState((s) => { if (s.jobs[need.jobKey]) (s.jobs[need.jobKey].routedTried ||= {})[need.kind] = true; });
-        log.push({ round, need: need.kind, ok: false, status: r.status });
+  if (!takeLock(now)) return [{ need: 'round', ok: false, status: 'already_running' }];
+  try {
+    // 1. a result paid for in an earlier run that was never ingested
+    for (const p of loadState().routed.pendingIngest || []) {
+      try {
+        await ingest({ obj: p.ingest, state: loadState(), profile, overlay: loadOverlay(), fetch, now });
+        log.push({ round: p.round, need: p.kind, ok: true, status: 'recovered' });
+      } catch (e) {
+        hold({ need: p.kind, status: 'ingest_failed', reason: e.message }, now);
+        log.push({ round: p.round, need: p.kind, ok: false, status: 'ingest_failed' });
       }
+      updateState((s) => { s.routed.pendingIngest = (s.routed.pendingIngest || []).filter((x) => x.at !== p.at || x.kind !== p.kind); });
     }
-    // With Tenjin the board search is a routed need like the others: a failed call holds it for the round, with a report line, and never becomes a model step.
-    updateState((s) => { s.routed.lastSearchAt = s.routed.lastSearchAt || new Date(now).toISOString(); });
-    const next = updateState((s) => (s.search.session ? advanceSearch(s, profile) : { done: true }));
-    if (next.done) break;
+    for (let i = 0; i < maxRounds; i++) {
+      const state = loadState();
+      const round = searchRound(state, profile, now);
+      if (round === null) break;
+      const all = [...roundNeeds(profile, state, now, round), ...(i === 0 ? jobNeeds(state, profile, loadOverlay(), { kinds: ['careers_page'], now }) : [])];
+      const needs = all.filter((n) => covered(n.kind));
+      for (const n of all) if (!needs.includes(n)) {
+        leaveForModel(n, round, now, false);
+        log.push({ round, need: n.kind, ok: false, status: 'model' });
+      }
+      const onResult = async (need, r) => {
+        if (r.ok) {
+          const mark = { at: new Date().toISOString(), kind: need.kind, round, ingest: r.ingest };
+          const keep = r.ingest.fullResultPath !== null; // a supplier whose terms allow immediate use only is never saved
+          if (keep) updateState((s) => { (s.routed.pendingIngest ||= []).push(mark); });
+          let out;
+          try {
+            out = await ingest({ obj: r.ingest, state: loadState(), profile, overlay: loadOverlay(), fetch, now });
+          } catch (e) {
+            // A paid result is never paid for twice: a result that cannot be ingested is held with its reason, the rest of the
+            // round goes on, and every attempt on a job's careers lookup counts as tried.
+            hold({ need: need.kind, status: 'ingest_failed', reason: e.message }, now);
+            if (need.jobKey) updateState((s) => { if (s.jobs[need.jobKey]) (s.jobs[need.jobKey].routedTried ||= {})[need.kind] = true; });
+            if (keep) updateState((s) => { s.routed.pendingIngest = (s.routed.pendingIngest || []).filter((x) => x.at !== mark.at); });
+            log.push({ round, need: need.kind, ok: false, status: 'ingest_failed' });
+            return;
+          }
+          updateState((s) => {
+            s.routed.lastCost = r.cost || s.routed.lastCost;
+            if (need.jobKey && s.jobs[need.jobKey]) (s.jobs[need.jobKey].routedTried ||= {})[need.kind] = true;
+            if (keep) s.routed.pendingIngest = (s.routed.pendingIngest || []).filter((x) => x.at !== mark.at);
+          });
+          log.push({ round, need: need.kind, ok: true, status: 'fulfilled', added: out.added });
+        } else if (r.status === 'no_adapter' && need.kind !== 'web_search') {
+          // The router already answered (and charged its routing fee): the model step must not send it to the router again.
+          leaveForModel(need, round, now, true);
+          log.push({ round, need: need.kind, ok: false, status: 'model' });
+        } else {
+          hold(r, now);
+          if (need.jobKey) updateState((s) => { if (s.jobs[need.jobKey]) (s.jobs[need.jobKey].routedTried ||= {})[need.kind] = true; });
+          log.push({ round, need: need.kind, ok: false, status: r.status });
+        }
+      };
+      await runRound(needs, { client, onResult });
+      // With Tenjin the board search is a routed need like the others: a failed call holds it for the round, with a report line, and never becomes a model step.
+      updateState((s) => { s.routed.lastSearchAt = s.routed.lastSearchAt || new Date(now).toISOString(); });
+      const next = updateState((s) => (s.search.session ? advanceSearch(s, profile) : { done: true }));
+      if (next.done) break;
+    }
+  } finally {
+    dropLock();
   }
   return log;
 }

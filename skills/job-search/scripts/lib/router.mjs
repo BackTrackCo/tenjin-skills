@@ -9,7 +9,9 @@ import { pickSupplier, pickTool } from './suppliers/index.mjs';
 // router's own `request` tool in two steps: the need as text (the answer is a spec that names a supplier), then the
 // run with `{id, input}`. The router picks the seller and applies the person's limits and needs_approval; the skill
 // adds no money rule. Only a `fulfilled` envelope delivers; every other status holds that search with its reason.
-export const TIMEOUTS = { initialize: 30_000, query: 30_000, run: 120_000, shutdown: 5_000 };
+// shutdown: `tenjin mcp` starts a routing top-up each time and, once stdin closes, waits up to 30 s for a deposit in flight to settle;
+// killing it earlier would cut that deposit off. collect and poll: a paid answer that is still running is asked for, free, until it settles.
+export const TIMEOUTS = { initialize: 30_000, query: 30_000, run: 120_000, shutdown: 35_000, collect: 60_000, poll: 3_000 };
 
 export class RouterClient {
   constructor({ bin = findTenjin(), spawn = nodeSpawn, timeouts = TIMEOUTS } = {}) {
@@ -26,9 +28,12 @@ export class RouterClient {
   async start() {
     if (!this.bin) throw new RouterError('tenjin_missing', 'Tenjin is not installed');
     this.proc = this.spawn(this.bin, ['mcp'], { stdio: ['pipe', 'pipe', 'ignore'] });
-    this.proc.on('error', (e) => this.failAll(new RouterError('wallet_unavailable', `tenjin mcp could not start: ${e.message}`)));
-    this.proc.on('exit', () => this.failAll(new RouterError('wallet_unavailable', 'tenjin mcp exited')));
-    this.proc.stdout.on('data', (d) => this.onData(String(d)));
+    this.dead = null;
+    const die = (err) => { this.dead = this.dead || err; this.failAll(err); };
+    this.proc.on('error', (e) => die(new RouterError('wallet_unavailable', `tenjin mcp could not start: ${e.message}`)));
+    this.proc.on('exit', () => die(new RouterError('wallet_unavailable', 'tenjin mcp exited')));
+    if (typeof this.proc.stdout.setEncoding === 'function') this.proc.stdout.setEncoding('utf8'); // a character split across two chunks stays whole
+    this.proc.stdout.on('data', (d) => this.onData(typeof d === 'string' ? d : d.toString('utf8')));
     await this.rpc('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'job-search', version: '0.1.0' } }, this.timeouts.initialize);
     this.notify('notifications/initialized', {});
   }
@@ -70,6 +75,8 @@ export class RouterClient {
     this.send({ jsonrpc: '2.0', method, params });
   }
   rpc(method, params, timeoutMs) {
+    // Once the process is gone every later call answers at once: nothing waits out a timeout for a server that left.
+    if (this.dead) return Promise.reject(this.dead);
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -102,7 +109,8 @@ export class RouterClient {
     return env;
   }
 
-  // stdin closes, and the process is killed if it has not exited after 5 seconds: no server stays running.
+  // stdin closes, and the process is killed only if it has not exited after the shutdown time (35 s, past the 30 s `tenjin mcp` may
+  // need to finish a routing deposit): no server stays running, and no deposit is cut off.
   async close() {
     if (!this.proc) return;
     const proc = this.proc;
@@ -153,6 +161,8 @@ export async function runNeed(client, need, { save = saveResult } = {}) {
     // A timed-out run is never sent again in this round: the payment may have settled.
     return held(need, e.code || 'failed', e.message);
   }
+  // A paid answer that is still running is asked for with the free `{job}` check until it settles; it is never paid for twice.
+  if (env.status === 'running' && env.job) env = await collect(client, env);
   // A `failed` answer that says the provider rejected the input before any payment is the mapper's bug: hold it, never resend.
   if (env.status !== 'fulfilled') return held(need, env.status || 'failed', env.reason ? `the router answered ${env.status}: ${env.reason}` : `the router answered ${env.status}`, env);
   if (!sup.any && String(env.supplier || '').toLowerCase() !== sup.host) return held(need, 'supplier_mismatch', 'the envelope names a different supplier than the spec');
@@ -174,7 +184,22 @@ export async function runNeed(client, need, { save = saveResult } = {}) {
   return { ok: true, status: 'fulfilled', cost, ingest: { need: need.kind, query: need.query, status: 'fulfilled', fullResultPath, cost, ...adapted } };
 }
 
-const held = (need, status, reason, env) => ({ ok: false, status, reason, need: need.kind, jobId: env && env.job, cost: null });
+const held = (need, status, reason, env) => ({ ok: false, status, reason: status === 'running' && env && env.job ? `${reason} (job ${env.job}: check it with tenjin, it is already paid)` : reason, need: need.kind, jobId: env && env.job, cost: null });
+
+async function collect(client, first) {
+  const { collect: total = 60_000, poll = 3_000 } = client.timeouts;
+  const until = Date.now() + total;
+  let env = first;
+  while (env.status === 'running' && env.job && Date.now() < until) {
+    await new Promise((r) => setTimeout(r, poll));
+    try {
+      env = await client.request({ job: first.job }, client.timeouts.query);
+    } catch {
+      break;
+    }
+  }
+  return env;
+}
 
 // `result` is the provider's JSON, kept as data in the state folder for the ingest file to point at.
 export function saveResult(kind, text) {
@@ -185,7 +210,7 @@ export function saveResult(kind, text) {
 }
 
 // A whole round: one process, the needs one at a time, then shutdown. The caller ingests each ok result.
-export async function runRound(needs, { client = new RouterClient(), save } = {}) {
+export async function runRound(needs, { client = new RouterClient(), save, onResult = null } = {}) {
   const out = [];
   try {
     await client.start();
@@ -194,7 +219,11 @@ export async function runRound(needs, { client = new RouterClient(), save } = {}
     return needs.map((n) => held(n, e.code === 'tenjin_missing' ? 'tenjin_missing' : 'wallet_unavailable', e.message));
   }
   try {
-    for (const need of needs) out.push(await runNeed(client, need, { save }));
+    for (const need of needs) {
+      const r = await runNeed(client, need, { save });
+      out.push(r);
+      if (onResult) await onResult(need, r); // the caller keeps a paid result at once, before the next need is started
+    }
   } finally {
     await client.close();
   }
