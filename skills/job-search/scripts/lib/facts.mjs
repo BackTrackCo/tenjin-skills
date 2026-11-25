@@ -46,6 +46,20 @@ export function splitByOptions(group) {
   return [first, ...others.map((g, i) => ({ ...g, id: `${group.id}#${i + 2}` }))];
 }
 
+// The options the question tool shows (at most 4 and its own free-text field, which a typed answer uses): 2 or 3 as they are, 4 as they
+// are, 5 or more the first 3 in the form's order plus the form's decline option when it has one, else the 4th. A form option named
+// "Other" is never one of them.
+const norm = (o) => normalizeQuestion(o);
+const DECLINE = /^(prefer not to (say|answer|disclose|state)|decline( to (answer|state|say|self.?identify|disclose))?|i (do not|don'?t) wish to (answer|disclose|state|say)|i choose not to .*)$/;
+export const isDecline = (o) => DECLINE.test(norm(o));
+export function toolOptions(opts) {
+  const list = opts.filter((o) => norm(o) !== 'other');
+  if (list.length <= 4) return list;
+  const decline = list.find(isDecline);
+  const first = list.filter((o) => o !== decline).slice(0, decline ? 3 : 4);
+  return decline ? [...first, decline] : first;
+}
+
 const namesOf = (jobs) => {
   const names = [...new Set(jobs.map((j) => `${j.company}`))];
   return names.length <= NAMES_SHOWN ? names.join(', ') : `${names.slice(0, NAMES_SHOWN).join(', ')} and ${names.length - NAMES_SHOWN} more`;
@@ -61,8 +75,10 @@ export function buildFactQuestions(groups) {
   for (const g of split) {
     const opts = g.shown || [];
     const forWho = `For: ${namesOf(g.jobs)}`;
-    if (opts.length >= 2 && opts.length <= 3) {
-      choice.push({ id: g.id, label: g.label, jobs: g.jobs.map((j) => j.key), question: { header: 'Missing fact', question: clip(`${g.label} ${forWho}`, 280), multiSelect: false, options: [...opts.map((o) => ({ label: clip(o, 60), description: `Answer "${clip(o, 60)}" for ${g.jobs.length} job${g.jobs.length > 1 ? 's' : ''} and reuse it for the same question.` })), { label: 'Skip these jobs', description: `Do not apply to ${g.jobs.length > 1 ? 'these jobs' : 'this job'}.` }] } });
+    if (opts.length >= 2) {
+      const shownOpts = toolOptions(opts);
+      const skip = shownOpts.length <= 3 ? [{ label: 'Skip these jobs', description: `Do not apply to ${g.jobs.length > 1 ? 'these jobs' : 'this job'}.` }] : [];
+      choice.push({ id: g.id, label: g.label, jobs: g.jobs.map((j) => j.key), question: { header: 'Missing fact', question: clip(`${g.label} ${forWho}`, 280), multiSelect: false, options: [...shownOpts.map((o) => ({ label: clip(o, 60), description: `Answer "${clip(o, 60)}" for ${g.jobs.length} job${g.jobs.length > 1 ? 's' : ''} and reuse it for the same question.` })), ...skip] } });
     } else {
       plain.push({ id: g.id, label: g.label, jobs: g.jobs.map((j) => j.key), text: `${g.label} (${forWho})${opts.length ? ` Options: ${opts.join('; ')}.` : ''}` });
     }
@@ -90,8 +106,10 @@ export function applyFactAnswer(state, profile, plan, id, value, addAnswer) {
   if (!g) throw new Error(`no such question: ${id}; run J ask facts again`);
   const needsMapping = [];
   for (const j of g.jobs) {
-    if (j.options.length && !j.options.includes(value)) { needsMapping.push(j.key); continue; }
-    addAnswer({ question: j.label, answer: value, how: 'typed', source: j.key, type: j.type, options: j.options.length ? j.options : null });
+    // A typed answer is matched to the form's full list by the exact normalization; one that matches no option is never guessed.
+    const mine = j.options.length ? j.options.find((o) => o === value) || j.options.find((o) => norm(o) === norm(value)) : value;
+    if (!mine) { needsMapping.push(j.key); continue; }
+    addAnswer({ question: j.label, answer: mine, how: 'typed', source: j.key, type: j.type, options: j.options.length ? j.options : null });
   }
   return { jobs: g.jobs.map((j) => j.key), needsMapping, factKey: g.factKey };
 }

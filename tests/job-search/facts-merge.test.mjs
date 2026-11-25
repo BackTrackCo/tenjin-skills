@@ -152,3 +152,37 @@ test('every part of the push line is a plain phrase, never a bare reason code', 
   assert.doesNotMatch(line, /needs you: stopped/);
   assert.match(line, /Claude in Chrome lost its connection/);
 });
+
+test('a 4-option question shows all 4 and no skip; a long list shows the first three and the decline option, never Other', () => {
+  reset();
+  prepared(40, 'Acme Placeholder', [sel('Preferred contact time?', ['Morning', 'Noon', 'Afternoon', 'Evening']), sel('What are your pronouns?', ['She/Her/Hers', 'He/Him/His', 'They/Them/Theirs', 'Ze/Hir/Hirs', 'Prefer not to say', 'Other'])]);
+  const r = J('ask', 'facts');
+  const qs = callsOf(r);
+  const four = qs.find((x) => /contact time/.test(x.question));
+  assert.deepEqual(four.options.map((o) => o.label), ['Morning', 'Noon', 'Afternoon', 'Evening'], 'all 4, no Skip');
+  const pron = qs.find((x) => /pronouns/.test(x.question));
+  assert.deepEqual(pron.options.map((o) => o.label), ['She/Her/Hers', 'He/Him/His', 'They/Them/Theirs', 'Prefer not to say']);
+  assert.equal(r.json.plain, null);
+  for (const x of qs) assert.ok(x.options.length <= 4);
+  assert.equal(facts.toolOptions(['A', 'B', 'C', 'D', 'E']).join(','), 'A,B,C,D', 'no decline option: the 4th');
+  assert.equal(facts.toolOptions(['A', 'Other', 'B', 'C', 'D', 'Decline to answer']).join(','), 'A,B,C,Decline to answer');
+  assert.equal(facts.toolOptions(['Yes', 'No']).join(','), 'Yes,No');
+});
+
+test('a typed answer that matches the form\'s full list fills it, and one that matches nothing is not guessed', () => {
+  reset();
+  const a = prepared(41, 'Acme Placeholder', [sel('What are your pronouns?', ['She/Her/Hers', 'He/Him/His', 'They/Them/Theirs', 'Ze/Hir/Hirs', 'Prefer not to say', 'Other'])]);
+  const b = prepared(42, 'Beta Placeholder', [sel('What are your pronouns?', ['She/Her/Hers', 'He/Him/His', 'They/Them/Theirs', 'Ze/Hir/Hirs', 'Prefer not to say', 'Other'])]);
+  const id = J('ask', 'facts').json.calls[0].ids[0];
+  const done = J('facts', 'answer', id, '  ze/hir/hirs ');
+  assert.equal(done.code, 0, done.stdout);
+  assert.deepEqual(done.json.needsMapping, []);
+  assert.equal(store.loadState().jobs[a.key].sheet.fields.find((f) => /pronouns/.test(f.label)).value, 'Ze/Hir/Hirs', 'the form\'s own text');
+  assert.equal(store.loadState().jobs[b.key].sheet.passed, true);
+  reset();
+  const c = prepared(43, 'Gamma Placeholder', [sel('What are your pronouns?', ['She/Her/Hers', 'He/Him/His', 'They/Them/Theirs', 'Ze/Hir/Hirs', 'Prefer not to say', 'Other'])]);
+  const id2 = J('ask', 'facts').json.calls[0].ids[0];
+  const none = J('facts', 'answer', id2, 'Xe/Xem/Xyrs');
+  assert.deepEqual(none.json.needsMapping, [c.key]);
+  assert.equal(store.loadState().jobs[c.key].sheet.passed, false, 'not guessed');
+});
