@@ -1,4 +1,4 @@
-// Adapted from vraspar/find-jobs (MIT, see the notice in references/careerops.md): a career-ops folder is one with
+// A career-ops folder is one with
 // cv.md, config/profile.yml and data/pipeline.md. Dedupe also skips the URLs in its pipeline, applications and scan
 // history; on the person's yes, each job that passes is appended under "## Pending". No other file is changed.
 import fs from 'node:fs';

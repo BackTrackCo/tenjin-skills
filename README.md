@@ -101,7 +101,7 @@ Your resume, profile, rules, saved answers and application records stay in `~/.t
 
 ### Credit
 
-The search sources, the search rounds, the contact rules and the career-ops pipeline format are adapted from [vraspar/find-jobs](https://github.com/vraspar/find-jobs), MIT licensed. Its notice is in [`skills/job-search/references/careerops.md`](skills/job-search/references/careerops.md).
+The search sources, the search rounds and the contact rules build on [vraspar/find-jobs](https://github.com/vraspar/find-jobs).
 
 ### Develop and test
 

@@ -348,14 +348,19 @@ test('career-ops: the pipeline write is refused while a batch is open', () => {
 });
 
 // ---- 12 and 13. the description, the credit, no decline rule ------------------
-test('the description covers the find-jobs uses; credit and the MIT notice are in place', () => {
+test('the description covers the find-jobs uses; README names find-jobs and no file carries a license notice for it', () => {
   const skill = fs.readFileSync(path.join(ROOT, 'skills', 'job-search', 'SKILL.md'), 'utf8');
   const desc = /^description: >-\n((?:  .+\n)+)/m.exec(skill)[1].replace(/\n\s*/g, ' ').trim();
   for (const w of ['any job hunt', 'only the new postings', 'hiring manager', 'career-ops pipeline', 'attended', 'unattended', 'Do not use it for a cover letter, resume tailoring, interview prep or a job offer']) assert.ok(desc.includes(w) || skill.includes(w), w);
   assert.ok(desc.length < 1536, 'under the listing limit');
-  const notice = fs.readFileSync(path.join(ROOT, 'skills', 'job-search', 'references', 'careerops.md'), 'utf8');
-  assert.match(notice, /Copyright \(c\) 2026 vraspar/);
-  assert.match(notice, /Permission is hereby granted, free of charge/);
+  // find-jobs is the company's own work: no license wording about it, and no copyright line, in any file of the skill or the README
+  const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]));
+  for (const f of [...walk(path.join(ROOT, 'skills', 'job-search')), path.join(ROOT, 'README.md')].filter((x) => /\.(md|mjs|json)$/.test(x))) {
+    const t = fs.readFileSync(f, 'utf8');
+    assert.doesNotMatch(t, /find-jobs[^.\n]{0,80}\bMIT\b|\bMIT\b[^.\n]{0,80}find-jobs/i, `${f} says MIT about find-jobs`);
+    assert.doesNotMatch(t, /Copyright \(c\) \d{4} vraspar|Permission is hereby granted, free of charge/, `${f} holds the notice`);
+  }
+  assert.doesNotMatch(fs.readFileSync(path.join(ROOT, 'skills', 'job-search', 'references', 'careerops.md'), 'utf8'), /find-jobs/, 'careerops.md covers only career-ops');
   assert.match(fs.readFileSync(path.join(ROOT, 'skills', 'job-search', 'CHANGES.md'), 'utf8'), /vraspar\/find-jobs/);
   assert.match(fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8'), /vraspar\/find-jobs/);
   const all = [skill, ...fs.readdirSync(path.join(ROOT, 'skills', 'job-search', 'references')).map((f) => fs.readFileSync(path.join(ROOT, 'skills', 'job-search', 'references', f), 'utf8'))].join('\n');
