@@ -51,7 +51,7 @@ const signInPage = (url, status, text) => status === 401 || status === 403 || /(
 
 // A public link, fetched once, in code: that exact URL, https only, at most 3 redirects, local and private addresses and
 // never-automated hosts refused at each hop. A PDF is saved as resume.pdf, a page as resume.txt (both 0600).
-export async function fetchResume(url, fetchImpl = globalThis.fetch) {
+export async function fetchResume(url, fetchImpl = globalThis.fetch, { lookup } = {}) {
   let u;
   try {
     u = new URL(url);
@@ -67,7 +67,7 @@ export async function fetchResume(url, fetchImpl = globalThis.fetch) {
     if (isLocalHost(host)) return { ask: true, why: 'a local or private address is never read' };
     let res;
     try {
-      res = await guardedFetch(cur, { redirect: 'manual', headers: { accept: 'application/pdf,text/html,text/plain,*/*' } }, fetchImpl, { allowUrl: cur });
+      res = await guardedFetch(cur, { redirect: 'manual', headers: { accept: 'application/pdf,text/html,text/plain,*/*' } }, fetchImpl, { allowUrl: cur, lookup });
     } catch (e) {
       return { ask: true, why: e.message };
     }
@@ -100,7 +100,7 @@ export async function fetchResume(url, fetchImpl = globalThis.fetch) {
 
 // `J resume set --url`: a LinkedIn profile goes to the router as its own need (never fetched or opened by the skill); with no
 // Tenjin it is a hint moment and the person gives a PDF export or the text. Every other link is fetched once, in code.
-export async function setFromLink({ url, state, client, fetchImpl = globalThis.fetch }) {
+export async function setFromLink({ url, state, client, fetchImpl = globalThis.fetch, lookup }) {
   if (isLinkedIn(url)) {
     if ((state.tenjin || {}).status !== 'ready') {
       const first = askFirst(state, 'linkedin_resume');
@@ -111,7 +111,7 @@ export async function setFromLink({ url, state, client, fetchImpl = globalThis.f
     if (!r.ok) return { read: false, linkedin: true, status: r.status, ask: 'a PDF export of the profile or the text' };
     return { read: true, ...setText(r.text, { source: 'link' }), url };
   }
-  const r = await fetchResume(url, fetchImpl);
+  const r = await fetchResume(url, fetchImpl, { lookup });
   if (r.signIn) return { read: false, signIn: true, ask: 'a connector can read this only if the person connected one; otherwise a public link, the file or the text' };
   if (r.ask) return { read: false, ask: r.why };
   return { read: true, ...r };

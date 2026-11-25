@@ -22,6 +22,7 @@ const sup = await import(`${S}suppliers/index.mjs`);
 const net = await import(`${S}net.mjs`);
 const FAKE = path.join(import.meta.dirname, 'helpers', 'fake-tenjin.mjs');
 const empty = { rules: [], lessons: [] };
+const pub = async () => [{ address: '93.184.216.34', family: 4 }]; // an injected lookup: every name is public
 const stateDir = () => path.join(process.env.TENJIN_SKILLS_DIR, 'job-search');
 const reset = (extra = {}) => {
   fs.rmSync(path.join(stateDir(), 'rules.json'), { force: true });
@@ -74,12 +75,12 @@ test('a file is read in place (text) or kept by path (PDF); a missing file or a 
 test('a public link is fetched once by code: a PDF becomes resume.pdf, a page resume.txt, both 0600', async () => {
   reset();
   const pdf = serve({ 'https://cv.example.test/me.pdf': resp(200, { type: 'application/pdf', body: '%PDF-1.4 data' }) });
-  const a = await rs.fetchResume('https://cv.example.test/me.pdf', pdf);
+  const a = await rs.fetchResume('https://cv.example.test/me.pdf', pdf, { lookup: pub });
   assert.deepEqual([a.source, path.basename(a.resumePath), a.needsText], ['link', 'resume.pdf', true]);
   assert.equal(fs.statSync(a.resumePath).mode & 0o777, 0o600);
   assert.equal(pdf.calls.length, 1);
   const html = serve({ 'https://cv.example.test/page': resp(200, { body: `<html><body><h1>Pat Example</h1><p>${'Engineer who builds compilers and tools. '.repeat(4)}</p><script>x()</script></body></html>` }) });
-  const b = await rs.fetchResume('https://cv.example.test/page', html);
+  const b = await rs.fetchResume('https://cv.example.test/page', html, { lookup: pub });
   assert.match(b.resumeText, /^Pat Example Engineer who builds/);
   assert.doesNotMatch(b.resumeText, /x\(\)/);
   assert.equal(path.basename(b.resumeTextFile), 'resume.txt');
@@ -90,8 +91,8 @@ test('a link is https only, follows at most 3 redirects, and refuses local, priv
   const redir = (to) => resp(302, { headers: { location: to } });
   const ok = resp(200, { body: 'Pat Example, engineer. '.repeat(10) });
   const chain = (n) => { const t = {}; for (let i = 0; i < n; i++) t[`https://a.test/${i}`] = redir(`https://a.test/${i + 1}`); t[`https://a.test/${n}`] = ok; return t; };
-  assert.equal((await rs.fetchResume('https://a.test/0', serve(chain(3)))).source, 'link', '3 redirects are allowed');
-  assert.match((await rs.fetchResume('https://a.test/0', serve(chain(4)))).why, /too many redirects/);
+  assert.equal((await rs.fetchResume('https://a.test/0', serve(chain(3)), { lookup: pub })).source, 'link', '3 redirects are allowed');
+  assert.match((await rs.fetchResume('https://a.test/0', serve(chain(4)), { lookup: pub })).why, /too many redirects/);
   for (const [name, link, to] of [
     ['http', 'http://a.test/x', null],
     ['local', 'https://localhost/x', null],
@@ -103,11 +104,11 @@ test('a link is https only, follows at most 3 redirects, and refuses local, priv
     ['redirect to plain http', 'https://a.test/r4', 'http://a.test/x'],
   ]) {
     const f = serve({ [link]: to ? redir(to) : ok });
-    const r = await rs.fetchResume(link, f);
+    const r = await rs.fetchResume(link, f, { lookup: pub });
     assert.equal(r.ask, true, name);
     assert.ok(f.calls.length <= 1, `${name}: nothing past the bad hop is fetched`);
   }
-  assert.equal((await rs.fetchResume('https://docs.example.test/x', serve({ 'https://docs.example.test/x': resp(403) }))).signIn, true, 'a sign-in answer is reported as signIn');
+  assert.equal((await rs.fetchResume('https://docs.example.test/x', serve({ 'https://docs.example.test/x': resp(403) }), { lookup: pub })).signIn, true, 'a sign-in answer is reported as signIn');
   await assert.rejects(net.guardedFetch('https://other.test/x', {}, async () => ({}), { allowUrl: 'https://a.test/x' }), /not the one allowed/);
 });
 
@@ -244,4 +245,33 @@ test('the middle mode still writes: a draft held for the yes shows in full in th
   reset();
   store.updateState((s) => { s.jobs[j.key] = j; });
   assert.match(report.renderReport(store.loadState(), empty, { now: Date.now() }), /Initech, Eng: writing_needs_yes\n {2}- draft for "Why us\?": Because we both like small tools\./);
+});
+
+test('the host is resolved before every hop: a name that resolves inside is refused, and so is a failed lookup', async () => {
+  const at = (...addrs) => async () => addrs.map((address) => ({ address, family: address.includes(':') ? 6 : 4 }));
+  const ok = resp(200, { body: 'Pat Example, engineer. '.repeat(10) });
+  for (const [name, addr] of [['loopback', '127.0.0.1'], ['private 10.x', '10.1.2.3'], ['private 172.16', '172.20.0.1'], ['private 192.168', '192.168.0.9'], ['link-local', '169.254.169.254'], ['unspecified', '0.0.0.0'], ['IPv6 loopback', '::1'], ['IPv6 unique-local', 'fd12:3456::1'], ['IPv6 link-local', 'fe80::1'], ['IPv6 unspecified', '::'], ['mapped loopback', '::ffff:127.0.0.1'], ['mapped private (hex)', '::ffff:0a00:0001']]) {
+    const f = serve({ 'https://public-looking.test/x': ok });
+    const r = await rs.fetchResume('https://public-looking.test/x', f, { lookup: at(addr) });
+    assert.equal(r.ask, true, name);
+    assert.match(r.why, /resolves to a local or private address/, name);
+    assert.equal(f.calls.length, 0, `${name}: nothing was fetched`);
+  }
+  // any one inside address is enough, even beside a public one
+  assert.equal((await rs.fetchResume('https://mixed.test/x', serve({ 'https://mixed.test/x': ok }), { lookup: at('93.184.216.34', '10.0.0.1') })).ask, true);
+  // a lookup failure refuses the hop
+  const failing = serve({ 'https://gone.test/x': ok });
+  const r = await rs.fetchResume('https://gone.test/x', failing, { lookup: async () => { throw new Error('ENOTFOUND'); } });
+  assert.match(r.why, /did not resolve/);
+  assert.equal(failing.calls.length, 0);
+  // a redirect to a name that resolves inside is refused at that hop
+  const lookup = async (h) => (h === 'inside.test' ? [{ address: '10.9.9.9', family: 4 }] : [{ address: '93.184.216.34', family: 4 }]);
+  const f = serve({ 'https://start.test/x': resp(302, { headers: { location: 'https://inside.test/y' } }), 'https://inside.test/y': ok });
+  const red = await rs.fetchResume('https://start.test/x', f, { lookup });
+  assert.match(red.why, /resolves to a local or private address/);
+  assert.deepEqual(f.calls, ['https://start.test/x'], 'the inside hop is never fetched');
+  // a public address passes, IPv4 and IPv6
+  assert.equal((await rs.fetchResume('https://ok.test/x', serve({ 'https://ok.test/x': ok }), { lookup: at('93.184.216.34') })).source, 'link');
+  assert.equal((await rs.fetchResume('https://ok6.test/x', serve({ 'https://ok6.test/x': ok }), { lookup: at('2606:2800:220:1:248:1893:25c8:1946') })).source, 'link');
+  assert.equal(net.isPrivateAddress('::ffff:8.8.8.8'), false, 'a mapped public address is public');
 });

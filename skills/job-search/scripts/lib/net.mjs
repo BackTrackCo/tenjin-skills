@@ -1,3 +1,4 @@
+import dns from 'node:dns';
 import { graph } from './graph.mjs';
 // The only network door for the scripts. Hosts outside this list are refused.
 export const ALLOWED_HOSTS = [
@@ -26,6 +27,38 @@ export function isLocalHost(host) {
   return false;
 }
 
+// Does a resolved address point inside: loopback, private, link-local, unique-local or unspecified, IPv4 or IPv6, and an
+// IPv4-mapped IPv6 address by the IPv4 inside it.
+export function isPrivateAddress(addr) {
+  const a = String(addr).toLowerCase().replace(/^\[|\]$/g, '').split('%')[0];
+  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(a);
+  if (mapped) return isLocalHost(mapped[1]);
+  const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(a);
+  if (hex) {
+    const n = (parseInt(hex[1], 16) << 16) | parseInt(hex[2], 16);
+    return isLocalHost([(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join('.'));
+  }
+  if (a.includes(':')) return a === '::' || a === '::1' || /^f[cd]/.test(a) || /^fe[89ab]/.test(a) || a.startsWith('::ffff:');
+  return isLocalHost(a);
+}
+
+// The host is resolved before each hop, and the hop is refused when any address it resolves to is inside, or when the
+// lookup fails. Known gap in v0: `fetch` resolves the name again when it connects, so a DNS rebinding between this check
+// and the connect is not caught.
+export async function assertPublicName(host, lookup = (h, o) => dns.promises.lookup(h, o)) {
+  if (isLocalHost(host)) throw new Error(`local or private address refused: ${host}`);
+  if (/^[\d.]+$/.test(host) || host.includes(':')) return; // a literal IP was checked above
+  let addrs;
+  try {
+    addrs = await lookup(host, { all: true });
+  } catch (e) {
+    throw new Error(`the name did not resolve: ${host}`);
+  }
+  const list = Array.isArray(addrs) ? addrs : [addrs];
+  if (!list.length) throw new Error(`the name did not resolve: ${host}`);
+  for (const a of list) if (isPrivateAddress(a.address || a)) throw new Error(`${host} resolves to a local or private address: refused`);
+}
+
 // `allowUrl` names one exact URL that may be read once, outside the fixed host list (the resume link the person gave). It
 // never lifts the never-automated list or the local and private addresses, and it is https only.
 export function assertAllowed(url, { allowUrl = null } = {}) {
@@ -41,8 +74,9 @@ export function assertAllowed(url, { allowUrl = null } = {}) {
   if (!ALLOWED_HOSTS.includes(host)) throw new Error(`host not allowed: ${host}`);
 }
 
-export async function guardedFetch(url, opts = {}, fetchImpl = globalThis.fetch, { allowUrl = null } = {}) {
+export async function guardedFetch(url, opts = {}, fetchImpl = globalThis.fetch, { allowUrl = null, lookup } = {}) {
   assertAllowed(url, { allowUrl });
+  if (allowUrl) await assertPublicName(new URL(url).hostname, lookup); // before every hop, redirects included
   const res = await fetchImpl(url, {
     ...opts,
     headers: { 'user-agent': 'tenjin-skills-job-search', accept: 'application/json', ...(opts.headers || {}) },
