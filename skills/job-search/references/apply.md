@@ -4,11 +4,13 @@ Only the employer's own posting on Greenhouse, Lever or Ashby (`exact` or `confi
 
 ## Open the batch
 1. `J batch open` (add `--unattended` for an unattended batch). `apply next` hands out a job only in an open batch.
-2. Attended: show the person the list of sheets (each with its filled fields). They say yes to all or some. Record each: `J approve <key>`. A changed sheet needs a new yes.
+2. Attended: every job the skill plans to apply to is already prepared, with no question before it (references/prepare.md). The first question the person gets about a job is its approval, with the prepared application shown: `J ask approval --key <job>` (the fields, any new answer in full, the warnings; a missing fact, such as US citizenship, in the same call with its fixed answers and "Skip this job"). Save the answers and record the yes with `J approve <key> --facts <json>`: the sheet is completed and the yes covers the completed sheet hash. Many sheets: `J ask approve`, then `J approve --all|--no-new|<keys>`. A changed sheet needs a new yes. In an auto mode nobody is asked: a missing fact holds the job as `needs_facts`.
 3. `J apply next` (or `--unattended`). It prints `handout` or `refused` and the `queue` with reasons.
 
 ## The browser subagent (Agent `model: "haiku"`, one per application)
 Safety without a hook: nothing in code sees this subagent's clicks, so put these rules in its task. Each Claude in Chrome call stays on the handed-out URL, the employer's own posting, and never touches LinkedIn, Indeed or any never-automated host. Submit only when an open batch handed this job out and `handout.submit` is true. No page script (`javascript_tool`), and in an unattended batch no other tool. Never edit `state.json`, `rules.json`, `answers.json` or the writing rules directly. If the result reports it has no Chrome tools, run `J stop <key> --kind no_chrome_tools`: one plain reason and one notification, nothing submitted, not counted as applied.
+
+The fill and the submit run in one browser pass after the yes, never before it (a fill before the yes would mean two fills per job or tabs left open across turns, which a Chrome disconnect drops): it fills from the approved sheet, reads the form back against the sheet, and submits; the approval covers the exact sheet hash, and the read-back against the sheet hash stops any difference before submit. On Lever and Ashby, which give no form fields through an API, a first browser pass at prepare time reads the live form and checks that every sheet field fits it, submitting nothing and closing the tab.
 
 Give it only the handout's URL, the sheet's fields and the resume path. It uses Claude in Chrome tool calls, in its own tab, and:
 1. Opens the URL. 2. Reads the form fields. 3. Pass 1: returns the live fields as JSON; the main session runs `J sheet check <key> --live <file>`. A field the sheet lacks, a changed field or a redirect to another host stops the job.

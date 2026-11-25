@@ -12,7 +12,7 @@ export function startQuestions() {
   return {
     questions: [
       q('Apply mode', 'How should applications go out?', [
-        { label: 'Ask me each time (Recommended)', description: 'I show each application and submit only after your yes.' },
+        { label: 'Ask me each time (Recommended)', description: 'I prepare each application, show it, and submit only after your yes.' },
         { label: 'Auto apply, approve new answers', description: 'Uses your resume and answers you gave or approved before. When a form has a new question, the answer is drafted and that job waits for your yes.' },
         { label: 'Fully auto apply', description: 'Also submits the answers drafted for new questions, without showing them to you first.' },
       ]),
@@ -113,6 +113,30 @@ export function emailModeQuestion() {
     { label: 'Ask me each batch (Recommended)', description: 'You see each batch of drafts and tick the ones to send.' },
     { label: 'Send without asking, within my rules', description: 'Sends in the round with no yes, only to published addresses, once per address; revoke any time.' },
   ])] };
+}
+
+// One prepared application, attended: the first question about a job is its approval, with the prepared application shown
+// (the fields, any new answer in full, the warnings). A fact the form needs that the profile lacks is asked in the same call,
+// with its fixed answers and "Skip this job"; one with no fixed answers comes back as a plain question. The answer is saved as
+// a fact (`J approve <key> --facts`), the sheet is completed, and the yes covers the completed sheet.
+export function approvalQuestions(job) {
+  const sheet = job.sheet || { fields: [], unanswered: [] };
+  const application = [
+    ...(sheet.fields || []).map((f) => `${f.label}: ${f.tag === 'upload' ? 'your resume' : f.value} (${f.tag.replace('_', ' ')})`),
+    ...(job.warnings || []).map((w) => `warning: ${w}`),
+  ];
+  const asks = [q('Apply', `Apply to ${job.title} at ${job.company} with the application shown above?`, [
+    { label: 'Yes, apply (Recommended)', description: 'Records your yes for this exact application, then fills it and submits it in one pass.' },
+    { label: 'Not this one', description: 'Skip this job.' },
+  ])];
+  const plain = [];
+  for (const u of (sheet.unanswered || []).filter((x) => x.factKey)) {
+    const form = (job.questions || []).find((x) => x.label === u.label) || {};
+    const options = (form.options || []).filter(Boolean).slice(0, 3);
+    if (options.length >= 2 && asks.length < 4) asks.push(q('Missing fact', `The form asks: ${u.label}`, [...options.map((o, i) => ({ label: i === 0 ? `${o} (Recommended)` : o, description: `Answer "${o}" for "${u.label}", saved as ${u.factKey} for later forms.` })), { label: 'Skip this job', description: 'Do not apply to this job.' }].slice(0, 4)));
+    else plain.push({ label: u.label, fact: u.factKey });
+  }
+  return { application, questions: asks, plain, next: 'show the application, ask these in one call; save with J approve <key> --facts <json> (a plain question: J fact set <name> <value> first)' };
 }
 
 // Attended, many sheets at once: the report lists every ready sheet in rank order, then one question asks how to approve them.

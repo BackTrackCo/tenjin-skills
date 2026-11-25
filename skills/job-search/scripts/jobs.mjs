@@ -38,7 +38,7 @@ import { isFillOnly, markFillReady, markSubmitted } from './lib/fillonly.mjs';
 
 // The sheets waiting for the person's yes, best fit first: the report lists them one line each.
 export function readySheets(st) {
-  return Object.values(st.jobs).filter((j) => j.status === 'apply_ready' && j.sheet && j.employerPosting && !st.approvals[j.key]).sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1)).map((j) => ({ key: j.key, company: j.company, title: j.title, fitLine: j.fitLine || '', newAnswers: (j.sheet.fields || []).filter((f) => f.tag === 'new_writing').map((f) => ({ label: f.label, value: f.value })) }));
+  return Object.values(st.jobs).filter((j) => ((j.status === 'apply_ready' && j.sheet) || (j.status === 'prepared' && j.awaitingApproval && j.sheet)) && j.employerPosting && !st.approvals[j.key]).sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1)).map((j) => ({ key: j.key, company: j.company, title: j.title, fitLine: j.fitLine || '', missingFacts: j.awaitingApproval ? j.missingFacts || [] : [], newAnswers: (j.sheet.fields || []).filter((f) => f.tag === 'new_writing').map((f) => ({ label: f.label, value: f.value })) }));
 }
 const out = (o, code = 0) => {
   // After a start, every J command says when the watcher is not running: it must be started again (SKILL.md).
@@ -264,10 +264,31 @@ const commands = {
   // The person's yes, recorded per job and exact sheet hash. Many at once: `--all` (every listed sheet) or `--no-new` (only
   // those with no new answer); or the keys they ticked.
   async approve(keys, flags) {
-    const st = loadState();
+    let st = loadState();
     let list = keys;
-    if (flags.all === true || flags['no-new'] === true) list = readySheets(st).filter((r) => flags.all === true || !r.newAnswers.length).map((r) => r.key);
+    // A fact the form needed and the profile lacked is answered in the approval itself: `--facts '{"name":"value"}'` saves it,
+    // completes the sheet, and the yes covers the completed sheet.
+    if (flags.facts !== undefined) {
+      if (keys.length !== 1) return out({ error: 'approve <key> --facts <json> takes one job' }, 2);
+      const given = readJsonArg(String(flags.facts));
+      const profile = readProfile();
+      const next = { ...profile, facts: { ...(profile.facts || {}), ...given } };
+      const bad = validateProfile(next);
+      if (bad.length) return out({ error: bad.join('; ') }, 2);
+      writeJsonAtomic(profileFile(), next);
+      const r = updateState((s) => {
+        const job = s.jobs[keys[0]];
+        if (!job || !job.questions) throw new Error('no prepared sheet for that job');
+        const sheet = buildSheet({ job, questions: job.questions, profile: next, answers: loadAnswers().entries, drafts: job.drafts || {} });
+        job.sheet = { ...sheet, passed: false };
+        return checkJobSheet(job, null, next);
+      });
+      if (!r.ok) return out({ error: `the sheet is still not complete: ${r.problems.join('; ')}` }, 4);
+      st = loadState();
+    }
+    if (flags.all === true || flags['no-new'] === true) list = readySheets(st).filter((r) => !r.missingFacts.length && (flags.all === true || !r.newAnswers.length)).map((r) => r.key);
     if (!list.length) return out({ error: 'approve <key...> | --all | --no-new (nothing to approve)' }, 2);
+    for (const k of list) if (!st.jobs[k] || !st.jobs[k].sheet || !st.jobs[k].sheet.passed) return out({ error: `${k} has no complete sheet yet: answer its missing facts (J ask approval <key>)` }, 4);
     return out({ ...applyOps(list.map((key) => ({ op: 'approve', key, sheetHash: st.jobs[key].sheet.hash }))), approved: list.length });
   },
 
@@ -479,17 +500,24 @@ const commands = {
     return out(r, r.ok ? 0 : 4);
   },
 
-  async report() {
+  // The default report is short: one count line, the jobs planned, and what needs the person now. `--all` is the full report.
+  // The full report is always saved to the reports folder.
+  async report(_, flags) {
     const s = loadState();
-    const text = renderReport(s, loadOverlay(), { since: s.lastReportAt, profile: readProfile() });
+    const all = flags.all === true;
+    const base = { since: s.lastReportAt, profile: readProfile() };
+    const full = renderReport(s, loadOverlay(), base);
+    const text = all ? full : renderReport(s, loadOverlay(), { ...base, short: true });
     const dir = ensureDir(path.join(stateDir(), 'reports'));
-    fs.appendFileSync(path.join(dir, `${new Date().toISOString().slice(0, 10)}.md`), `${text}\n\n`, { mode: 0o600 });
+    fs.appendFileSync(path.join(dir, `${new Date().toISOString().slice(0, 10)}.md`), `${full}\n\n`, { mode: 0o600 });
     updateState((st) => {
       st.lastReportAt = new Date().toISOString();
-      st.updateLines = [];
+      if (all) {
+        st.updateLines = [];
+        st.dropLines = [];
+        if ((st.found || []).length) st.watchTipShown = true;
+      }
       for (const c of st.consentLog || []) c.acked = true;
-      st.dropLines = [];
-      if ((st.found || []).length) st.watchTipShown = true;
     });
     process.stdout.write(text + '\n');
     // The reply ends with one line on what Tenjin adds. It is not part of the report file. No price.
@@ -640,9 +668,14 @@ const commands = {
   // The payload for Claude Code's question tool, so the questions are asked as choices, never as a list in prose.
   async ask([kind], flags) {
     const arg = flags.json ? readJsonArg(flags.json) : {};
+    if (kind === 'approval') {
+      const job = loadState().jobs[flags.key];
+      if (!job || !job.sheet) return out({ error: 'ask approval --key <job>: prepare its sheet first' }, 2);
+      return out(qs.approvalQuestions(job));
+    }
     if (kind === 'approve-pick') return out({ groups: qs.approvePickQuestions(readySheets(loadState())) });
     const make = { approve: () => qs.approveListQuestion(readySheets(loadState()).length), start: () => qs.startQuestions(), resume: () => qs.resumeChoiceQuestion(arg), tenjin: () => qs.tenjinAsk(arg), eeo: () => qs.eeoQuestion(), follow_up: () => qs.followUpQuestion(arg), contacts: () => qs.contactsCountQuestion(), 'optional-writing': () => qs.optionalWritingQuestion(), fact: () => qs.factQuestion(arg), yes: () => qs.sheetYesQuestion(arg), email: () => qs.emailBatchQuestion(em.addBatchPeek(loadState())), 'email-mode': () => qs.emailModeQuestion() }[kind];
-    if (!make) return out({ error: 'ask start | resume --json {header,question,guess,next} | tenjin --json {line,status} | eeo | optional-writing | fact --json {label,options} | yes --json {company,title} | email | email-mode | approve | approve-pick' }, 2);
+    if (!make) return out({ error: 'ask start | resume --json {header,question,guess,next} | tenjin --json {line,status} | eeo | optional-writing | fact --json {label,options} | yes --json {company,title} | email | email-mode | approve | approve-pick | approval --key <job>' }, 2);
     if (batch.isActive() && batch.batchMode() === 'unattended') return out({ error: 'no questions in an unattended turn: nobody can answer; hold the job and notify' }, 4);
     const p = make();
     const bad = qs.validateAsk(p);

@@ -193,6 +193,20 @@ export function inPeriodSet(state, job, profile, overlay, now = Date.now()) {
   return ranked.some((x) => x.key === job.key);
 }
 
+// The jobs the skill plans to apply to: an exact or confirmed employer posting, above the score floor if set, best fit first,
+// within this period's most (jobs already prepared or waiting for a yes count first; the rest of the room goes to reviewed
+// jobs by rank). No limit means every one that fits. These are prepared with no question and no shortlist step.
+const PLAN_STATES = ['reviewed', 'shortlisted', 'prepared', 'apply_ready'];
+export function plannedJobs(state, profile, overlay, now = Date.now()) {
+  const floor = (profile.unattended || {}).minScore;
+  const ok = (j) => j.employerPosting && ['exact', 'confirmed'].includes(j.employerPosting.confidence) && j.openConfirmed === true && !j.left && !(typeof floor === 'number' && !(typeof j.fit === 'number' && j.fit >= floor));
+  const all = Object.values(state.jobs).filter((j) => PLAN_STATES.includes(j.status) && ok(j)).sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1));
+  const limit = periodLimit(overlay, { profile, now });
+  if (limit === null) return all;
+  const started = all.filter((j) => j.status !== 'reviewed');
+  return [...started, ...all.filter((j) => j.status === 'reviewed').slice(0, Math.max(0, limit - started.length))];
+}
+
 // Where Tenjin would do better, and what it adds there. Code decides when; the model never does.
 export const HINT_LINES = {
   daily_search: 'With Tenjin I can also run the router\'s job-posting search and a live X search, on top of the free searches.',

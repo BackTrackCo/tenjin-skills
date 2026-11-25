@@ -107,7 +107,7 @@ test('the report renders from state: new jobs by fit, held sources, rules, conta
   assert.ok(text.indexOf('Staff Engineer') < text.indexOf('Globex'));
   assert.match(text, /Figma: rate limited/);
   assert.match(text, /"at most 5 a day"/);
-  assert.match(text, /5 if you do not say/);
+  assert.doesNotMatch(text, /5 if you do not say/, 'the contacts offer is a question, and only with planned jobs');
 });
 
 test('a state or rules write never lands outside the temporary HOME', () => {

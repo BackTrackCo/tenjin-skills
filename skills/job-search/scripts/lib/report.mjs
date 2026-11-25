@@ -1,4 +1,4 @@
-import { notifyLine, stillLeft, tenjinHint } from './work.mjs';
+import { notifyLine, plannedJobs, stillLeft, tenjinHint } from './work.mjs';
 import { dmLink, handleIn, mailto, pending as pendingEmails, emailState } from './email.mjs';
 
 export const REASONS = {
@@ -38,8 +38,65 @@ export function ruleText(r) {
 const REASON_WORDS = { new_job: 'new job', employer_page: 'employer page', search_due: 'search', post_review: 'post review', review_due: 'review', prepare_due: 'prepare', apply_ready: 'application', contacts_requested: 'contacts request', web_search_due: 'web search', need_due: 'search need', email_due: 'email batch' };
 export const itemWords = (reason, n) => { const w = REASON_WORDS[reason] || reason.replace(/_due$/, '').replace(/_/g, ' '); return `${n} ${w}${n > 1 ? 's' : ''}`; };
 
+export const CONTACTS_LINE = 'Contacts: I can find someone to write to for the jobs above (a hiring manager, team lead or founder); messages are drafts you send.';
+export const ALL_LINE = 'That is the short report. `J report --all`, or ask for the full report, shows everything else.';
+const placeOf = (j) => [j.city, j.region].filter(Boolean).join(', ') || (j.remote ? 'remote' : '');
+const PERSON_HELD = ['chrome_disconnected', 'no_chrome_tools', 'update_waiting', 'update_failed', 'stopped'];
+
+// The short report (the default): one count line, the jobs the skill plans to apply to, and only the questions and approvals
+// that need the person now. Everything else is behind `J report --all`.
+function renderShort(state, overlay, { since, now, profile }) {
+  const jobs = Object.values(state.jobs);
+  const L = [`# Job Search report, ${new Date(now).toISOString().slice(0, 10)}`, ''];
+  if (profile.search && profile.search.role) {
+    const sr = profile.search;
+    L.push(`Searched for ${sr.role}${sr.place ? ` in ${sr.place}${sr.remote ? ' and remote' : ''}` : sr.remote ? ', remote' : ''}.`, '');
+  }
+  const fresh = jobs.filter((j) => j.status === 'new' || j.status === 'reviewed').filter((j) => !since || Date.parse(j.firstSeen) >= Date.parse(since));
+  const planned = plannedJobs(state, profile, overlay, now);
+  const done = jobs.filter((j) => ['submitted', 'confirmed', 'interview', 'offer'].includes(j.status));
+  const mine = jobs.filter((j) => !j.employerPosting && j.unresolved && !['skipped', 'closed'].includes(j.status));
+  const best = [...new Set(mine.filter((j) => typeof j.fit === 'number').sort((a, b) => b.fit - a.fit).map((j) => j.company))].slice(0, 3);
+  const leads = (state.leads || []).filter((l) => l.status === 'new' && !l.joinedJob).length;
+  L.push(`${fresh.length} new job${fresh.length === 1 ? '' : 's'}; ${planned.length} planned to apply to${done.length ? `, ${done.length} submitted` : ''}; ${mine.length} for you to apply to yourself${best.length ? ` (best you can apply to yourself: ${best.join(', ')})` : ''}${leads ? `; ${leads} ${leads === 1 ? 'person' : 'people'} hiring` : ''}.`);
+  const stateOf = (j) => (j.status === 'apply_ready' ? (state.approvals[j.key] ? 'approved, applying next' : 'waiting for your yes') : j.status === 'prepared' ? (j.awaitingApproval ? 'prepared, needs your answers' : 'prepared') : 'being prepared');
+  if (planned.length || done.length) {
+    L.push('', `## Planned to apply to (${planned.length + done.length})`);
+    for (const j of planned) L.push(`- ${j.fit ?? '?'} | ${j.title}, ${j.company}${placeOf(j) ? `, ${placeOf(j)}` : ''}${j.salary ? ` | pay: ${j.salary}` : ''}${(j.warnings || []).length ? ` | warnings: ${j.warnings.join('; ')}` : ''} | ${stateOf(j)}`);
+    for (const j of done) L.push(`- ${j.fit ?? '?'} | ${j.title}, ${j.company} | ${j.status}`);
+  }
+  const readyYes = jobs.filter((j) => ((j.status === 'apply_ready' && j.sheet) || (j.status === 'prepared' && j.awaitingApproval)) && j.employerPosting && !state.approvals[j.key]).sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1));
+  if (readyYes.length) {
+    L.push('', `## Need your yes (${readyYes.length})`);
+    for (const j of readyYes) {
+      L.push(`- ${j.company}, ${j.title}${j.awaitingApproval ? `: also needs ${(j.missingFacts || []).map((f) => f.replace(/_/g, ' ')).join(', ')}` : ''}`);
+      for (const f of ((j.sheet && j.sheet.fields) || []).filter((x) => x.tag === 'new_writing')) L.push(`  - new answer, "${f.label}": ${String(f.value).replace(/\n/g, ' ')}`);
+    }
+  }
+  const filled = jobs.filter((j) => j.fillReady);
+  if (filled.length) { L.push('', `## Filled, waiting for your submit (${filled.length})`); for (const j of filled) L.push(`- ${j.title}, ${j.company}: the form is filled in an open tab. Check it, press submit, and tell me.`); }
+  const stuck = jobs.filter((j) => j.parked);
+  if (stuck.length) {
+    L.push('', '## Waiting on you');
+    for (const j of stuck) {
+      L.push(`- ${j.company}, ${j.title}: ${j.parked.reasons.join(', ')}`);
+      if (j.parked.reasons.includes('writing_needs_yes')) for (const f of ((j.sheet && j.sheet.fields) || []).filter((x) => x.tag === 'new_writing')) L.push(`  - draft for "${f.label}": ${String(f.value).replace(/\n/g, ' ')}`);
+    }
+  }
+  const held = state.held.filter((h) => PERSON_HELD.includes(h.reason));
+  if (held.length) { L.push('', '## Needs you'); for (const h of held) L.push(`- ${h.reason.replace(/_/g, ' ')}${h.detail ? `: ${h.detail}` : ''}`); }
+  const mail = pendingEmails(state);
+  if (mail.length) L.push('', `${mail.length} intro email draft${mail.length > 1 ? 's' : ''} wait${mail.length > 1 ? '' : 's'} for your yes (addresses the posters published; none goes without it).`);
+  const consent = (state.consentLog || []).filter((c) => !c.acked);
+  if (consent.length) { L.push('', '## Consent changes (check that each one was yours)'); for (const c of consent) L.push(`- ${c.at.slice(0, 16).replace('T', ' ')}: ${c.what}.`); }
+  if (planned.length) L.push('', CONTACTS_LINE);
+  L.push('', ALL_LINE);
+  return L.join('\n');
+}
+
 // The report is rendered from state and the overlay, never written by the model.
-export function renderReport(state, overlay, { since = null, now = Date.now(), profile = null } = {}) {
+export function renderReport(state, overlay, { since = null, now = Date.now(), profile = null, short = false } = {}) {
+  if (short) return renderShort(state, overlay, { since, now, profile: profile || {} });
   const jobs = Object.values(state.jobs);
   const fresh = jobs.filter((j) => j.status === 'new' || j.status === 'reviewed').filter((j) => !since || Date.parse(j.firstSeen) >= Date.parse(since));
   fresh.sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1));
@@ -178,7 +235,7 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
     }
   }
   if ((state.found || []).length && !state.watchTipShown) L.push('', 'Tip: you can paste a company\'s careers link and I will watch it directly.');
-  L.push('', 'Want contacts (a hiring manager, team lead or founder) for some of these? Say for how many jobs; 5 if you do not say. Messages are drafts; you send them.');
+  if (plannedJobs(state, profile || {}, overlay, now).length) L.push('', CONTACTS_LINE);
   return L.join('\n');
 }
 

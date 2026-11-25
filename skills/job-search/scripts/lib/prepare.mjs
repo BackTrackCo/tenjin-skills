@@ -2,7 +2,8 @@ import { applyOp, loadState, updateState } from './store.mjs';
 import { buildSheet, checkSheet, parseGreenhouseQuestions } from './sheet.mjs';
 import { loadAnswers } from './answers.mjs';
 import { guardedFetch } from './net.mjs';
-import { park, unpark } from './work.mjs';
+import { park, plannedJobs, unpark } from './work.mjs';
+import { loadOverlay } from './overlay.mjs';
 import { parseWritingResult } from './writing.mjs';
 
 // The sheet check, shared by `J sheet check` and the prepare step: a passing sheet moves a prepared job to apply_ready; a
@@ -19,11 +20,21 @@ export function checkJobSheet(job, live = null, profile = {}) {
   }
   job.sheet.passed = r.ok;
   if (r.ok) {
+    job.awaitingApproval = false;
     unpark(job);
     if (job.status === 'prepared') job.status = 'apply_ready';
   } else {
     const facts = job.sheet.unanswered.filter((u) => u.factKey).map((u) => u.factKey);
     job.missingFacts = [...new Set(facts)];
+    // Attended ("Ask me each time"): a missing fact is asked inside the approval itself, so the job is not parked: it waits
+    // prepared, and `J approve <key> --facts` saves the answers, completes the sheet and records the yes. An auto mode holds
+    // the job as needs_facts, as before.
+    const attended = !profile.applyMode || profile.applyMode === 'attended';
+    if (attended && facts.length && facts.length === job.sheet.unanswered.length && !job.sheet.eeoMissing && !job.sheet.forbidden.length) {
+      job.awaitingApproval = true;
+      unpark(job);
+      return r;
+    }
     park(job, [job.sheet.eeoMissing ? 'eeo_missing' : facts.length && facts.length === job.sheet.unanswered.length ? 'needs_facts' : job.sheet.unanswered.length ? 'unknown_field' : job.sheet.forbidden.length ? 'forbidden_field' : 'form_changed']);
   }
   return r;
@@ -55,6 +66,8 @@ export async function prepareInCode({ fetch, profile }) {
   return updateState((s) => {
     const out = { ready: [], needsWriting: [], waiting: [] };
     const answers = loadAnswers().entries;
+    // A job the skill plans to apply to is prepared with no question and no shortlist step.
+    for (const j of plannedJobs(s, profile, loadOverlay())) if (j.status === 'reviewed' && !j.parked) applyOp(s, { op: 'transition', key: j.key, to: 'shortlisted' });
     for (const j of Object.values(s.jobs)) {
       if (j.status !== 'shortlisted') continue;
       if (!j.questions && fetched[j.key]) j.questions = fetched[j.key];

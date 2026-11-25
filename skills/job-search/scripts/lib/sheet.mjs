@@ -12,6 +12,7 @@ const FACTS = [
   [/current company|current employer/, 'current_company'], [/city|location|where are you based/, 'location'],
   [/sponsorship|visa/, 'requires_sponsorship'], [/authori[sz]ed to work|work authori[sz]ation|legally authori/, 'authorized_to_work'],
   [/salary|compensation expectation/, 'salary_expectation'],
+  [/citizen/, 'us_citizen'], [/clearance/, 'security_clearance'],
 ];
 const PLACEHOLDER = /\[[^\]]*(path|insert|your|company|name|todo)[^\]]*\]|\bTODO\b|lorem ipsum|\{\{|<insert|\bXXX+\b|\[PATH TO/i;
 

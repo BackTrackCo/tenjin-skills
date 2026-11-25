@@ -95,7 +95,7 @@ test('a missing form fact holds only its job as needs_facts, names what is missi
   const other = mkJob({ key: 'https://boards.greenhouse.io/acme/jobs/61', status: 'prepared' });
   reset();
   store.updateState((s) => { s.jobs[j.key] = j; s.jobs[other.key] = other; });
-  runJobs(home, ['profile', 'set', JSON.stringify({ facts: { first_name: 'Ada' }, eeo: 'decline_all' })]);
+  runJobs(home, ['profile', 'set', JSON.stringify({ facts: { first_name: 'Ada' }, eeo: 'decline_all', applyMode: 'auto_no_new' })]); // an auto mode holds the job; attended asks in the approval
   const qf = path.join(home, 'qf.json');
   fs.writeFileSync(qf, JSON.stringify([{ label: 'First Name', required: true, type: 'input_text' }, { label: 'Phone', required: true, type: 'input_text' }, { label: 'Are you legally authorized to work in the US?', required: true, type: 'input_text' }]));
   runJobs(home, ['sheet', 'build', j.key, '--questions', qf]);
@@ -200,9 +200,9 @@ test('a removed company is never added again; one report tip says a careers link
   store.applyOps([{ op: 'transition', key: j.key, to: 'reviewed' }]);
   assert.deepEqual(store.loadState().found, [], 'not added again');
   store.updateState((s) => { s.found = [{ board: 'greenhouse:other', ats: 'greenhouse', token: 'other', region: 'us', name: 'Other', source: 'found', job: 'x', date: 'd', lastRoleJobAt: 'd' }]; });
-  const first = runJobs(home, ['report']).stdout;
+  const first = runJobs(home, ['report', '--all']).stdout;
   assert.match(first, /Tip: you can paste a company's careers link/);
-  assert.doesNotMatch(runJobs(home, ['report']).stdout, /Tip: you can paste/, 'said once');
+  assert.doesNotMatch(runJobs(home, ['report', '--all']).stdout, /Tip: you can paste/, 'said once');
   assert.equal(runJobs(home, ['watch', 'list']).json.removed.includes('greenhouse:figma'), true);
   // no question asks for watched companies
   const all = fs.readdirSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'references')).map((f) => fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'references', f), 'utf8')).join('\n');
