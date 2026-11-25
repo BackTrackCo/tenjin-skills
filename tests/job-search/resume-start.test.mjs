@@ -177,7 +177,7 @@ test('without Tenjin a LinkedIn link asks first, then is a hint moment with an e
   J('tenjin', 'ask-done', 'no');
   const r = await rs.setFromLink({ url: 'https://www.linkedin.com/in/pat', state: store.loadState(), fetchImpl: spy });
   assert.equal(r.read, false);
-  assert.match(r.hint.line, /LinkedIn profile link/);
+  assert.match(r.hint.line, /read your LinkedIn profile from this link/);
   assert.match(r.ask, /PDF export/);
   assert.equal(spy.calls.length, 0);
 });

@@ -185,13 +185,13 @@ test('J contacts route prints the reasons through the CLI', () => {
 
 test('the contacts question and the Tenjin ask cover the company lookup; no seller name appears', () => {
   const desc = JSON.stringify(qs.contactsCountQuestion());
-  assert.match(desc, /company lookup \(about 1\.2 cents\) for a job whose website is not known/);
-  assert.match(work.OFFER_LINES.contacts, /company looked up first/);
+  assert.match(desc, /company lookup \(about 1\.5¢\) for a job whose website is not known/);
+  assert.match(work.OFFER_LINES.contacts, /about 2\.7¢ when the company's website must be looked up first/);
   assert.equal(work.OFFER_LINES[work.NEED_LINES.company_lookup], work.OFFER_LINES.contacts);
   const graph = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'graph.json'), 'utf8'));
   assert.equal(graph.needTemplates.company_lookup, undefined, 'called by tool id, no need text');
   for (const kind of [...Object.keys(graph.needTemplates), 'company_lookup']) assert.ok(work.OFFER_LINES[work.NEED_LINES[kind]], kind);
-  assert.doesNotMatch(desc + work.tenjinOffer('contacts'), /orthogonal|icypeas|exa|agentsearch/i);
+  assert.doesNotMatch(desc + work.tenjinOffer('contacts'), /orthogonal|icypeas|agentsearch|companyenrich/i);
 });
 
 test('the company lookup request input has only keys from its spec', () => {

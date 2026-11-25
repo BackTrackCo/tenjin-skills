@@ -38,8 +38,8 @@ test('J search plan prints the ask in place of the free queries until the ask is
   const a = J('search', 'plan').json;
   assert.deepEqual([a.ask, a.moment], ['tenjin', 'daily_search']);
   assert.equal(a.queries, undefined, 'no free query is handed out before the ask');
-  assert.match(a.hint.line, /router's job-posting search/);
-  assert.equal(a.question.questions[0].options[0].label, 'Install Tenjin (Recommended)');
+  assert.match(a.hint.line, /^With Tenjin, each search round can also cover job postings from LinkedIn, Indeed and other job boards/);
+  assert.equal(a.question.questions[0].options[0].label, 'Set up Tenjin (Recommended)');
   assert.equal(J('search', 'plan').json.ask, 'tenjin', 'still due until answered');
   J('tenjin', 'ask-done', 'no');
   assert.equal(J('search', 'plan').json.queries.length, 5, 'Not now: the free search runs, and no second ask');
@@ -100,7 +100,7 @@ test('Tenjin outdated gets the same ask, naming the update', () => {
   reset({ status: 'outdated', version: '0.1.0-alpha.20' });
   const a = J('search', 'plan').json;
   assert.equal(a.ask, 'tenjin');
-  assert.match(a.hint.line, /Tenjin 0\.1\.0-alpha\.20 is out of date/);
+  assert.equal(a.hint.line, 'Your Tenjin (0.1.0-alpha.20) is out of date. Update it to turn these on again.');
   const l = work.askFirst(store.loadState(), 'linkedin_resume');
   assert.match(l.hint.line, /is out of date/);
 });
@@ -110,35 +110,69 @@ test('SKILL.md: run a free path only from what those commands printed', () => {
   assert.match(skill, /only from what `J search plan`, `J resume set --url` and `J work` printed/);
 });
 
-// ---- the ask lists everything --------------------------------------------------------------
-test('the ask lists every line: the moment\'s first, the cost line last, no writing line, no seller name', () => {
-  const L = work.OFFER_LINES;
-  for (const [moment, first] of [['daily_search', 'sources'], ['employer_posting', 'posting'], ['contacts', 'contacts'], ['linkedin_resume', 'linkedin']]) {
-    const t = work.tenjinOffer(moment, { tenjin: { status: 'missing' } });
-    const lines = t.split('\n');
-    assert.equal(lines[0], 'Tenjin adds:');
-    assert.equal(lines[1], `- ${L[first]}`, `${moment}: its own line first`);
-    for (const v of Object.values(L)) assert.ok(t.includes(v), `${moment}: ${v}`);
-    assert.equal(lines.at(-1), work.OFFER_COST);
-    assert.equal(work.OFFER_COST, 'Pay per use from a funded wallet, within your spending limits: an estimated few cents a day at the default pace.');
-    assert.doesNotMatch(t, /writ|Neon|exa|agentsearch|brave|rapidapi|openai/i, 'no writing line, no seller');
+// ---- the ask lists everything, with each price ---------------------------------------------------
+const graph = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'graph.json'), 'utf8'));
+const prices = await import('../../skills/job-search/scripts/lib/prices.mjs');
+const FIXTURE_FOR = { board_search: ['exa-search', 'step2'], job_postings: ['job-postings', 'step2'], x_hiring_posts: ['x-posts', 'step2'], careers_page: ['careers-page', 'step2'], people_search: ['people-search', 'step2'], company_lookup: ['company-lookup', 'step2'], linkedin_profile: ['linkedin-profile', 'step2'] };
+
+test('each price estimate equals its fixture\'s recorded cost plus 15%, rounded up to a tenth of a cent', () => {
+  assert.equal(graph.prices.checkedAt, '2026-11-25');
+  assert.equal(graph.prices.routingFeeShare, 0.15);
+  for (const [need, [name, key]] of Object.entries(FIXTURE_FOR)) {
+    const fx = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'fixtures', 'router', `${name}.json`), 'utf8'));
+    const cost = fx[key].envelope.cost[0];
+    const usd = Number(/([\d.]+) USD/.exec(cost)[1]);
+    const entry = graph.prices.needs[need];
+    assert.equal(entry.providerUsd, usd, `${need}: the recorded provider price`);
+    assert.equal(entry.estimateCents, Math.ceil(usd * 100 * 1.15 * 10 - 1e-9) / 10, `${need}: plus 15%, rounded up`);
+    assert.equal(prices.estimateCentsFromUsd(usd), entry.estimateCents, need);
   }
-  assert.match(L.background, /use none of your Claude usage and do not wake the session/);
 });
 
-test('every routed need in graph.json has a line in the ask', () => {
-  const g = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'graph.json'), 'utf8'));
-  for (const kind of [...Object.keys(g.needTemplates), 'web_search']) assert.ok(work.OFFER_LINES[work.NEED_LINES[kind]], `${kind} has a line`);
-});
-
-test('a hint is one line about its moment; the ask question carries the whole offer', () => {
+test('the hint lines are the approved copy, built from the prices; one line each, once; none for writing', () => {
+  assert.equal(work.HINT_LINES.daily_search, 'With Tenjin, each search round can also cover job postings from LinkedIn, Indeed and other job boards, and hiring posts on X, and search company job boards directly, without using your Claude usage. About 3¢ a round.');
+  assert.equal(work.HINT_LINES.employer_posting, 'With Tenjin, I can look up this company\'s careers page to find its own application page, for about 0.6¢.');
+  assert.equal(work.HINT_LINES.contacts, 'With Tenjin, I can search for a hiring manager or team lead for the jobs where I found nobody: about 1.2¢ a job, or about 2.7¢ when I first need to look up the company\'s website.');
+  assert.equal(work.HINT_LINES.linkedin_resume, 'With Tenjin, I can read your LinkedIn profile from this link, once, for about 2.3¢.');
+  assert.equal(work.tenjinHint({ tenjin: { status: 'outdated', version: '1.2.3' } }, 'contacts').line, 'Your Tenjin (1.2.3) is out of date. Update it to turn these on again.');
+  assert.equal(Object.keys(work.HINT_LINES).some((k) => /writ/i.test(k)), false, 'no writing line until the Neon switch');
   for (const m of ['daily_search', 'employer_posting', 'contacts', 'linkedin_resume']) {
     const h = work.tenjinHint({ tenjin: { status: 'missing' } }, m);
     assert.ok(!h.line.includes('\n') && h.line === work.HINT_LINES[m]);
-    assert.doesNotMatch(h.line, /few cents|Pay per use/);
+    assert.match(h.line, /\d(\.\d)?¢/, `${m}: names its price`);
   }
+});
+
+test('the ask is the approved copy word for word, the moment\'s line first, with the pace from the frequency', () => {
+  const LIST = `Set up Tenjin? It adds these to Job Search. You pay per use from a funded wallet, within your spending limits:
+- More job sources: postings from LinkedIn, Indeed and other job boards across the web, and hiring posts on X
+- A direct search of company job boards (Greenhouse, Lever, Ashby)
+  These two run in each search round, for about 3¢ a round.
+- The company's own application page for a job you saw on another site: about 0.6¢ a job
+- A hiring manager or team lead to contact when the free search finds nobody: about 1.2¢ a job, or about 2.7¢ when the company's website must be looked up first
+- Your LinkedIn profile link read as your resume: about 2.3¢, once
+- These searches run in the background, so they use none of your Claude usage
+`;
+  const tail = (pace) => `${pace}, plus any lookups and contact searches. Prices are estimates, checked on 2026-11-25.`;
+  const missing = { tenjin: { status: 'missing' } };
+  assert.equal(work.tenjinOffer('daily_search', missing), `${work.HINT_LINES.daily_search}\n\n${LIST}${tail('At one search round a day, that is about 3¢ a day')}`);
+  assert.equal(work.tenjinOffer('contacts', missing, 'twice_daily'), `${work.HINT_LINES.contacts}\n\n${LIST}${tail('At two search rounds a day, that is about 6¢ a day')}`);
+  assert.equal(work.tenjinOffer('linkedin_resume', missing, 'weekly'), `${work.HINT_LINES.linkedin_resume}\n\n${LIST}${tail('At one search round a week, that is about 3¢ a week')}`);
+  // out of date: the out-of-date line first, the list and the pace line unchanged
+  assert.equal(work.tenjinOffer('daily_search', { tenjin: { status: 'outdated', version: '0.9.0' } }), `Your Tenjin (0.9.0) is out of date. Update it to turn these on again.\n\n${LIST}${tail('At one search round a day, that is about 3¢ a day')}`);
+});
+
+test('every hint and offer line names its price, no seller name appears, and every routed need has a line', () => {
+  const o = work.OFFER_LINES;
+  for (const k of ['posting', 'contacts', 'linkedin']) assert.match(o[k], /\d(\.\d)?¢/, k);
+  const text = Object.values(work.HINT_LINES).join(' ') + work.tenjinOffer('daily_search', { tenjin: { status: 'missing' } });
+  assert.doesNotMatch(text, /orthogonal|icypeas|exa\b|agentsearch|brave|companyenrich|x402|apollo|blockrun/i);
+  assert.doesNotMatch(text, /Neon|writing/);
+  for (const kind of [...Object.keys(graph.needTemplates), 'web_search', 'company_lookup']) assert.ok(o[work.NEED_LINES[kind]], `${kind} has a line`);
+  for (const need of Object.keys(graph.prices.needs)) assert.ok(graph.prices.needs[need].estimateCents > 0, need);
   const a = work.askFirst({ tenjin: { status: 'missing' }, lease: null }, 'contacts');
-  const text = a.question.questions[0].question;
-  assert.ok(text.includes(work.OFFER_LINES.sources) && text.includes(work.OFFER_COST));
-  assert.doesNotMatch(JSON.stringify(a.question) + a.hint.line, /exa|agentsearch|brave/i);
+  assert.equal(a.question.questions[0].question, work.tenjinOffer('contacts', { tenjin: { status: 'missing' } }));
+  assert.deepEqual(a.question.questions[0].options.map((x) => x.label), ['Set up Tenjin (Recommended)', 'Not now']);
+  const f = work.askFirst({ tenjin: { status: 'unfunded' }, lease: null }, 'contacts');
+  assert.deepEqual(f.question.questions[0].options.map((x) => x.label), ['Add funds (Recommended)', 'Not now'], 'the funded-but-empty variant stays');
 });

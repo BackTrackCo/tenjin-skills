@@ -4,6 +4,8 @@
 // The tool adds its own free-text answer; no question or option text names it. A choice is only for a question whose options
 // usually hold the answer: a typed answer (a place, a phone, pay, an address, a name) is a plain question, `{plain}`, with the
 // guess in its text. Never in an unattended turn: nobody can answer there.
+import { graph } from './graph.mjs';
+import { fmt } from './prices.mjs';
 const q = (header, question, options, multiSelect = false) => ({ header, question, multiSelect, options });
 
 // Options that need Claude in Chrome get a note when it is off in this session (`J chrome set off`), and the question says so
@@ -89,15 +91,16 @@ export function resumeChoiceQuestion({ header, question, guess, next, source = '
 
 export function tenjinAsk({ line, status }) {
   const funded = status === 'unfunded';
-  return { questions: [q('Tenjin', `${line} ${funded ? 'Add funds to Tenjin?' : 'Install Tenjin and add funds?'}`, [
-    { label: `${funded ? 'Add funds' : 'Install Tenjin'} (Recommended)`, description: funded ? 'Runs Tenjin\'s own funding step; you pick the amount there.' : 'Follows the install flow at tenjin.sh, which asks its own spending questions and funding step.' },
+  // The offer text itself asks "Set up Tenjin?"; the funded-but-empty variant keeps its own question.
+  return { questions: [q('Tenjin', funded ? `${line} Add funds to Tenjin?` : line, [
+    { label: `${funded ? 'Add funds' : 'Set up Tenjin'} (Recommended)`, description: funded ? 'Runs Tenjin\'s own funding step; you pick the amount there.' : 'Follows the install flow at tenjin.sh, which asks its own spending questions and funding step.' },
     { label: 'Not now', description: 'Everything free keeps working. I will mention it again but ask at most once per session.' },
   ])] };
 }
 
 // Asked the first time the person asks for contacts. No answer means 5; the answer is kept as the contact_count rule.
 export function contactsCountQuestion() {
-  const cost = 'The free ways are a Haiku step; the router\'s people search runs in code at the router\'s price for each job the free ways left without a contact, plus a company lookup (about 1.2 cents) for a job whose website is not known.';
+  const cost = `The free ways are a Haiku step; the router\'s people search runs in code at the router\'s price for each job the free ways left without a contact, plus a company lookup (about ${fmt(graph().prices.needs.company_lookup.estimateCents)}) for a job whose website is not known.`;
   return { questions: [q('Contacts', 'For how many jobs should I find someone to write to?', [
     { label: '5 jobs (Recommended)', description: `The 5 best-fitting jobs. ${cost}` },
     { label: '10 jobs', description: `The 10 best-fitting jobs, about twice the work and router price. ${cost}` },

@@ -27,7 +27,7 @@ test('code computes the hint at its moments from the Tenjin state; nothing stops
     s.tenjin.status = status;
     const i = search();
     assert.equal(i.routed, false);
-    assert.match(i.hint.line, /router's job-posting search and a live X search/);
+    assert.match(i.hint.line, /^With Tenjin, each search round can also cover job postings from LinkedIn, Indeed/);
     assert.equal(i.hint.moment, 'daily_search');
     assert.equal(i.askTenjin, true);
   }
@@ -39,7 +39,7 @@ test('code computes the hint at its moments from the Tenjin state; nothing stops
   assert.equal(ready.routed, true);
   assert.equal(ready.askTenjin, false);
   assert.equal(work.tenjinHint({ tenjin: { status: 'missing' } }, 'writing'), null, 'no writing hint in this round');
-  for (const m of ['employer_posting', 'contacts']) assert.ok(work.tenjinHint({ tenjin: { status: 'missing' } }, m).line.startsWith('With Tenjin I can'), m);
+  for (const m of ['employer_posting', 'contacts']) assert.ok(work.tenjinHint({ tenjin: { status: 'missing' } }, m).line.startsWith('With Tenjin, I can'), m);
 });
 
 test('the ask: at most once per session, a recorded no with its date, only a mention in an unattended run', () => {
@@ -74,7 +74,7 @@ test('the report mentions the hint for a job with no employer posting', () => {
   s.tenjin.status = 'missing';
   const j = mkJob({ employerPosting: null, openConfirmed: false, unresolved: 'no_board', applyLinks: ['https://x.test/1'] });
   s.jobs[j.key] = j;
-  assert.match(report.renderReport(s, empty, { now: NOW }), /With Tenjin I can look up this employer's careers page/);
+  assert.match(report.renderReport(s, empty, { now: NOW }), /With Tenjin, I can look up this company's careers page/);
   s.tenjin.status = 'ready';
   assert.doesNotMatch(report.renderReport(s, empty, { now: NOW }), /With Tenjin I can/);
 });
