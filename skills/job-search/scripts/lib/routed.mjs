@@ -129,7 +129,9 @@ export async function routeContacts({ keys, profile, fetch, client = new RouterC
   // 1. the company lookup, for the jobs whose website no field gives
   const lookups = want.filter((n) => !n.fields.website).map((n) => {
     const j = loadState().jobs[n.jobKey];
-    return { kind: 'company_lookup', text: fill('company_lookup', { company: j.company, url: j.url || '', where: j.city ? `, in ${j.city}` : '' }), fields: { jobKey: n.jobKey, company: j.company, url: j.url || '', city: j.city || '' }, query: null, jobKey: n.jobKey };
+    // Called by catalog tool id; the input is the name, and the company's LinkedIn page only when the job record has it. The board link
+    // and the city are not inputs: they stay code context for the domain check.
+    return { kind: 'company_lookup', tool: 'companyenrich-properties', text: null, fields: { jobKey: n.jobKey, company: j.company, linkedinUrl: j.companyLinkedinUrl || j.companyLinkedin || null }, query: null, jobKey: n.jobKey };
   });
   // One `tenjin mcp` process for the lookups and the people search (the search needs the lookup's answer first); closed after.
   try {

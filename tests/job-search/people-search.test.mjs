@@ -71,9 +71,9 @@ test('with Tenjin: a free spec, the company lookup run, the domain checked and s
   const j = store.loadState().jobs[job(11).key];
   assert.deepEqual([j.employerWebsite, j.employerWebsiteSource], ['https://www.acmerobotics.test', 'company_lookup']);
   const calls = f.log().filter((l) => l.call).map((l) => l.call);
-  assert.match(calls[0].query, /^a company, found by name or link: Acme Robotics/, 'the first call is the free spec');
+  assert.deepEqual(calls[0], { tool: 'companyenrich-properties' }, 'the first call is the free spec, by catalog tool id');
   assert.equal(calls[1].id, FX.company.step1.json.id);
-  assert.deepEqual(calls[1].input, { name: 'Acme Robotics', url: job(11).url, location: 'New York' });
+  assert.deepEqual(calls[1].input, { name: 'Acme Robotics' }, 'only the name: the board link and the city are code context');
   assert.deepEqual(calls[3].input.query.currentCompanyWebsite, { include: ['acmerobotics.test'] }, 'the people search then filters by the domain');
   assert.equal(log.find((l) => l.status === 'company_lookup').website, 'https://www.acmerobotics.test');
   assert.equal(log.at(-1).searchedBy, 'website');
@@ -143,7 +143,21 @@ test('the contacts question and the Tenjin ask cover the company lookup; no sell
   assert.match(work.OFFER_LINES.contacts, /company looked up first/);
   assert.equal(work.OFFER_LINES[work.NEED_LINES.company_lookup], work.OFFER_LINES.contacts);
   const graph = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'graph.json'), 'utf8'));
-  assert.ok(graph.needTemplates.company_lookup);
-  for (const kind of Object.keys(graph.needTemplates)) assert.ok(work.OFFER_LINES[work.NEED_LINES[kind]], kind);
+  assert.equal(graph.needTemplates.company_lookup, undefined, 'called by tool id, no need text');
+  for (const kind of [...Object.keys(graph.needTemplates), 'company_lookup']) assert.ok(work.OFFER_LINES[work.NEED_LINES[kind]], kind);
   assert.doesNotMatch(desc + work.tenjinOffer('contacts'), /orthogonal|icypeas|exa|agentsearch/i);
+});
+
+test('the company lookup request input has only keys from its spec', () => {
+  const allowed = ['name', 'linkedinUrl', 'linkedinId', 'twitterUrl', 'facebookUrl', 'instagramUrl', 'youTubeUrl'];
+  assert.deepEqual(cl.INPUTS, allowed);
+  for (const fields of [{ company: 'Acme' }, { company: 'Acme', linkedinUrl: 'https://www.linkedin.com/company/acme' }, { company: 'Acme', url: 'https://boards.example/x', city: 'New York' }, { linkedinUrl: 'https://www.linkedin.com/company/acme' }]) {
+    const input = cl.mapper(fields);
+    assert.ok(Object.keys(input).every((k) => allowed.includes(k)), JSON.stringify(input));
+    assert.ok(Object.values(input).every((v) => typeof v === 'string'));
+  }
+  assert.deepEqual(cl.mapper({ company: 'Acme', url: 'u', city: 'c' }), { name: 'Acme' }, 'no url, no location');
+  assert.equal(cl.TOOL, 'companyenrich-properties');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'fixtures', 'router', 'company-lookup.json'), 'utf8'))._note.startsWith('HAND-MADE'), true);
+  assert.throws(() => cl.mapper({}), /no company name/);
 });
