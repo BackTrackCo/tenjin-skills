@@ -196,6 +196,15 @@ export function emailModeQuestion() {
 // `path` is 'ask' when the job is on LinkedIn and on an employer site and the person chose "Ask me each job": the choice joins
 // the approval call, and a LinkedIn pick means the person applies there (the skill never opens LinkedIn).
 export function approvalQuestions(job, path = 'employer', { chromeOff = false } = {}) {
+  // A filled form waiting for the person (`fill_ready`): the person may be on the phone, so the notice offers "Submit it now",
+  // checked by `J may-submit` on the unchanged sheet hash, next to "I'll submit in Chrome" and "Not this one".
+  if (job.fillReady) {
+    return { application: (job.sheet.fields || []).map((f) => `${f.label}: ${f.tag === 'upload' ? 'your resume' : f.value} (${f.tag.replace('_', ' ')})`), questions: [chromeQ('Submit', `${job.title} at ${job.company} is filled and waiting. Submit it now?`, [
+      { label: 'Submit it now (Recommended)', description: 'Records your yes for this exact sheet; the form is checked once more and then submitted, filled again first if the tab was closed.' },
+      { label: 'I\'ll submit in Chrome', description: 'Nothing is submitted; you press submit in the open tab and tell me.' },
+      { label: 'Not this one', description: 'Skip this job.' },
+    ], { chromeOff, needs: ['Submit it now'] })], plain: [], next: 'record with J approve <key> --submit-now; say the state line it prints as given' };
+  }
   const sheet = job.sheet || { fields: [], unanswered: [] };
   const application = [
     ...(sheet.fields || []).map((f) => `${f.label}: ${f.tag === 'upload' ? 'your resume' : f.value} (${f.tag.replace('_', ' ')})`),
@@ -219,15 +228,16 @@ export function approvalQuestions(job, path = 'employer', { chromeOff = false } 
   // A fact question never shares a call with the approval that follows it: the sheet the approval shows must be complete.
   const facts = [];
   const plainFacts = [];
-  for (const u of (sheet.unanswered || []).filter((x) => x.factKey)) {
+  for (const u of (sheet.unanswered || []).filter((x) => x.factKey || x.ack || x.live)) {
     const form = (job.questions || []).find((x) => x.label === u.label) || {};
-    const options = (form.options || []).filter(Boolean);
-    const fq = factQuestion({ label: u.label, options });
-    if (fq.questions) facts.push({ ...fq.questions[0], fact: u.factKey });
-    else plainFacts.push({ label: u.label, fact: u.factKey, plain: fq.plain });
+    const options = (form.options || u.options || []).filter(Boolean);
+    // A legal acknowledgment (and the fill-only attestation) is its own yes, asked here with the job's other questions, before the fill.
+    const fq = u.ack ? acknowledgeQuestion({ company: job.company, text: u.label }) : factQuestion({ label: u.label, options });
+    if (fq.questions) facts.push({ ...fq.questions[0], fact: u.factKey || null, ack: u.ack ? u.label : undefined });
+    else plainFacts.push({ label: u.label, fact: u.factKey || null, plain: fq.plain });
   }
   if (facts.length || plainFacts.length) {
-    return { application, step: 'facts first', questions: facts.slice(0, 4), plain: plainFacts, then: 'J ask approval --key <job> again once every fact is saved (J approve <key> --facts <json> saves choices; J fact set <name> <value> saves a plain answer)', next: 'show the application, ask the fact questions in their own call; the approval comes after, with the completed sheet' };
+    return { application, step: 'facts first', questions: facts.slice(0, 4), plain: plainFacts, then: 'J ask approval --key <job> again once every fact is saved (J approve <key> --facts <json> saves choices; J fact set <name> <value> saves a plain answer; J agree <key> <label> records a yes to an acknowledgment)', next: 'show the application, ask the fact questions in their own call; the approval comes after, with the completed sheet' };
   }
   return { application, questions: asks, plain: [], next: 'show the application, then ask this one call; record with J approve <key> [--fill-only|--via employer|linkedin]; say the state line it prints as given' };
 }

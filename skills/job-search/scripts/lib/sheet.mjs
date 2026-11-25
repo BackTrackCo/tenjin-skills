@@ -16,6 +16,12 @@ const FACTS = [
 ];
 const PLACEHOLDER = /\[[^\]]*(path|insert|your|company|name|todo)[^\]]*\]|\bTODO\b|lorem ipsum|\{\{|<insert|\bXXX+\b|\[PATH TO/i;
 
+// A legal acknowledgment (an arbitration agreement, a privacy notice, terms) always needs the person's own yes. An attestation ("I
+// confirm the information is accurate") is covered by the approval in the submit modes; in the fill-only mode, which has no
+// per-job yes, it is asked with the acknowledgments, because the person may submit later, or from the phone, without rereading.
+const LEGAL = /\b(arbitration|privacy (notice|policy|statement)|terms (of (use|service)|and conditions)|data (processing|protection)|i (agree|accept|consent|acknowledge)|consent to|acknowledg)/i;
+const ATTEST = /\b(i (confirm|certify|attest|declare|affirm)|accurate and complete|true and (correct|complete)|information (provided |given )?is (true|accurate))/i;
+export const ackKind = (label) => (LEGAL.test(label) ? 'legal' : ATTEST.test(label) ? 'attest' : null);
 export const factKeyFor = (label) => { const hit = FACTS.find(([re]) => re.test(normLabel(label))); return hit ? hit[1] : null; };
 export const isForbiddenLabel = (label) => FORBIDDEN.test(label);
 export const isEeoLabel = (label) => EEO.test(label);
@@ -48,7 +54,7 @@ export function checkDraft(text, { limit = null, profile = {} } = {}) {
   return problems;
 }
 
-export const TAGS = ['fact', 'upload', 'answer', 'record', 'new_writing'];
+export const TAGS = ['fact', 'upload', 'answer', 'record', 'ack', 'new_writing'];
 
 // Every field carries one source tag:
 //   fact: a profile value (the EEO choice and a select option chosen from a fact included)
@@ -121,6 +127,16 @@ export function buildSheet({ job, questions, profile, answers = [], drafts = {} 
     if (q.type === 'input_file' && /resume|cv/.test(nl)) {
       value = '<resume>';
       tag = 'upload';
+    } else if (ackKind(q.label) && /check|boolean|bool/i.test(q.type || 'checkbox')) {
+      const kind = ackKind(q.label);
+      const needsAsk = kind === 'legal' || profile.applyMode === 'fill_only';
+      if (!needsAsk || (job.acks || {})[nl]) {
+        value = 'checked';
+        tag = 'ack';
+      } else {
+        unanswered.push({ label: q.label, why: kind === 'legal' ? 'a legal acknowledgment needs the person\'s own yes' : 'the attestation is asked in fill-only', ack: kind });
+        continue;
+      }
     } else if (EEO.test(q.label)) {
       const e = profile.eeo;
       // A per-field answer is reused only for the same option text; a field with no answer, or an answer the form no longer
@@ -193,10 +209,40 @@ export function checkSheet(sheet, live = null) {
 // Before submit: the values read back from the page must equal the sheet.
 export function checkReadBack(sheet, read) {
   const problems = [];
+  const fields = [];
   const by = new Map(read.map((r) => [normLabel(r.label), String(r.value ?? '').trim()]));
   for (const f of sheet.fields) {
     if (f.value === '<resume>') continue;
-    if (by.get(normLabel(f.label)) !== String(f.value).trim()) problems.push(`read-back differs: ${f.label}`);
+    const got = by.get(normLabel(f.label));
+    if (got !== String(f.value).trim() && !(f.tag === 'ack' && /^(true|checked|yes|on)$/i.test(got || ''))) { problems.push(`read-back differs: ${f.label}`); fields.push({ label: f.label, value: got === undefined ? null : got }); }
   }
-  return { ok: problems.length === 0, problems };
+  return { ok: problems.length === 0, problems, fields };
+}
+
+// A complete sheet before any fill: every required field on the live form must have an answer on the sheet. A required field the
+// sheet lacks is added to `unanswered` (a legal acknowledgment, and in fill-only the attestation, as `ack`; anything else as `live`);
+// an attestation in a submit mode is covered by the approval, so the sheet gets a ticked field for it. Returns the labels added.
+export function completeFromLive(job, live, profile = {}) {
+  const sheet = job.sheet;
+  const known = new Set(sheet.fields.map((f) => normLabel(f.label)));
+  const asked = new Set((sheet.unanswered || []).map((u) => normLabel(u.label)));
+  const added = [];
+  let changed = false;
+  for (const f of live || []) {
+    const nl = normLabel(f.label);
+    if (!f.required || known.has(nl) || asked.has(nl) || FORBIDDEN.test(f.label)) continue;
+    const kind = /check|bool/i.test(f.type || 'checkbox') ? ackKind(f.label) : null;
+    if (kind && (job.acks || {})[nl]) {
+      sheet.fields.push({ label: f.label, value: 'checked', tag: 'ack', required: true });
+      changed = true;
+    } else if (kind === 'attest' && profile.applyMode !== 'fill_only') {
+      sheet.fields.push({ label: f.label, value: 'checked', tag: 'ack', required: true });
+      changed = true;
+    } else {
+      sheet.unanswered.push(kind ? { label: f.label, why: 'needs the person\'s own yes', ack: kind, live: true } : { label: f.label, why: 'required on the live form with no answer on the sheet', live: true, options: f.options || [] });
+      added.push(f.label);
+    }
+  }
+  if (changed) sheet.hash = sha(canonical({ job: job.key, fields: sheet.fields.map((f) => [f.label, f.value]) })).slice(0, 16);
+  return added;
 }

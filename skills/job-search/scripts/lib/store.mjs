@@ -168,6 +168,7 @@ export function applyOp(state, op) {
       bump(job);
       job.statusAt = op.at || new Date().toISOString();
       if (op.to === 'reviewed') addFoundBoard(state, job, job.statusAt);
+      if (op.to === 'submitted') { job.fillReady = null; job.submitNow = null; job.inFlight = null; }
       if (op.to === 'skipped') job.skipReason = String(op.reason || 'no reason given').slice(0, 160);
       if (op.to === 'submitted') {
         state.applications.push({ key: job.key, companyKey: companyTitleKey(job), at: job.statusAt });

@@ -23,7 +23,8 @@ import { applyNext, applyPathOf, inFlight, confirmDryRun, recordConsent, recordD
 import { addAnswer, approveWriting, loadAnswers } from './lib/answers.mjs';
 import * as batch from './lib/batch.mjs';
 import { hintState, defaultRun, findTenjin } from './lib/tenjin.mjs';
-import { buildSheet, checkReadBack, checkSheet, parseGreenhouseQuestions } from './lib/sheet.mjs';
+import { buildSheet, checkReadBack, checkSheet, completeFromLive, parseGreenhouseQuestions } from './lib/sheet.mjs';
+import { normLabel as normLabelFn } from './lib/store.mjs';
 import { buildContactMessageRequest, buildIntroRequest, buildLeadIntroRequest, buildWritingRequest, parseIntroResult, parseWritingResult, readWritingRules } from './lib/writing.mjs';
 import { firstApplicationHosts, renderReport } from './lib/report.mjs';
 import { CHROME_STEPS, maySubmit, stateLine } from './lib/approval.mjs';
@@ -235,18 +236,42 @@ const commands = {
     }
     if (sub === 'check') {
       const live = flags.live ? readJsonArg(flags.live) : null;
+      const unattendedTurn = flags.unattended === true || (batch.isActive() && batch.batchMode() === 'unattended');
       const res = updateState((s) => {
         const job = s.jobs[key];
         if (!job || !job.sheet) throw new Error('build the sheet first');
-        const r = checkJobSheet(job, live, profile);
+        // A complete sheet before any fill: every required field on the live form has an answer on the sheet (facts, profile, records,
+        // saved answers, the resume or drafted writing). One without is asked in the session first, and the job waits as needs_facts
+        // with no fill; in a turn the watcher wakes nobody is asked: the job holds with one notification. The person may be on the
+        // phone and cannot fill anything in Chrome.
+        const missing = completeFromLive(job, live, profile);
+        const open = new Set((job.sheet.unanswered || []).map((u) => normLabelFn(u.label)));
+        const r = checkJobSheet(job, live ? live.filter((f) => !open.has(normLabelFn(f.label))) : live, profile);
+        if (!r.ok && (job.sheet.unanswered || []).some((u) => u.live || u.ack)) {
+          // needs_facts, never a fill; an unattended turn is never asked
+          park(job, ['needs_facts']);
+          job.awaitingApproval = false;
+          const asks = unattendedTurn ? null : qs.approvalQuestions(job, 'employer', { chromeOff: s.chrome === 'off' });
+          return { ...r, held: 'needs_facts', ...(asks ? { ask: asks, next: 'ask these first, save the answers (J answer add, J agree), rebuild the sheet from the live form (J sheet build <key> --questions <live file>) and check it again; nothing is filled before the sheet is complete' } : { next: 'nobody is asked in this turn: the job holds with one notification' }) };
+        }
         return r;
       });
       return out(res, res.ok ? 0 : 4);
     }
     if (sub === 'readback') {
       const job = loadState().jobs[key];
+      // The read-back compares the form's own values (read_page or the form state), never a screenshot alone. A field that does not
+      // confirm is filled again once; if it still fails the job holds as fill_problem and the session shows the field and its value.
       const r = checkReadBack(job.sheet, readJsonArg(flags.read));
-      return out(r, r.ok ? 0 : 4);
+      return out(updateState((s) => {
+        const j = s.jobs[key];
+        if (r.ok) { j.readbackTries = 0; return r; }
+        j.readbackTries = (j.readbackTries || 0) + 1;
+        if (j.readbackTries < 2) return { ...r, refill: r.fields, next: 'fill those fields again once, then read the form\'s values back again' };
+        j.readbackTries = 0;
+        park(j, ['fill_problem']);
+        return { ...r, held: 'fill_problem', show: r.fields, next: 'the job holds as fill_problem with one notification: show the person each field and the value the form has' };
+      }), r.ok ? 0 : 4);
     }
     return out({ error: 'sheet build <key> --questions f | check <key> [--live f] | readback <key> --read f' }, 2);
   },
@@ -330,6 +355,14 @@ const commands = {
     if (!list.length) return out({ error: 'every listed job waits for its where choice (J ask approval --key <job>)' }, 4);
     for (const k of list) if (!st.jobs[k] || !st.jobs[k].sheet || !st.jobs[k].sheet.passed) return out({ error: `${k} has no complete sheet yet: answer its missing facts (J ask approval <key>)` }, 4);
     const res = applyOps(list.map((key) => ({ op: 'approve', key, sheetHash: st.jobs[key].sheet.hash })));
+    // "Submit it now" on a filled form: the yes for the unchanged sheet hash lifts fill-only for that job; `J may-submit` checks it and
+    // the browser subagent presses submit, filling again first (in one pass) when the tab was closed or the form lost its values.
+    if (flags['submit-now'] === true) {
+      for (const k of list) if (!st.jobs[k] || !st.jobs[k].fillReady) return out({ error: `${k} is not filled and waiting` }, 4);
+      updateState((s) => { for (const k of list) { s.approvals[k] = { sheetHash: s.jobs[k].sheet.hash, at: new Date().toISOString() }; s.jobs[k].submitNow = { sheetHash: s.jobs[k].sheet.hash, at: new Date().toISOString() }; s.jobs[k].fillOnly = false; bump(s.jobs[k]); } });
+      const fin = loadState();
+      return out({ submitNow: list.length, state: `Submitted: none yet. Submitting after one last check: ${[...new Set(list.map((k) => fin.jobs[k].company))].join(', ')}.${fin.chrome === 'off' ? ` Waiting: Claude in Chrome is off in this session. ${CHROME_STEPS}` : ''}`, next: 'start the browser subagent with J apply next --all (fromFilled): it runs J may-submit, then presses submit, or fills again and submits when the tab is gone' });
+    }
     // "Fill it, I submit": the yes for that sheet hash, with fill-only on for these jobs only (the existing fill-only path).
     if (flags['fill-only'] === true) updateState((s) => { for (const k of list) { s.jobs[k].fillOnly = true; bump(s.jobs[k]); } });
     const fin = loadState();
@@ -749,6 +782,17 @@ const commands = {
       if (!s.jobs[key]) throw new Error(`unknown job: ${key}`);
       s.jobs[key].fillOnly = onoff !== 'off';
       return { fillOnly: s.jobs[key].fillOnly };
+    }));
+  },
+  // The person's own yes to a form's legal acknowledgment (or, in fill-only, its attestation): the fill ticks it.
+  async agree([key, ...label]) {
+    if (!key || !label.length) return out({ error: 'agree <key> <the acknowledgment\'s label>' }, 2);
+    return out(updateState((s) => {
+      const job = s.jobs[key];
+      if (!job) throw new Error(`unknown job: ${key}`);
+      (job.acks ||= {})[normLabelFn(label.join(' '))] = new Date().toISOString();
+      bump(job);
+      return { acknowledged: label.join(' '), next: `rebuild and check the sheet against the live form: J sheet build ${key} --questions <live file>, then J sheet check ${key} --live <file>` };
     }));
   },
   async fill([sub, key]) {

@@ -3,6 +3,8 @@ import { companyTitleKey } from './store.mjs';
 // Kept as a small separate path, so it is easy to remove. The person chooses it per job (`fillonly <key> on`)
 // or with a `fill_only` rule: value true for every job, or a company name.
 export function isFillOnly(job, overlay, profile = {}) {
+  // "Submit it now" on a filled form (an approval from J ask approval) lifts fill-only for that job, for that exact sheet hash.
+  if (job.submitNow && job.sheet && job.submitNow.sheetHash === job.sheet.hash) return false;
   if (job.fillOnly || profile.applyMode === 'fill_only') return true;
   for (const r of (overlay && overlay.rules) || []) {
     if (r.effect !== 'fill_only') continue;

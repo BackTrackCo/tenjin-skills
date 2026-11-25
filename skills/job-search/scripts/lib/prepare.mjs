@@ -24,7 +24,7 @@ export function checkJobSheet(job, live = null, profile = {}) {
     unpark(job);
     if (job.status === 'prepared') job.status = 'apply_ready';
   } else {
-    const facts = job.sheet.unanswered.filter((u) => u.factKey).map((u) => u.factKey);
+    const facts = job.sheet.unanswered.filter((u) => u.factKey || u.ack).map((u) => u.factKey || `ack:${u.ack}`);
     job.missingFacts = [...new Set(facts)];
     // Attended ("Ask me each time"): a missing fact is asked inside the approval itself, so the job is not parked: it waits
     // prepared, and `J approve <key> --facts` saves the answers, completes the sheet and records the yes. An auto mode holds
@@ -42,7 +42,7 @@ export function checkJobSheet(job, live = null, profile = {}) {
 
 // Required free-text questions that no fact, earlier answer or draft covers: the only work a writer is for. A fact the
 // profile lacks is a question to the person; a draft that failed its checks stops the job.
-export const writableFields = (sheet) => (sheet.unanswered || []).filter((u) => !u.factKey && !/^draft failed/.test(u.why));
+export const writableFields = (sheet) => (sheet.unanswered || []).filter((u) => !u.factKey && !u.ack && !u.live && !/^draft failed/.test(u.why));
 
 const questionsUrl = (job) => {
   const ep = job.employerPosting;

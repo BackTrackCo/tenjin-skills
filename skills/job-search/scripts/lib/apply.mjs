@@ -160,7 +160,7 @@ export function applyNext(ctx) {
   }
   const hostLast = new Set(activeLessons(overlay, now).filter((l) => l.effect === 'host_last').map((l) => l.subject));
   const cands = Object.values(state.jobs)
-    .filter((j) => ['prepared', 'apply_ready'].includes(j.status) && !j.fillReady)
+    .filter((j) => ['prepared', 'apply_ready'].includes(j.status) && (!j.fillReady || j.submitNow))
     .sort((a, b) => Number(hostLast.has(a.ats)) - Number(hostLast.has(b.ats)));
   const busy = new Set(cands.filter((j) => inFlight(j, now) && j.employerPosting).map((j) => hostOf(j.employerPosting.url)));
   const handouts = [];
@@ -178,7 +178,7 @@ export function applyNext(ctx) {
     }
     const skipFields = mode === 'unattended' && !writingOk && state.consent.unattended.optionalWriting === 'skip' ? (job.sheet.fields || []).filter((f) => f.tag === 'new_writing' && !f.required).map((f) => f.label) : [];
     const fillOnly = isFillOnly(job, overlay, profile);
-    handouts.push({ key: job.key, url: job.employerPosting.url, host, sheetHash: job.sheet.hash, mode, dryRun: dry, fillOnly, submit: !dry && !fillOnly, skipFields });
+    handouts.push({ key: job.key, url: job.employerPosting.url, host, sheetHash: job.sheet.hash, mode, dryRun: dry, fillOnly, submit: !dry && !fillOnly, skipFields, ...(job.submitNow ? { fromFilled: true } : {}) });
     busy.add(host);
     if (!all || handouts.length >= room) break;
   }

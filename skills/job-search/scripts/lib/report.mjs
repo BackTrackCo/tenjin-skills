@@ -74,7 +74,7 @@ function renderShort(state, overlay, { since, now, profile }) {
     }
   }
   const filled = jobs.filter((j) => j.fillReady);
-  if (filled.length) { L.push('', `## Filled, waiting for your submit (${filled.length})`); for (const j of filled) L.push(`- ${j.title}, ${j.company}: the form is filled in an open tab. Check it, press submit, and tell me.`); }
+  if (filled.length) { L.push('', `## Filled, waiting for your submit (${filled.length})`); for (const j of filled) L.push(`- ${j.title}, ${j.company}: the form is filled in an open tab. Press submit in Chrome and tell me, or say "Submit it now" and I submit it.`); }
   const stuck = jobs.filter((j) => j.parked);
   if (stuck.length) {
     L.push('', '## Waiting on you');
@@ -174,7 +174,7 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
   }
   const filled = jobs.filter((j) => j.fillReady);
   L.push('', `## Filled, waiting for your submit (${filled.length})`);
-  for (const j of filled) L.push(`- ${j.title}, ${j.company}: the form is filled in an open tab. Check it, press submit, and tell me.`);
+  for (const j of filled) L.push(`- ${j.title}, ${j.company}: the form is filled in an open tab. Press submit in Chrome and tell me, or say "Submit it now" and I submit it.`);
   const held = state.held.filter((h) => h.reason === 'source_empty');
   L.push('', '## Sources held this run');
   if (held.length) for (const h of held) L.push(`- ${h.detail}`);
