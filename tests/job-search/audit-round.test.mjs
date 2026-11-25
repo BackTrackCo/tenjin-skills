@@ -61,7 +61,8 @@ test('routed needs run one by one: a need with an unknown supplier becomes one H
   const wl = work.buildWorkList(s, empty, NOW, prof);
   const item = wl.items.find((i) => i.reason === 'need_due');
   assert.equal(item.key, 'need:x_hiring_posts');
-  assert.ok(wl.items.some((i) => i.reason === 'web_search_due'), 'the native web search is the other item');
+  assert.ok(!wl.items.some((i) => i.reason === 'web_search_due'), 'with Tenjin the web search is never a model item');
+  assert.ok(s.held.some((h) => h.detail.startsWith('routed:web_search: native')), 'a native answer holds the need for the round, named in the report');
   // the item closes with its outcome command, and a left one comes back at the next period
   assert.equal(runJobs(home, ['search', 'done', 'x_hiring_posts']).code, 0);
   assert.equal(store.loadState().search.needPending.length, 0);
@@ -93,17 +94,30 @@ test('a notify-only wake comes at most once per round, only for a changed waitin
   assert.deepEqual(await tick(NOW + 4000), []);
 });
 
-test('after "Not now" to Remote Control there is no notify-only wake; the line rides the next actionable wake', async () => {
-  reset([waiting(1)], { sweep: { lastAt: '2026-11-24T07:00:00Z' }, start: { remoteControl: 'later' } });
+test('after a push that came back "not sent" there is no notify-only wake until the person\'s next turn; the line rides the next actionable wake', async () => {
+  reset([waiting(1)], { sweep: { lastAt: '2026-11-24T07:00:00Z' } });
   await arm();
-  assert.deepEqual(await tick(NOW + 1000), [], 'no wake for the line alone');
-  store.updateState((s) => { s.sweep.lastAt = '2026-11-25T07:00:00Z'; });
-  assert.deepEqual(await tick(NOW + 2000), [], 'not after a later round either');
+  assert.equal((await tick(NOW + 1000)).length, 1, 'the first notify-only wake');
+  assert.equal(runJobs(home, ['notify', 'result', 'not_sent']).code, 0);
+  store.updateState((s) => { const j = waiting(2); s.jobs[j.key] = j; s.sweep.lastAt = '2026-11-25T07:00:00Z'; });
+  assert.deepEqual(await tick(NOW + 2000), [], 'no more notify-only wakes after "not sent"');
+  runJobs(home, ['report']);
+  assert.equal(store.loadState().watcher.notifyResult, null, 'the person\'s next turn lifts the stop');
+  runJobs(home, ['notify', 'result', 'not_sent']);
   store.updateState((s) => { const j = noPosting(5); s.jobs[j.key] = j; });
   const wake = await tick(NOW + 3000);
   assert.equal(wake.length, 1);
-  assert.match(wake[0], /1 employer_page; notify: 1 application wait/, 'the line rides an actionable wake');
-  assert.deepEqual(await tick(NOW + 4000), [], 'never sent twice');
+  assert.match(wake[0], /1 employer_page; notify: 2 applications wait/, 'the line rides an actionable wake');
+});
+
+test('an answer that cannot tell sent from not sent allows notify-only wakes only for items that block work', async () => {
+  reset([waiting(1)], { sweep: { lastAt: '2026-11-24T07:00:00Z' }, watcher: { sent: [], fingerprint: null, notify: null, notifyResult: 'unknown' } });
+  await arm();
+  assert.deepEqual(await tick(NOW + 1000), [], 'a count of sheets waiting for a yes is not a blocker');
+  store.updateState((s) => { s.sweep.lastAt = '2026-11-25T07:00:00Z'; s.held.push({ reason: 'chrome_disconnected', detail: 'Acme' }); });
+  const l = await tick(NOW + 2000);
+  assert.equal(l.length, 1);
+  assert.match(l[0], /needs you: chrome disconnected/);
 });
 
 test('an actionable wake carries the line in the same round, and the same due set is never sent twice', async () => {

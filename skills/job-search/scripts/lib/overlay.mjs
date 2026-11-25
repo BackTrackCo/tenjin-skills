@@ -24,7 +24,11 @@ export function addRule({ effect, value = null, words, date }) {
   if (!graph().ruleEffects.includes(effect)) throw new Error(`rule effect not in the vocabulary: ${effect}`);
   if (!words || !String(words).trim()) throw new Error('a rule keeps the words the person said');
   if (effect === 'contact_count' && !(value === 'all' || (Number.isInteger(Number(value)) && Number(value) > 0))) throw new Error('contact_count is a whole number of jobs, or "all"');
-  if (effect === 'period_max' && !(value === 'none' || (Number.isInteger(Number(value)) && Number(value) > 0))) throw new Error('period_max is a whole number of positions, or "none" for no limit');
+  if (effect === 'period_max') {
+    const whole = (n) => Number.isInteger(Number(n)) && Number(n) > 0;
+    const ok = value === 'none' || whole(value) || (value && typeof value === 'object' && (value.catchUp === undefined || value.catchUp === null || whole(value.catchUp)) && (value.perDay === 'none' || whole(value.perDay)));
+    if (!ok) throw new Error('period_max is a whole number of positions, "none" for no limit, or {catchUp, perDay}');
+  }
   return mutate((o) => {
     const rule = { id: `r${Date.now().toString(36)}${o.rules.length}`, effect, value, words: String(words), date: date || new Date().toISOString().slice(0, 10) };
     o.rules.push(rule);

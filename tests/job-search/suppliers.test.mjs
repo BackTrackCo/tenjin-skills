@@ -168,7 +168,7 @@ test('people: total 0 is a normal empty answer; a person found is a likely conta
 });
 
 // ---- the web search stays a model step ------------------------------------------------------
-test('web search: a native answer keeps it a model step, with no hold and nothing paid', async () => {
+test('web search: a native answer holds the need for the round, with no model step and nothing paid', async () => {
   const f = fake({ answers: [sp('web-search')] });
   const [r] = await router.runRound([needOf('web_search', { role: 'software engineer', place: 'New York' })], { client: client(f) });
   assert.equal(r.native, true);
@@ -184,9 +184,9 @@ test('web search: a native answer keeps it a model step, with no hold and nothin
   assert.ok(log.some((l) => l.need === 'job_postings' && l.ok));
   assert.ok(log.some((l) => l.need === 'x_hiring_posts' && l.ok));
   const s = store.loadState();
-  assert.equal(s.held.some((h) => h.detail.includes('web_search')), false, 'native is not a hold');
-  assert.ok(s.search.webPending, 'a web_search_due item is left for the model');
+  assert.equal(s.held.some((h) => h.detail.startsWith('routed:web_search: native')), true, 'native holds the need for the round, with a report line');
+  assert.equal(s.search.webPending, null, 'never a model step with Tenjin');
   const wl = (await import('../../skills/job-search/scripts/lib/work.mjs')).buildWorkList(s, empty, NOW, prof);
-  assert.ok(wl.items.some((i) => i.reason === 'web_search_due'));
+  assert.ok(!wl.items.some((i) => i.reason === 'web_search_due'));
   assert.equal(routed.allNeedsCovered(), true, 'the watcher can run the rounds: the searches that can run in code have adapters');
 });

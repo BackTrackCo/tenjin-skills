@@ -84,14 +84,17 @@ export async function tick(ctx) {
   // One wake per round, at its end. While code is still reading (Hacker News in chunks) the round is open: nothing is sent,
   // and the fingerprint stays as it was, so the same items wake the model when the round ends. A notify line rides an
   // actionable wake. A wake for the line alone comes at most once per round, only for a changed waiting set, and never
-  // after "Not now" to Remote Control at the start: then the line waits for the next wake and the report.
+  // after a push that came back "not sent" (until the person's next turn): then the line waits for the next wake and the report.
   const s1 = loadState();
   const mark = `${s1.sweep.lastAt || ''}|${(s1.routed || {}).lastSearchAt || ''}|${(s1.hn || {}).lastAt || ''}`;
-  const notRemote = ((s1.start || {}).remoteControl || '') === 'later';
   const wsNow = waitingSet(s1);
   const wsPrev = st.waiting || {};
   const gained = Object.keys(wsNow).some((k) => wsPrev[k] !== wsNow[k]); // a set that only shrinks changes nothing
-  const notifyOnly = !fresh.length && newNotify && gained && !notRemote && (st.notifyMark || null) !== mark;
+  // The push's own answer decides (J notify result): "not sent" stops notify-only wakes until the person's next turn; an
+  // answer that cannot tell leaves them only for items that block work (a stop, a held item, a consent to give).
+  const res = st.notifyResult || null;
+  const blocking = Object.keys(wsNow).some((k) => wsPrev[k] !== wsNow[k] && /^(park|held|consent):/.test(k));
+  const notifyOnly = !fresh.length && newNotify && gained && res !== 'not_sent' && (res !== 'unknown' || blocking) && (st.notifyMark || null) !== mark;
   if (hnPending) return { lines, stop: false };
   if (fresh.length || notifyOnly) {
     const counts = {};
@@ -101,7 +104,7 @@ export async function tick(ctx) {
   }
   const sent = newNotify && (fresh.length || notifyOnly);
   updateState((state) => {
-    state.watcher = { sent: tokens, fingerprint: tokens.join('|'), notify: wl.notify ? (sent ? wl.notify : st.notify || null) : null, notifyMark: sent ? mark : st.notifyMark || null, waiting: sent || !gained || !newNotify ? wsNow : wsPrev };
+    state.watcher = { ...(state.watcher || {}), sent: tokens, fingerprint: tokens.join('|'), notify: wl.notify ? (sent ? wl.notify : st.notify || null) : null, notifyMark: sent ? mark : st.notifyMark || null, waiting: sent || !gained || !newNotify ? wsNow : wsPrev };
   });
   return { lines, stop: false };
 }

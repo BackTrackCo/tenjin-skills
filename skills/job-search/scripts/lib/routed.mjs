@@ -9,8 +9,8 @@ import { advanceSearch, searchRound, variantFor } from './work.mjs';
 // With Tenjin, a search round runs in code, with no model step before review: the needs go to the router one at a time
 // (router.mjs), each result is ingested, and the same rule as the model-run rounds decides whether the next role-word
 // variant is worth a round. A search that is held (any status but fulfilled, no adapter, a timeout) is named in the
-// report; nothing is retried. The web search is answered `native` by the router, so it stays a model step: after each
-// round code leaves a `web_search_due` item for it, with no hold reason shown to the person.
+// report; nothing is retried. The web search is a routed need too, phrased as an API for a script; a `native`
+// answer or a missing mapper holds it for the round with a report line, never a model step.
 const fill = (kind, f) => graph().needTemplates[kind].replace(/\{(\w+)\}/g, (_, k) => (f[k] === undefined ? '' : String(f[k])));
 export const needText = (kind, q) => fill(kind, { ...q, role: q.variant || q.role, place: q.place || 'any place' });
 
@@ -20,8 +20,8 @@ export function roundNeeds(profile, state, now, round) {
   const days = Math.max(1, Math.ceil((now - since.getTime()) / 86400000));
   const base = { role: profile.search.role, place: profile.search.place || '', remote: profile.search.remote === true, since: since.toISOString().slice(0, 10), variant: variantFor(profile, round), round };
   const searchNeeds = SEARCH_KINDS.map((kind) => ({ kind, text: needText(kind, { ...base, days }), fields: { ...base, days: Math.min(days, 14), role: base.variant || base.role }, query: base }));
-  // The web search is asked once per round; the router answers `native` and the model step keeps it.
-  const web = { kind: 'web_search', text: needText('web_search', base), fields: base, query: base };
+  // The web search is one routed need per round (phrased as an API for a script, so the router does not answer native).
+  const web = { kind: 'web_search', text: needText('web_search', base), fields: { ...base, role: base.variant || base.role }, query: base };
   return [...searchNeeds, web];
 }
 
@@ -48,7 +48,6 @@ export function jobNeeds(state, profile, overlay, { kinds = ['careers_page', 'pe
 export const allNeedsCovered = () => SEARCH_KINDS.every((k) => SUPPLIERS.some((s) => s.kind === k));
 
 const hold = (r, now, { clock = true } = {}) => updateState((s) => {
-  if (r.native) return; // a native answer is not a hold: that need stays a model step
   s.held = [...s.held.filter((h) => !String(h.detail).startsWith(`routed:${r.need}:`)), { reason: 'source_empty', detail: `routed:${r.need}: ${r.status}: ${r.reason}` }];
   if (clock) s.routed.lastSearchAt = new Date(now).toISOString();
   if (r.status === 'wallet_unavailable') s.routed.skipReason = 'wallet_unavailable: run the searches in an attended turn';
@@ -69,7 +68,7 @@ export async function routedRounds({ profile, fetch, client = new RouterClient()
     const round = searchRound(state, profile, now);
     if (round === null) break;
     const all = [...roundNeeds(profile, state, now, round), ...(i === 0 ? jobNeeds(state, profile, loadOverlay(), { kinds: ['careers_page'] }) : [])];
-    const needs = all.filter((n) => n.kind === 'web_search' || covered(n.kind));
+    const needs = all.filter((n) => covered(n.kind));
     for (const n of all) if (!needs.includes(n)) {
       leaveForModel(n, round, now);
       log.push({ round, need: n.kind, ok: false, status: 'model' });
@@ -91,12 +90,21 @@ export async function routedRounds({ profile, fetch, client = new RouterClient()
         log.push({ round, need: need.kind, ok: false, status: r.status });
       }
     }
-    // the web search stays a model step: one item per round, until the model records it as done
-    updateState((s) => { s.search.webPending = { round, at: new Date(now).toISOString() }; s.routed.lastSearchAt = s.routed.lastSearchAt || new Date(now).toISOString(); });
+    // With Tenjin the web search is a routed need like the others: a native answer or a missing mapper holds it for the round, with a report line, and never becomes a model step.
+    updateState((s) => { s.routed.lastSearchAt = s.routed.lastSearchAt || new Date(now).toISOString(); });
     const next = updateState((s) => (s.search.session ? advanceSearch(s, profile) : { done: true }));
     if (next.done) break;
   }
   return log;
+}
+
+// A LinkedIn profile link the person gave as their resume: one routed need, read once, saved as resume.txt with the raw
+// result next to it. Any status but fulfilled asks for a PDF export or the text. The skill never opens linkedin.com.
+export async function readLinkedIn({ url, client = new RouterClient() }) {
+  const need = { kind: 'linkedin_profile', text: fill('linkedin_profile', { url }), fields: { url }, query: { url } };
+  const [r] = await runRound([need], { client });
+  if (!r.ok) return { ok: false, status: r.status, reason: r.reason };
+  return { ok: true, text: r.ingest.text, cost: r.cost };
 }
 
 // The router's people search for the jobs asked, in code. Held, never retried; the free ways stay a Haiku step.

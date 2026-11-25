@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { graph } from './graph.mjs';
 import { duplicateWithin, sha } from './dedupe.mjs';
 import { isFillOnly } from './fillonly.mjs';
@@ -11,10 +12,23 @@ const HOUR = 3600000;
 
 // ---- unattended consent -------------------------------------------------
 // The positions rule: a number, or no limit. The person's words and date are kept with the rule.
-export function periodLimit(overlay) {
+// The rule is a number (the daily number), 'none', or {catchUp, perDay, at}: a first-run catch-up, then a daily number. The
+// catch-up applies once, to the period the rule was recorded in, and is not carried over. The daily number is split across
+// a twice-a-day period (the first takes the odd one: 9 gives 5 and 4) and counts 7 days' worth for a weekly one. A most,
+// not a target.
+export function periodLimit(overlay, { profile = {}, now = Date.now(), ignoreCatchUp = false } = {}) {
   const v = ruleValue(overlay, 'period_max');
   if (v === undefined || v === 'none' || v === null) return null;
-  return Number(v);
+  if (typeof v !== 'object') return Number(v); // the older rule: a number per period
+  const freq = frequencyOf(profile);
+  const obj = v;
+  const at = obj.at ? Date.parse(obj.at) : NaN;
+  if (!ignoreCatchUp && Number.isInteger(obj.catchUp) && !Number.isNaN(at) && periodStart(now, freq) === periodStart(at, freq)) return obj.catchUp;
+  if (obj.perDay === 'none' || obj.perDay === undefined || obj.perDay === null) return null;
+  const day = Number(obj.perDay);
+  if (freq === 'weekly') return day * 7;
+  if (freq === 'twice_daily') return new Date(now).getHours() < 12 ? Math.ceil(day / 2) : Math.floor(day / 2);
+  return day;
 }
 
 export function unattendedProblems(profile) {
@@ -61,7 +75,7 @@ export function revokeConsent(state, which) {
 
 export function limitsOf(overlay) {
   const fill = (overlay.rules || []).filter((r) => r.effect === 'fill_only').map((r) => (r.value === true || r.value === 'all' ? '*' : String(r.value).toLowerCase()));
-  return { periodMax: periodLimit(overlay), fillOnly: [...new Set(fill)] };
+  return { periodMax: periodLimit(overlay, { ignoreCatchUp: true }), fillOnly: [...new Set(fill)] };
 }
 // True when the current limits are looser than the ones the consent was given under.
 export function loosened(was, now) {
@@ -131,7 +145,7 @@ export function applyNext(ctx) {
   }
   // Positions per period: how many applications an unattended run makes in one period. The rest stay ranked in the
   // queue for the next period and none is dropped. No rule, or "none", means no limit.
-  const limit = periodLimit(overlay);
+  const limit = periodLimit(overlay, { profile, now });
   if (mode === 'unattended' && limit !== null) {
     const start = periodStart(now, frequencyOf(profile));
     const done = (state.handouts || []).filter((h) => h.counted && Date.parse(h.at) >= start).length;
@@ -166,6 +180,8 @@ export function jobFailure({ job, state, profile, overlay, mode, now, writingOk 
   if (!job.verifiedAt || now - Date.parse(job.verifiedAt) > graph().unattendedWindow.verifiedHours * HOUR) return 'not_verified_recently';
   if (!job.sheet || !job.sheet.passed) return 'sheet_not_checked';
   if (job.sheet.eeoMissing || !profile.eeo) return 'eeo_missing';
+  // A resume given as text only has no file: a form that requires one holds this job, which asks once for the file.
+  if ((job.sheet.fields || []).some((f) => f.tag === 'upload') && profile.resumeSource && !(profile.resumePath && fs.existsSync(profile.resumePath))) return 'needs_resume_file';
   if (duplicateWithin(state, job, now, graph().unattendedWindow.duplicateDays)) return 'applied_to_company_title_within_90_days';
   if (state.applications.some((a) => a.key === job.key)) return 'already_applied';
   if (mode === 'attended') {

@@ -12,6 +12,7 @@ import { LEAVE_REASONS, ITEM_LEAVE_REASONS, advanceSearch, itemKind, leaveItem, 
 import { applyRoundDrafts, checkJobSheet, prepareInCode, writableFields } from './lib/prepare.mjs';
 import { logRun } from './lib/runlog.mjs';
 import * as em from './lib/email.mjs';
+import * as rs from './lib/resume.mjs';
 import { buildRoundRequest, parseRoundResult } from './lib/writing.mjs';
 import { webPlan } from './lib/websearch.mjs';
 import { claimLease } from './lib/lease.mjs';
@@ -35,6 +36,10 @@ import { resumeHeld } from './lib/held.mjs';
 import { DEFAULT_BUDGET_MS, runHn } from './lib/hn.mjs';
 import { isFillOnly, markFillReady, markSubmitted } from './lib/fillonly.mjs';
 
+// The sheets waiting for the person's yes, best fit first: the report lists them one line each.
+export function readySheets(st) {
+  return Object.values(st.jobs).filter((j) => j.status === 'apply_ready' && j.sheet && j.employerPosting && !st.approvals[j.key]).sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1)).map((j) => ({ key: j.key, company: j.company, title: j.title, fitLine: j.fitLine || '', newAnswers: (j.sheet.fields || []).filter((f) => f.tag === 'new_writing').map((f) => ({ label: f.label, value: f.value })) }));
+}
 const out = (o, code = 0) => {
   process.stdout.write(JSON.stringify(o, null, 2) + '\n');
   process.exitCode = code;
@@ -241,8 +246,14 @@ const commands = {
     return out({ ...res, batchClosed }, res.handout ? 0 : 4);
   },
 
-  async approve([key]) {
-    return out(applyOps([{ op: 'approve', key, sheetHash: loadState().jobs[key].sheet.hash }]));
+  // The person's yes, recorded per job and exact sheet hash. Many at once: `--all` (every listed sheet) or `--no-new` (only
+  // those with no new answer); or the keys they ticked.
+  async approve(keys, flags) {
+    const st = loadState();
+    let list = keys;
+    if (flags.all === true || flags['no-new'] === true) list = readySheets(st).filter((r) => flags.all === true || !r.newAnswers.length).map((r) => r.key);
+    if (!list.length) return out({ error: 'approve <key...> | --all | --no-new (nothing to approve)' }, 2);
+    return out({ ...applyOps(list.map((key) => ({ op: 'approve', key, sheetHash: st.jobs[key].sheet.hash }))), approved: list.length });
   },
 
   // Consent is recorded or revoked only by the person's yes, in an attended session. Recording is refused while a batch is open.
@@ -571,36 +582,46 @@ const commands = {
     return out(updateState((s) => advanceSearch(s, profile)));
   },
 
-  // The start: the resume path, then one question-tool call (apply mode, search frequency, positions, Remote Control).
+  // The start: the resume (a file, a link or the text), then one question-tool call (apply mode, search frequency,
+  // positions), then the `/rc` reminder line. Remote Control is not a question.
   async start([sub], flags) {
     const profile = readProfile();
     const st = loadState();
     if (sub === 'status' || !sub) {
       const missing = [];
-      if (!profile.resumeText) missing.push('resume');
-      if (!profile.applyMode || !profile.frequency || !(st.start && st.start.positionsAt) || !(st.start && st.start.rcOfferedAt)) missing.push('start_questions');
-      return out({ missing, next: missing[0] === 'resume' ? 'ask the resume path as a plain question' : missing.length ? 'J ask start, then J start record' : 'run the free search and the report', start: st.start || null });
+      if (!profile.resumeText && !profile.resumePath) missing.push('resume');
+      if (!profile.applyMode || !profile.frequency || !(st.start && st.start.positionsAt)) missing.push('start_questions');
+      return out({ missing, next: missing[0] === 'resume' ? 'ask for the resume as a plain question: a file, a link or the text' : missing.length ? 'J ask start, then J start record' : 'run the free search and the report', start: st.start || null });
     }
-    if (sub !== 'record') return out({ error: 'start status | record --mode m --frequency f --positions n|none|skip --remote-control now|later [--words text]' }, 2);
+    if (sub !== 'record') return out({ error: 'start status | record --mode m --frequency f --catch-up n --per-day n|none (or --positions n|none|skip) [--words text]' }, 2);
     if (!['attended', 'auto_no_new', 'auto_write'].includes(flags.mode || 'attended')) return out({ error: 'mode must be attended, auto_no_new or auto_write' }, 2);
     if (flags.frequency && !FREQUENCIES.includes(flags.frequency)) return out({ error: 'frequency must be daily, twice_daily or weekly' }, 2);
     const mode = flags.mode || 'attended';
     const frequency = flags.frequency || 'daily';
-    const positions = flags.positions === undefined || flags.positions === true || flags.positions === 'skip' ? 'skip' : String(flags.positions);
-    // No answer to the count means no limit: nothing is recorded.
-    if (positions !== 'skip') addRule({ effect: 'period_max', value: positions === 'none' ? 'none' : coerce(positions), words: String(flags.words || `positions per period: ${positions}`) });
+    // No answer to the count means no limit: nothing is recorded. A catch-up and a daily number are one rule.
+    let positions = 'skip';
+    if (flags['per-day'] !== undefined || flags['catch-up'] !== undefined) {
+      const perDay = flags['per-day'] === undefined ? 'none' : coerce(flags['per-day']);
+      const catchUp = flags['catch-up'] === undefined ? null : coerce(flags['catch-up']);
+      positions = `${catchUp === null ? '' : `${catchUp} now, `}${perDay === 'none' ? 'no daily limit' : `${perDay} daily`}`;
+      addRule({ effect: 'period_max', value: { catchUp, perDay, at: new Date().toISOString() }, words: String(flags.words || `positions: ${positions}`) });
+    } else if (flags.positions !== undefined && flags.positions !== true && flags.positions !== 'skip') {
+      positions = String(flags.positions);
+      addRule({ effect: 'period_max', value: positions === 'none' ? 'none' : coerce(positions), words: String(flags.words || `positions per period: ${positions}`) });
+    }
     writeJsonAtomic(profileFile(), { ...profile, applyMode: mode, frequency, frequencySource: 'person' });
     const now = new Date().toISOString();
     updateState((s) => {
-      s.start = { ...(s.start || {}), modeAt: now, frequencyAt: now, positionsAt: now, rcOfferedAt: now, remoteControl: flags['remote-control'] === 'now' ? 'now' : 'later' };
+      s.start = { ...(s.start || {}), modeAt: now, frequencyAt: now, positionsAt: now };
     });
-    return out({ recorded: { mode, frequency, positions }, note: mode === 'attended' ? 'attended is the default; nothing more to record' : 'an auto mode also needs the unattended rules shown back, a clear yes, then consent record (and consent record writing for auto_write)' });
+    return out({ recorded: { mode, frequency, positions }, reminder: qs.RC_REMINDER, note: mode === 'attended' ? 'attended is the default; nothing more to record' : 'an auto mode also needs the unattended rules shown back, a clear yes, then consent record (and consent record writing for Fully auto apply)' });
   },
   // The payload for Claude Code's question tool, so the questions are asked as choices, never as a list in prose.
   async ask([kind], flags) {
     const arg = flags.json ? readJsonArg(flags.json) : {};
-    const make = { start: () => qs.startQuestions(), resume: () => qs.resumeChoiceQuestion(arg), tenjin: () => qs.tenjinAsk(arg), eeo: () => qs.eeoQuestion(), follow_up: () => qs.followUpQuestion(arg), contacts: () => qs.contactsCountQuestion(), 'optional-writing': () => qs.optionalWritingQuestion(), fact: () => qs.factQuestion(arg), yes: () => qs.sheetYesQuestion(arg), email: () => qs.emailBatchQuestion(em.addBatchPeek(loadState())), 'email-mode': () => qs.emailModeQuestion() }[kind];
-    if (!make) return out({ error: 'ask start | resume --json {header,question,guess,next} | tenjin --json {line,status} | eeo | optional-writing | fact --json {label,options} | yes --json {company,title} | email | email-mode' }, 2);
+    if (kind === 'approve-pick') return out({ groups: qs.approvePickQuestions(readySheets(loadState())) });
+    const make = { approve: () => qs.approveListQuestion(readySheets(loadState()).length), start: () => qs.startQuestions(), resume: () => qs.resumeChoiceQuestion(arg), tenjin: () => qs.tenjinAsk(arg), eeo: () => qs.eeoQuestion(), follow_up: () => qs.followUpQuestion(arg), contacts: () => qs.contactsCountQuestion(), 'optional-writing': () => qs.optionalWritingQuestion(), fact: () => qs.factQuestion(arg), yes: () => qs.sheetYesQuestion(arg), email: () => qs.emailBatchQuestion(em.addBatchPeek(loadState())), 'email-mode': () => qs.emailModeQuestion() }[kind];
+    if (!make) return out({ error: 'ask start | resume --json {header,question,guess,next} | tenjin --json {line,status} | eeo | optional-writing | fact --json {label,options} | yes --json {company,title} | email | email-mode | approve | approve-pick' }, 2);
     if (batch.isActive() && batch.batchMode() === 'unattended') return out({ error: 'no questions in an unattended turn: nobody can answer; hold the job and notify' }, 4);
     const p = make();
     const bad = qs.validateAsk(p);
@@ -749,6 +770,37 @@ const commands = {
     return out({ error: 'email batch | mode ask | connector send|drafts|none | approve <id...> | next [--unattended] | sent <id> [message id]' }, 2);
   },
 
+  // The resume, in any form: a file, a link or the text. Read once; a link is not read again unless a new one is given.
+  async resume([sub], flags) {
+    if (sub !== 'set') return out({ error: 'resume set --file <path> | --url <link> | --text (the text on standard input, or --text "...")' }, 2);
+    const profile = readProfile();
+    let r;
+    if (flags.file) r = rs.setFile(String(flags.file));
+    else if (flags.url) r = await rs.setFromLink({ url: String(flags.url), state: loadState() });
+    else if (flags.text !== undefined) {
+      const text = flags.text === true ? fs.readFileSync(0, 'utf8') : String(flags.text);
+      r = { read: true, ...rs.setText(text, { source: profile.resumeNeedsText ? profile.resumeSource || 'file' : 'text' }) };
+      if (profile.resumeNeedsText) r.keepFile = true;
+    } else return out({ error: 'resume set --file <path> | --url <link> | --text' }, 2);
+    if (r.ask === true) r = { ...r, ask: r.why };
+    if (r.ask || r.read === false) return out({ read: false, ...r });
+    ensureDir(stateDir());
+    const next = { ...profile, resumeSource: r.source, resumeText: r.resumeText !== undefined ? r.resumeText : r.keepFile ? profile.resumeText : undefined, resumeNeedsText: Boolean(r.needsText) };
+    if (r.resumePath) next.resumePath = r.resumePath;
+    else if (!r.keepFile) delete next.resumePath;
+    if (r.url) next.resumeUrl = r.url;
+    else if (!r.keepFile) delete next.resumeUrl;
+    writeJsonAtomic(profileFile(), next);
+    return out({ read: true, source: next.resumeSource, saved: r.resumeTextFile || r.resumePath || null, needsText: next.resumeNeedsText, next: next.resumeNeedsText ? 'read the file with your file reader, then save its text: J resume set --text' : 'read role, role words, place and remote from the resume' });
+  },
+
+  async notify([sub, result]) {
+    // The model records each push's answer. A "not sent" notify-only push stops further notify-only wakes until the person's
+    // next turn; an answer that cannot tell sent from not sent allows them only for items that block work.
+    if (sub !== 'result' || !['sent', 'not_sent', 'unknown'].includes(result)) return out({ error: 'notify result sent|not_sent|unknown' }, 2);
+    return out(updateState((s) => { const w = (s.watcher ||= {}); w.notifyResult = result; w.notifyAt = new Date().toISOString(); return { recorded: result }; }));
+  },
+
   async gates(_, flags) {
     const h = gatesHash();
     if (flags.write) {
@@ -793,6 +845,8 @@ async function main() {
   if (batch.isBatchDenied(cmd, pos[0]) && batch.isActive()) return out({ error: `${cmd} ${pos[0] || ''} is refused while a batch is open; close it in an attended session first`.replace('  ', ' ') }, 4);
   try {
     await commands[cmd](pos, flags);
+    // The person's next turn lifts the "not sent" stop on notify-only wakes (only a person runs these).
+    if (['report', 'approve', 'submitted', 'ask', 'answer', 'fact', 'start', 'resume', 'consent', 'fill'].includes(cmd)) updateState((st) => { if (st.watcher && st.watcher.notifyResult === 'not_sent') st.watcher.notifyResult = null; });
     // The person's answer is news: items left alone come back for it.
     if (!process.exitCode && (['fact set', 'profile set', 'answer add', 'writing approve'].includes(`${cmd} ${pos[0]}`) && !(cmd === 'fact' && pos[1] === 'account'))) updateState((st) => { st.answerV = (st.answerV || 0) + 1; });
   } catch (e) {

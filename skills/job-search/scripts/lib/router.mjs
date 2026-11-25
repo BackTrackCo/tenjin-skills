@@ -134,7 +134,7 @@ export async function runNeed(client, need, { save = saveResult } = {}) {
     return held(need, e.code || 'failed', e.message);
   }
   // `native` (the web search): the host assistant's own tools are enough, so that need stays a model step. Not a hold.
-  if (spec.status === 'native') return { ok: false, native: true, status: 'native', need: need.kind, cost: null };
+  if (spec.status === 'native') return { ok: false, native: true, status: 'native', reason: 'the router answered native: it holds this need for the round', need: need.kind, cost: null };
   if (spec.status !== 'spec') return held(need, spec.status || 'no_spec', spec.reason || `the router answered ${spec.status || 'nothing'} to the need`, spec);
   const offer = spec.id; // the spec answer carries the offer id at the top level
   const text = JSON.stringify(spec);
@@ -162,7 +162,8 @@ export async function runNeed(client, need, { save = saveResult } = {}) {
   } catch {
     return held(need, 'parse_failure', 'the result does not parse');
   }
-  const fullResultPath = save(need.kind, typeof env.result === 'string' ? env.result : JSON.stringify(env.result));
+  // A supplier whose terms allow immediate use only is never saved: the result stays in memory and goes to the adapter.
+  const fullResultPath = sup.noCache ? null : save(need.kind, typeof env.result === 'string' ? env.result : JSON.stringify(env.result));
   let adapted;
   try {
     adapted = sup.adapter(result, need.fields);

@@ -148,10 +148,10 @@ export function waitsForPerson(state, profile, item, overlay = { rules: [] }) {
 
 // Work on a job's employer posting is worth doing only for the jobs this period can use: ranked best fit first within the
 // positions rule (all of them when there is no limit), and above the person's score floor when they set one.
-export function inPeriodSet(state, job, profile, overlay) {
+export function inPeriodSet(state, job, profile, overlay, now = Date.now()) {
   const floor = (profile.unattended || {}).minScore;
   if (typeof floor === 'number' && !(typeof job.fit === 'number' && job.fit >= floor)) return false;
-  const limit = periodLimit(overlay);
+  const limit = periodLimit(overlay, { profile, now });
   if (limit === null) return true;
   const ranked = Object.values(state.jobs).filter((x) => x.status === 'reviewed' && !x.employerPosting && (typeof floor !== 'number' || (typeof x.fit === 'number' && x.fit >= floor))).sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1)).slice(0, limit);
   return ranked.some((x) => x.key === job.key);
@@ -162,6 +162,7 @@ export const HINT_LINES = {
   daily_search: 'With Tenjin I can also run the router\'s job-posting search and a live X search, on top of the free searches.',
   employer_posting: 'With Tenjin I can look up this employer\'s careers page through the router.',
   contacts: 'With Tenjin I can run the router\'s people search for jobs where the free ways found nobody.',
+  linkedin_resume: 'With Tenjin I can read a LinkedIn profile link; until then a PDF export of the profile or the text works.',
   outdated: 'Tenjin is out of date; after the update the CLI names, the routed search runs again.',
 };
 export function tenjinHint(state, moment) {
@@ -213,7 +214,7 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
       add(j, 'fill_ready');
       continue;
     }
-    if (j.status === 'reviewed' && !j.employerPosting && !j.careersChecked && ['no_board', 'unconfirmed_board', 'no_match', 'no_apply_link', 'yc_platform_only'].includes(j.unresolved) && inPeriodSet(state, j, profile, overlay)) {
+    if (j.status === 'reviewed' && !j.employerPosting && !j.careersChecked && ['no_board', 'unconfirmed_board', 'no_match', 'no_apply_link', 'yc_platform_only'].includes(j.unresolved) && inPeriodSet(state, j, profile, overlay, now)) {
       items.push({ key: j.key, reason: 'employer_page', title: j.title, company: j.company, website: j.employerWebsite || null, gate: GATES.employer_page });
       continue;
     }
@@ -245,7 +246,7 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
   }
   // Positions per period (attended): the sheets brought for the person's yes. A sheet already brought stays; new ones
   // come best fit first until the period's count is reached. The rest stay ranked for the next period, none dropped.
-  const limit = periodLimit(overlay);
+  const limit = periodLimit(overlay, { profile, now });
   const bring = [];
   let heldForPeriod = 0;
   if (limit !== null) {

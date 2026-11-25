@@ -6,30 +6,28 @@ const q = (header, question, options, multiSelect = false) => ({ header, questio
 
 export const START_RESUME_QUESTION = 'Which file is your resume? Give its path. (A plain question: I read only that file and never search your files.)';
 
-// The start, after the resume path: one call, four questions.
+// The start, after the resume: one call, three questions. Remote Control is a reminder line, not a question.
+export const RC_REMINDER = 'Type /rc to get these notifications on your phone and answer from the Claude app while this session keeps running here.';
 export function startQuestions() {
   return {
     questions: [
       q('Apply mode', 'How should applications go out?', [
-        { label: 'Ask me before each application (Recommended)', description: 'You see each filled sheet and say yes before anything is submitted.' },
-        { label: 'Auto apply only when there are no new questions', description: 'Uploads your resume and uses only answers you gave or approved before; a job with a new question waits for you.' },
-        { label: 'Auto apply, and also write new answers', description: 'As above, and new free-text answers are written for you without asking.' },
+        { label: 'Ask me each time (Recommended)', description: 'I show each application and submit only after your yes.' },
+        { label: 'Auto apply, approve new answers', description: 'Uses your resume and answers you gave or approved before. When a form has a new question, the answer is drafted and that job waits for your yes.' },
+        { label: 'Fully auto apply', description: 'Also submits the answers drafted for new questions, without showing them to you first.' },
       ]),
       q('Search', 'How often should I search for jobs?', [
         { label: 'Every day (Recommended)', description: 'One search round a day. With Tenjin a round runs in code at the router\'s price, with no Claude usage for the searches; without it, a round is one Haiku run (usage not measured yet).' },
         { label: 'Twice a day', description: 'Two search rounds a day, about twice the router price (with Tenjin) or Haiku usage (without) of a daily search.' },
         { label: 'Once a week', description: 'One search round a week, about a seventh of the daily router price or Haiku usage.' },
       ]),
-      q('Positions', 'How many positions should I make ready to apply to in each search period?', [
-        { label: 'Up to 10 (Recommended)', description: 'Attended: 10 sheets brought for your yes. Auto: 10 applications. The rest stay ranked for the next period; none is dropped.' },
-        { label: 'Up to 5', description: 'A smaller batch each period; the rest wait for the next one.' },
-        { label: 'Up to 20', description: 'A larger batch each period; the rest wait for the next one.' },
-      ]),
-      q('Remote', 'Remote Control sends notifications to your phone and lets you answer from there while this session keeps running. Turn it on?', [
-        { label: 'I will turn it on now (Recommended)', description: 'Type /remote-control, or turn on "Enable Remote Control for all sessions" in /config. You also need the Claude app and its push toggles.' },
-        { label: 'Not now', description: 'Notifications stay in this terminal. You can turn it on any time.' },
+      q('Positions', 'How many positions should I make ready to apply to? Other: your own numbers, or no limit.', [
+        { label: '50 now, 10 daily (Recommended)', description: 'Up to 50 jobs from the last two weeks on the first run, then up to 10 a day.' },
+        { label: '100 now, 10 daily', description: 'Up to 100 jobs from the last two weeks on the first run, then up to 10 a day.' },
+        { label: '10 daily', description: 'No first-run catch-up: up to 10 a day from the start.' },
       ]),
     ],
+    reminder: RC_REMINDER,
   };
 }
 
@@ -113,6 +111,26 @@ export function emailModeQuestion() {
     { label: 'Ask me each batch (Recommended)', description: 'You see each batch of drafts and tick the ones to send.' },
     { label: 'Send without asking, within my rules', description: 'Sends in the round with no yes, only to published addresses, once per address; revoke any time.' },
   ])] };
+}
+
+// Attended, many sheets at once: the report lists every ready sheet in rank order, then one question asks how to approve them.
+export function approveListQuestion(n) {
+  return { questions: [q('Approve', `${n} application sheets are listed in the report. How should I approve them?`, [
+    { label: `Approve all ${n} listed (Recommended)`, description: 'Records your yes for each listed sheet as it is shown; nothing is submitted without it.' },
+    { label: 'Pick in groups of 16', description: 'Tick the sheets to approve, 16 at a time.' },
+    { label: 'Only those with no new answers', description: 'Approves the sheets that use only facts, your resume and answers you gave before.' },
+    { label: 'Not now', description: 'Approve nothing yet; the sheets stay listed.' },
+  ])] };
+}
+export function approvePickQuestions(sheets) {
+  const groups = [];
+  for (let i = 0; i < sheets.length; i += 16) {
+    const g = sheets.slice(i, i + 16);
+    const chunks = [];
+    for (let k = 0; k < g.length; k += 4) chunks.push(g.slice(k, k + 4));
+    groups.push({ questions: chunks.map((c, n) => q(`Sheets ${i / 4 + n + 1}`, 'Tick the applications to approve.', [...c.map((x) => ({ label: `${x.company}`.slice(0, 40), description: `${x.title}${x.fitLine ? `: ${x.fitLine}` : ''}`.replace(/\n/g, ' ').slice(0, 90) })), ...(c.length < 2 ? [{ label: 'None of these', description: 'Tick this, or nothing, to approve none of the above.' }] : [])], true)), keys: g.map((x) => x.key) });
+  }
+  return groups;
 }
 
 // A payload is valid when it fits the question tool: 1 to 4 questions, 2 to 4 options each, labels and descriptions

@@ -74,6 +74,14 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
     const links = j.workAtStartupUrl ? [j.workAtStartupUrl] : (j.applyLinks || [j.url]).filter((u) => typeof u === 'string');
     L.push(`- ${j.title}, ${j.company}: ${REASONS[j.unresolved] || j.unresolved}. ${links.join(' | ')}`);
   }
+  const readyYes = jobs.filter((j) => j.status === 'apply_ready' && j.sheet && j.employerPosting && !state.approvals[j.key]).sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1));
+  if (readyYes.length) {
+    L.push('', `## Ready for your yes (${readyYes.length})`);
+    for (const j of readyYes) {
+      L.push(`- ${j.fit ?? '?'} | ${j.company}, ${j.title}${j.fitLine ? ` | ${j.fitLine}` : ''}`);
+      for (const f of (j.sheet.fields || []).filter((x) => x.tag === 'new_writing')) L.push(`  - new answer, "${f.label}": ${String(f.value).replace(/\n/g, ' ')}`);
+    }
+  }
   const filled = jobs.filter((j) => j.fillReady);
   L.push('', `## Filled, waiting for your submit (${filled.length})`);
   for (const j of filled) L.push(`- ${j.title}, ${j.company}: the form is filled in an open tab. Check it, press submit, and tell me.`);
@@ -104,7 +112,11 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
   const stuck = jobs.filter((j) => j.parked || (j.status === 'apply_ready' && !state.approvals[j.key]));
   if (stuck.length) {
     L.push('', '## Waiting on you');
-    for (const j of stuck) L.push(`- ${j.company}, ${j.title}: ${j.parked ? j.parked.reasons.join(', ') : 'needs your yes'}`);
+    for (const j of stuck) {
+      L.push(`- ${j.company}, ${j.title}: ${j.parked ? j.parked.reasons.join(', ') : 'needs your yes'}`);
+      // a draft held for the person's yes is shown in full: only the submit waits, the answer is already written
+      if (j.parked && j.parked.reasons.includes('writing_needs_yes')) for (const f of ((j.sheet && j.sheet.fields) || []).filter((x) => x.tag === 'new_writing')) L.push(`  - draft for "${f.label}": ${String(f.value).replace(/\n/g, ' ')}`);
+    }
   }
   const leads = (state.leads || []).filter((l) => l.status === 'new' && !l.joinedJob);
   if (leads.length) {

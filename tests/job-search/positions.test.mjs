@@ -16,18 +16,20 @@ const rule = (value) => ({ rules: [{ id: 'r', effect: 'period_max', value, words
 const profile = { eeo: 'decline_all', unattended: { roles: ['engineer'], places: ['Berlin'], minScore: 70, hosts: ['greenhouse'] }, search: { role: 'engineer' } };
 
 // ---- the start questions: four in one call after the resume ------------------
-test('the start: the resume is a plain question, then one call with four questions', () => {
+test('the start: the resume is a plain question, then one call with three questions and a /rc reminder', () => {
   assert.match(q.START_RESUME_QUESTION, /plain question/);
   const p = q.startQuestions();
-  assert.equal(p.questions.length, 4);
-  assert.deepEqual(p.questions.map((x) => x.header), ['Apply mode', 'Search', 'Positions', 'Remote']);
+  assert.equal(p.questions.length, 3);
+  assert.deepEqual(p.questions.map((x) => x.header), ['Apply mode', 'Search', 'Positions']);
+  assert.match(p.reminder, /\/rc/);
+  assert.doesNotMatch(JSON.stringify(p), /remote-control|Remote Control/);
   assert.deepEqual(q.validateAsk(p), []);
   for (const x of p.questions) assert.match(x.options[0].label, /\(Recommended\)$/);
   assert.deepEqual(p.questions[1].options.map((o) => o.label), ['Every day (Recommended)', 'Twice a day', 'Once a week']);
-  assert.deepEqual(p.questions[2].options.map((o) => o.label), ['Up to 10 (Recommended)', 'Up to 5', 'Up to 20']);
+  assert.deepEqual(p.questions[2].options.map((o) => o.label), ['50 now, 10 daily (Recommended)', '100 now, 10 daily', '10 daily']);
+  assert.deepEqual(p.questions[0].options.map((o) => o.label), ['Ask me each time (Recommended)', 'Auto apply, approve new answers', 'Fully auto apply']);
+  assert.match(p.questions[0].options[1].description, /the answer is drafted and that job waits for your yes/);
   assert.match(p.questions[1].options[0].description, /runs in code at the router's price, with no Claude usage for the searches/);
-  assert.match(p.questions[3].options[0].description, /\/remote-control/);
-  assert.ok(p.questions[0].options.length === 3 && p.questions[0].options[1].label.startsWith('Auto apply only when there are no new questions'));
 });
 
 test('the other questions go through the same tool: resume choice, Tenjin ask, EEO, optional writing, facts, the yes', () => {
@@ -41,7 +43,7 @@ test('the other questions go through the same tool: resume choice, Tenjin ask, E
 
 test('the CLI prints the payload for the question tool, and none in an unattended turn', () => {
   const r = runJobs(home, ['ask', 'start']);
-  assert.equal(r.json.questions.length, 4);
+  assert.equal(r.json.questions.length, 3);
   assert.equal(runJobs(home, ['ask', 'nonsense']).code, 2);
   const b = runJobs(home, ['batch', 'open', '--unattended']);
   assert.equal(b.code, 0);
@@ -50,13 +52,14 @@ test('the CLI prints the payload for the question tool, and none in an unattende
 });
 
 test('start record: the mode, the frequency and the count are kept; no answer to the count means no limit', () => {
-  const r = runJobs(home, ['start', 'record', '--mode', 'attended', '--frequency', 'twice_daily', '--positions', '5', '--remote-control', 'later', '--words', 'up to 5 per period']);
+  const r = runJobs(home, ['start', 'record', '--mode', 'attended', '--frequency', 'twice_daily', '--positions', '5', '--words', 'up to 5 per period']);
   assert.equal(r.code, 0, r.stdout);
   const prof = runJobs(home, ['profile', 'get']).json;
   assert.deepEqual([prof.applyMode, prof.frequency, prof.frequencySource], ['attended', 'twice_daily', 'person']);
   const rules = runJobs(home, ['rules']).json;
   assert.deepEqual(rules.map((x) => [x.effect, x.value, x.words]), [['period_max', 5, 'up to 5 per period']]);
-  assert.ok(store.loadState().start.rcOfferedAt, 'Remote Control is offered once and recorded');
+  assert.match(r.json.reminder, /\/rc/, 'a reminder line, not a question; nothing recorded');
+  assert.equal(store.loadState().start.rcOfferedAt, undefined);
   // no answer to the count: nothing is recorded, so there is no limit
   store.updateState((s) => { Object.assign(s, store.emptyState()); });
   const none = runJobs(home, ['start', 'record', '--mode', 'attended', '--frequency', 'daily']);
