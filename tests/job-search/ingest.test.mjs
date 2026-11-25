@@ -147,7 +147,7 @@ test('the report: new jobs with their board, apply yourself with a reason, held 
   const s = store.loadState();
   s.held.push({ reason: 'source_empty', detail: 'Figma (greenhouse:figma): http 500' });
   s.watched = { checked: 2, ok: 1, at: 'x' };
-  const text = report.renderReport(s, empty, { now: NOW });
+  const text = report.renderReport(s, empty, { now: NOW, profile: { watch: [{ url: 'https://boards.greenhouse.io/figma' }] } });
   assert.match(text, /0 reviewed jobs have an employer posting ready to apply on \(no board yet\); 1 new job still waits for review\./);
   assert.match(text, /## Apply yourself \(1\)[\s\S]*Globex: only a board that may not be the employer's was found\. https:\/\/www\.example-jobs\.test\/view\/2/);
   assert.match(text, /## Sources held this run[\s\S]*http 500/);

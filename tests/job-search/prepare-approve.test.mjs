@@ -103,6 +103,7 @@ test('the default report is short: a count line, the planned jobs, what needs th
   const ready = planned(6, { status: 'apply_ready', sheet: { hash: 'h', passed: true, eeoMissing: false, fields: [{ label: 'Why us?', value: 'Because compilers.', tag: 'new_writing', required: true }] } });
   const profile = reset([ready, mine(1, 70, 'MixRank'), mine(2, 68, 'Ledgebrook'), mine(3, 66, 'Rippling'), mine(4, 40, 'Lowfit')]);
   store.updateState((s) => { s.held = [{ reason: 'source_empty', detail: 'Figma: rate limited (429)' }]; s.watched = { ok: 1, checked: 2 }; });
+  J('profile', 'set', JSON.stringify({ watch: [{ url: 'https://boards.greenhouse.io/figma' }] }));
   const out = J('report').stdout;
   assert.match(out, /^# Job Search report/);
   assert.match(out, /\n4 new jobs; 1 planned to apply to; 4 for you to apply to yourself \(best you can apply to yourself: MixRank, Ledgebrook, Rippling\)\./);
