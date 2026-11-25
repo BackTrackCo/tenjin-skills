@@ -74,7 +74,7 @@ test('a left item comes back only on its triggers: news about the job, the perso
   const k = reviewedNoPosting(8);
   reset([j, k]);
   const due = () => work.workList({ now: NOW, commit: true }).items.map((i) => i.key);
-  runJobs(home, ['leave', j.key, '--reason', 'no_match']);
+  runJobs(home, ['leave', j.key, '--reason', 'low_score']);
   assert.deepEqual(due(), [k.key]);
   // time alone does nothing
   assert.deepEqual(work.workList({ now: NOW + 90 * 86400000 }).items.map((i) => i.key), [k.key]);
@@ -90,10 +90,13 @@ test('a left item comes back only on its triggers: news about the job, the perso
   store.updateState((s) => { dedupe.mergeJobs(s, [{ ...s.jobs[j.key], desc: 'a changed posting', title: s.jobs[j.key].title }], new Date(NOW).toISOString()); });
   assert.ok(due().includes(j.key), 'new data comes back');
   // the person's answer
-  runJobs(home, ['leave', j.key, '--reason', 'low_score']);
+  runJobs(home, ['leave', j.key, '--reason', 'no_careers_page']);
   assert.deepEqual(due(), [k.key]);
   runJobs(home, ['fact', 'set', 'phone', '+49 151 0000000']);
-  assert.ok(due().includes(j.key), 'an answer from the person comes back');
+  assert.ok(!due().includes(j.key), 'a saved form fact revives no left job (B1)');
+  runJobs(home, ['leave', j.key, '--reason', 'sign_in']);
+  runJobs(home, ['fact', 'set', 'account', 'example-jobs.test']);
+  assert.ok(due().includes(j.key), 'the person says they have an account there: it comes back');
   // a board that could match joins the watch list: it comes back
   runJobs(home, ['leave', j.key, '--reason', 'no_match']);
   assert.deepEqual(due(), [k.key]);

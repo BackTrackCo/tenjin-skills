@@ -67,8 +67,8 @@ test('the same commands work once the batch is closed (an attended session)', ()
 
 test('a batch is a record in state.json, not a file or a hook', () => {
   const p = b.openBatch({ mode: 'attended', uploadPath: '/r.pdf' });
-  assert.deepEqual(Object.keys(p).sort(), ['hosts', 'mode', 'openedAt', 'touchedAt', 'uploadPath']);
-  assert.ok(p.hosts.every((h) => /greenhouse|lever|ashby/.test(h)), 'hosts come only from graph.json');
+  assert.deepEqual(Object.keys(p).sort(), ['denied', 'mode', 'openedAt', 'touchedAt', 'uploadPath']);
+  assert.ok(p.denied.includes('linkedin.com') && p.denied.includes('x.com'), 'the deny list comes only from graph.json');
   assert.deepEqual(store.loadState().batch, p);
   assert.equal(fs.existsSync(path.join(process.env.TENJIN_SKILLS_DIR, 'guard')), false, 'the guard folder is gone');
   assert.equal(fs.existsSync(path.join(home, '.claude', 'settings.json')), false, 'no settings are written');

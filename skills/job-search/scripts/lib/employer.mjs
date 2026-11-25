@@ -1,5 +1,5 @@
 import { boardTarget, fetchBoard, parseBoardUrl, hostedUrl } from './boards.mjs';
-import { isNeverAutomated, isYc } from './platforms.mjs';
+import { hostOf, isNeverAutomated, isYc } from './platforms.mjs';
 import { normLabel } from './store.mjs';
 
 const SYSTEMS = ['greenhouse', 'lever', 'ashby'];
@@ -87,7 +87,7 @@ export function matchInBoards(posting, boards, source, now = Date.now()) {
   return { match: { employerPosting: mk(b, job, source, 'confirmed', now), job } };
 }
 
-// ---- other hiring systems (reported, never filled) --------------------------
+// ---- other hiring systems (named in the report; any system off the deny list is filled) --------------------------
 const OTHER = [[/myworkdayjobs\.com|myworkdaysite\.com/, 'Workday'], [/smartrecruiters\.com/, 'SmartRecruiters'], [/icims\.com/, 'iCIMS'], [/workable\.com/, 'Workable'], [/jobvite\.com/, 'Jobvite'], [/bamboohr\.com/, 'BambooHR'], [/recruitee\.com/, 'Recruitee'], [/teamtailor\.com/, 'Teamtailor'], [/personio\.(de|com)/, 'Personio'], [/rippling\.com/, 'Rippling'], [/breezy\.hr/, 'Breezy'], [/successfactors\.(com|eu)/, 'SuccessFactors'], [/taleo\.net/, 'Taleo']];
 export function otherSystem(url) {
   let h;
@@ -105,14 +105,14 @@ export function classifyLinks(links) {
   const platform = links.filter((l) => isNeverAutomated(l.url));
   const usable = links.filter((l) => !isNeverAutomated(l.url));
   const t = boardTarget(usable);
-  const other = usable.map((l) => otherSystem(l.url)).find(Boolean) || null;
+  const other = null; // an employer system off the deny list is filled; a deny-listed host is a platform link above
   return { platform, usable, target: t, other, yc: platform.some((l) => isYc(l.url)) };
 }
 
 // ---- step 3: the employer's own careers page ---------------------------------
-// A Haiku step reads the page (code fetches nothing from it) and returns the links it found and whether it is
-// a sign-in page. Code sorts the links.
-export function careersFromLinks({ boardLinks = [], otherLinks = [], signIn = false }) {
+// A Haiku step reads the page (code fetches nothing from it) and returns the links it found, the jobs it lists, and whether
+// it is a sign-in page. Code sorts the links and matches the listings.
+export function careersFromLinks({ boardLinks = [], otherLinks = [], signIn = false, listings = [], careersUrl = null }) {
   if (signIn) return { kind: 'sign_in' };
   const boards = [];
   for (const u of boardLinks) {
@@ -120,15 +120,41 @@ export function careersFromLinks({ boardLinks = [], otherLinks = [], signIn = fa
     if (p && SYSTEMS.includes(p.ats) && p.token && /^[A-Za-z0-9._-]+$/.test(p.token) && p.token !== 'embed' && !boards.some((b) => b.ats === p.ats && b.token === p.token)) boards.push({ ats: p.ats, token: p.token, region: p.region });
   }
   if (boards.length) return { kind: 'board', boards };
+  if (listings.length) return { kind: 'listing', listings, careersUrl };
   const other = [...boardLinks, ...otherLinks].map(otherSystem).find(Boolean);
-  return other ? { kind: 'other_system', ...other } : { kind: 'none' };
+  return other ? { kind: 'none', other } : { kind: 'none' };
+}
+
+// The careers page is the employer's own when its host is the employer website's domain or a subdomain of it.
+export function onEmployerSite(url, website) {
+  const a = websiteLabel(url);
+  const b = websiteLabel(website);
+  return Boolean(a && b && a === b);
+}
+const systemName = (url) => {
+  const o = otherSystem(url);
+  return o ? o.system.toLowerCase() : 'employer_site';
+};
+
+// A listing on the employer's own careers page counts as confirmed when its title and place match the job (v0-46): the
+// page is the open check, and the browser's first pass reads the live form. A listing on a deny-listed host is the
+// "apply yourself" case.
+export function matchListing(posting, page, website, now = Date.now()) {
+  if (!onEmployerSite(page.careersUrl, website)) return { reason: 'no_careers_page' };
+  const hits = page.listings.filter((l) => l && typeof l.url === 'string' && /^https:\/\//.test(l.url) && jobMatches(posting, { ...l, posted: l.postedAt || l.posted }, now));
+  const urls = [...new Set(hits.map((l) => l.url))];
+  if (urls.length > 1) return { reason: 'multiple_matches' };
+  if (!urls.length) return { reason: 'no_match' };
+  const url = urls[0];
+  if (isNeverAutomated(url)) return { reason: 'other_system', other: { system: hostOf(url), url } };
+  return { match: { employerPosting: { url, system: systemName(url), token: null, jobId: null, source: 'careers_page', confidence: 'confirmed', checkedAt: new Date(now).toISOString() }, job: null } };
 }
 
 // A board linked from the employer's own page counts as confirmed; the job is matched as in step 2.
-export async function resolveFromCareersPage(posting, page, { fetch, now = Date.now() }) {
+export async function resolveFromCareersPage(posting, page, { fetch, now = Date.now(), website = null }) {
   if (page.kind === 'sign_in') return { reason: 'sign_in_wall' };
-  if (page.kind === 'other_system') return { reason: 'other_system', other: { system: page.system, url: page.url } };
-  if (page.kind === 'none') return { reason: 'no_careers_page' };
+  if (page.kind === 'none') return { reason: 'no_careers_page', other: page.other || null };
+  if (page.kind === 'listing') return matchListing(posting, page, website, now);
   const boards = [];
   for (const b of page.boards) {
     const r = await fetchBoard({ ...b, name: '' }, fetch);

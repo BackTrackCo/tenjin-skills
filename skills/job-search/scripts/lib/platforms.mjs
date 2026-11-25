@@ -22,3 +22,10 @@ export const isYc = (url) => {
   const h = hostOf(url);
   return Boolean(h && (/(^|\.)ycombinator\.com$/.test(h) || /(^|\.)workatastartup\.com$/.test(h)));
 };
+export const isLinkedIn = (url) => {
+  const h = hostOf(url);
+  return Boolean(h && /(^|\.)linkedin\.com$/.test(h));
+};
+// The job's own LinkedIn link, from a postings source's apply options or the employer's posting: only ever shown to the
+// person, never opened, fetched or filled.
+export const linkedinOf = (links) => (links || []).map((l) => (typeof l === 'string' ? l : l && l.url)).find((u) => typeof u === 'string' && /^https:\/\//.test(u) && isLinkedIn(u)) || null;

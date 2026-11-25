@@ -107,13 +107,16 @@ test('careers through the router: the run envelope needs no label; the board goe
   assert.equal(routed.jobNeeds(store.loadState(), {}, empty).length, 0, 'asked once');
 });
 
-test('careers: a page on another system is reported as apply on the employer\'s site', async () => {
+test('careers: a page the router found but not read keeps its address, and the model reads the listings', async () => {
   const job = { key: 'https://x.test/1', url: 'https://x.test/1', title: 'Engineer', company: 'Acme', city: 'New York', status: 'reviewed', employerPosting: null, unresolved: 'no_board', hash: 'h', warnings: [], v: 1 };
   reset();
   store.updateState((s) => { s.jobs[job.key] = job; });
   const obj = { need: 'careers_page', status: 'fulfilled', ...careers.adapter({ result: { found: true, careers_page: { url: 'https://acme.test/jobs' }, open_positions: { vendor: 'workday', board: 'acme' } } }, { jobKey: job.key, website: 'acme.test' }) };
   await ing.ingest({ obj, state: store.loadState(), profile: {}, overlay: empty, fetch: fakeFetch({}), now: NOW });
-  assert.deepEqual(store.loadState().jobs[job.key].otherSystem, { system: 'the employer\'s own careers page', url: 'https://acme.test/jobs' });
+  const after = store.loadState().jobs[job.key];
+  assert.equal(after.careersUrl, 'https://acme.test/jobs');
+  assert.equal(after.careersChecked, undefined, 'the model still reads the page');
+  assert.equal(after.otherSystem, undefined);
 });
 
 test('a rejected input is the mapper\'s bug: that search is held with the reason and never resent', async () => {

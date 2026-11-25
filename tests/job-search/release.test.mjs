@@ -41,7 +41,7 @@ test('the gates hash covers the gate section, graph.json and the gate code, and 
   const skill = path.join(dir, 'SKILL.md');
   fs.writeFileSync(skill, fs.readFileSync(skill, 'utf8').replace('## Start and recover', '## Start and recover\n\nExtra non-gate text.'));
   assert.equal(rel.gatesHash(dir), h);
-  fs.writeFileSync(skill, fs.readFileSync(skill, 'utf8').replace('Never submit an application', 'Submit an application'));
+  fs.writeFileSync(skill, fs.readFileSync(skill, 'utf8').replace('Never submit without', 'Submit without'));
   assert.notEqual(rel.gatesHash(dir), h);
   const h2 = rel.gatesHash(dir);
   fs.appendFileSync(path.join(dir, 'scripts', 'lib', 'apply.mjs'), '\n// changed\n');

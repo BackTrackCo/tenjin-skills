@@ -3,7 +3,7 @@ import { boardTarget, fetchBoard } from './boards.mjs';
 import { employerName } from './employer.mjs';
 import { applyOp, bump, normLabel } from './store.mjs';
 import { careersFromLinks, classifyLinks, probeBoards, resolveFromCareersPage } from './employer.mjs';
-import { HN_SITE, isNeverAutomated, isYc } from './platforms.mjs';
+import { HN_SITE, isNeverAutomated, isYc, linkedinOf } from './platforms.mjs';
 import { loadSkipUrls } from './careerops.mjs';
 import { parseBoardUrl } from './boards.mjs';
 import { mergeJobs, normalizeUrl, sha } from './dedupe.mjs';
@@ -42,6 +42,15 @@ export function validateIngest(o) {
     for (const k of ['boardLinks', 'otherLinks']) if (o[k] !== undefined && !(Array.isArray(o[k]) && o[k].every(isStr))) return `${k} must be a list of links`;
     if (o.signIn !== undefined && typeof o.signIn !== 'boolean') return 'signIn must be true or false';
     if (o.found !== undefined && typeof o.found !== 'boolean') return 'found must be true or false';
+    if (o.linkedinUrl !== undefined && o.linkedinUrl !== null && !linkedinOf([o.linkedinUrl])) return 'linkedinUrl must be the job\'s own LinkedIn https link';
+    if (o.listings !== undefined) {
+      if (!Array.isArray(o.listings)) return 'listings must be a list of {title, url, city, remote}';
+      for (const [i, l] of o.listings.entries()) {
+        if (!l || !isStr(l.title) || !/^https:\/\//.test(String(l.url || ''))) return `listing ${i}: title and an https url are required`;
+        if (l.city !== undefined && typeof l.city !== 'string') return `listing ${i}: city must be text`;
+        if (l.remote !== undefined && typeof l.remote !== 'boolean') return `listing ${i}: remote must be true or false`;
+      }
+    }
     return null;
   }
   const q = o.query;
@@ -229,13 +238,13 @@ export async function planIngest({ obj: given, state, profile, overlay, fetch, n
     }
     if (tooOld) screen.warnings.push(`posted ${String(p.postedAt).slice(0, 10)}, still open`);
     if (ep) {
-      plan.jobs.push({ ...boardJob, openConfirmed: true, company: boardJob.company && boardJob.company !== ep.token ? boardJob.company : p.employer, salary: boardJob.salary || salaryText(p.salary), posted: boardJob.posted || p.postedAt, warnings: screen.warnings, via, employerPosting: ep, employerWebsite: p.employerWebsite || null, fromPost: p.sourceUrl });
+      plan.jobs.push({ ...boardJob, openConfirmed: true, company: boardJob.company && boardJob.company !== ep.token ? boardJob.company : p.employer, salary: boardJob.salary || salaryText(p.salary), posted: boardJob.posted || p.postedAt, warnings: screen.warnings, via, employerPosting: ep, employerWebsite: p.employerWebsite || null, fromPost: p.sourceUrl, ...(linkedinOf(p.applyLinks) ? { linkedinUrl: linkedinOf(p.applyLinks) } : {}) });
       continue;
     }
     // Unresolved: kept as a job so review can run; it never reaches the apply queue without an exact or confirmed posting.
     const key = p.applyLinks.length ? p.applyLinks[0].url : p.sourceUrl;
     const yc = p.applyLinks.map((l) => l.url).find((u) => /workatastartup\.com/.test(u)) || p.applyLinks.map((l) => l.url).find(isYc) || null;
-    plan.jobs.push({ url: key, ats: null, board: null, title: p.title, company: p.employer, city: p.city, region: p.region, country: p.country, remote: p.remote, posted: p.postedAt, type: p.employmentType, salary: salaryText(p.salary), desc: p.description, applyLinks: p.applyLinks.map((l) => l.url), place: `${p.city}|${p.region}`, warnings: [...screen.warnings, 'not confirmed open'], via, employerPosting: null, unresolved, fromPost: p.sourceUrl, otherSystem: cl.other, workAtStartupUrl: unresolved === 'yc_platform_only' ? yc : null, platformLinks: cl.platform, employerWebsite: p.employerWebsite || null, sourceUrl: p.sourceUrl, openConfirmed: false });
+    plan.jobs.push({ url: key, ats: null, board: null, title: p.title, company: p.employer, city: p.city, region: p.region, country: p.country, remote: p.remote, posted: p.postedAt, type: p.employmentType, salary: salaryText(p.salary), desc: p.description, applyLinks: p.applyLinks.map((l) => l.url), place: `${p.city}|${p.region}`, warnings: [...screen.warnings, 'not confirmed open'], via, employerPosting: null, unresolved, fromPost: p.sourceUrl, otherSystem: cl.other, workAtStartupUrl: unresolved === 'yc_platform_only' ? yc : null, platformLinks: cl.platform, employerWebsite: p.employerWebsite || null, sourceUrl: p.sourceUrl, openConfirmed: false, ...(linkedinOf(p.applyLinks) ? { linkedinUrl: linkedinOf(p.applyLinks) } : {}) });
     plan.unresolved++;
   }
   // a job the person's career-ops folder already has is not added again
@@ -347,12 +356,19 @@ async function planCareers({ obj, state, fetch, now, plan }) {
     plan.held.push({ reason: 'source_empty', detail: `routed:careers_page: unknown job ${obj.jobKey}` });
     return plan;
   }
-  const page = obj.careersPageOnly
-    ? { kind: 'other_system', system: 'the employer\'s own careers page', url: obj.careersUrl } // a page on a system this skill does not fill
-    : careersFromLinks({ boardLinks: obj.boardLinks || [], otherLinks: obj.otherLinks || [], signIn: obj.signIn === true });
+  if (obj.careersPageOnly) {
+    // The router found the employer's page but not what it lists: the page's address is kept, and the employer_page item
+    // has the model read the listings (the open check goes through that page, v0-46).
+    plan.careers = { key: obj.jobKey, pageOnly: obj.careersUrl, result: { reason: 'careers_page_found' } };
+    return plan;
+  }
+  const page = careersFromLinks({ boardLinks: obj.boardLinks || [], otherLinks: obj.otherLinks || [], signIn: obj.signIn === true, listings: obj.listings || [], careersUrl: obj.careersUrl });
   const posting = { title: job.title, employer: job.company, city: job.city, remote: job.remote, postedAt: job.posted };
-  const r = await resolveFromCareersPage(posting, page, { fetch, now });
-  plan.careers = { key: obj.jobKey, result: r.match ? { employerPosting: r.match.employerPosting, job: r.match.job } : { reason: r.reason, other: r.other || null } };
+  const r = await resolveFromCareersPage(posting, page, { fetch, now, website: job.employerWebsite });
+  // A job already confirmed from the careers page stays open while the page lists it; a page that lists jobs and no longer
+  // lists this one closes it (the re-verify, v0-46).
+  const reverify = Boolean(job.employerPosting && !job.employerPosting.token && job.employerPosting.source === 'careers_page');
+  plan.careers = { key: obj.jobKey, linkedinUrl: linkedinOf([obj.linkedinUrl]), closed: reverify && !r.match && page.kind === 'listing' && r.reason === 'no_match', reverify, result: r.match ? { employerPosting: r.match.employerPosting, job: r.match.job } : { reason: r.reason, other: r.other || null } };
   return plan;
 }
 
@@ -383,20 +399,32 @@ export function persistIngest(plan, now = Date.now()) {
       state.contactsRequested = (state.contactsRequested || []).filter((k) => k !== job.key);
     }
     for (const pj of plan.jobs) authorContact(state, pj, plan);
-    if (plan.careers) {
+    if (plan.careers && plan.careers.pageOnly) {
+      const j = state.jobs[plan.careers.key];
+      j.careersUrl = plan.careers.pageOnly;
+      bump(j);
+    } else if (plan.careers) {
       const j = state.jobs[plan.careers.key];
       const r = plan.careers.result;
       j.careersChecked = true;
+      if (plan.careers.linkedinUrl && !j.linkedinUrl) j.linkedinUrl = plan.careers.linkedinUrl;
       bump(j); // the careers-page result is news about this job
-      if (r.employerPosting) {
+      if (plan.careers.closed) {
+        j.status = 'closed';
+        j.statusAt = at;
+        j.openConfirmed = false;
+      } else if (r.employerPosting) {
         j.employerPosting = r.employerPosting;
         j.unresolved = null;
         j.ats = r.employerPosting.system;
-        j.board = `${r.employerPosting.system}:${r.employerPosting.token}`;
+        j.board = r.employerPosting.token ? `${r.employerPosting.system}:${r.employerPosting.token}` : null;
         j.sourceId = r.employerPosting.jobId;
         j.applyLinks = [r.employerPosting.url];
         j.openConfirmed = true;
+        j.verifiedAt = at;
         j.warnings = (j.warnings || []).filter((w) => w !== 'not confirmed open');
+      } else if (plan.careers.reverify) {
+        // the page could not be read this time (a sign-in, no listings): nothing changes about an open job
       } else {
         j.unresolved = r.reason;
         j.otherSystem = r.other || j.otherSystem || null;

@@ -3,7 +3,7 @@ import { updateState, loadState } from './store.mjs';
 import { loadOverlay, activeLessons, ruleValue } from './overlay.mjs';
 import { readJson, stateDir } from './paths.mjs';
 import { frequencyOf, periodStart, searchIsDue } from './schedule.mjs';
-import { periodLimit } from './apply.mjs';
+import { applyPathOf, periodLimit } from './apply.mjs';
 import { employerName } from './employer.mjs';
 import { sha } from './dedupe.mjs';
 import { canonical } from './overlay.mjs';
@@ -21,13 +21,15 @@ const GATES = {
   need_due: 'A routed need that code cannot run (no adapter for its supplier). One Haiku step: state it in plain words through `request` if the tool is there, write the ingest file for it (references/search.md, section 2), `J ingest`, then `J search done <kind>`. No Tenjin tool: `J leave need:<kind> --reason no_web_search`.',
   email_due: 'Intro emails to addresses the poster published. Attended: `J email batch`, `J ask email`, `J email approve <ids> --skip-rest`. Then `J email next` (add --unattended under the email consent) and send only what it hands out; `J email sent <id>` after each.',
   fill_ready: 'Filled and waiting. Do not submit. The person checks the open tab, presses submit and says so; then `J submitted <key>`.',
-  employer_page: 'Passed review, no employer posting yet. Haiku: find and read the employer\'s careers page; write {need:"careers_page", jobKey, careersUrl, status, fullResultPath, boardLinks, otherLinks, signIn}; `J ingest <file>`. Code fetches nothing from the page.',
+  employer_page: 'Passed review, no employer posting yet (or a re-verify: the item says so). Haiku: find and read the employer\'s own careers page; write {need:"careers_page", jobKey, careersUrl, status:"fulfilled", boardLinks, otherLinks, listings:[{title, url, city, remote}], signIn}; `J ingest <file>`. Code fetches nothing from the page.',
   search_due: 'Run this search round (references/search.md): free web searches first, then the router needs if Tenjin is there; one ingest file per need with query.round; then `J search next`.',
   post_review: 'A batch of up to 25 X or Hacker News hiring posts, one subagent, one ingest file with batch[] (every post link) and outcomes[] (one per post: job, lead, not_hiring or no_fit; an unreadable post is not_hiring with reason unreadable). Each post carries its board links, author handle and emails, found by code. A post with a posting goes in postings[]; a lead with the handle or email of its item needs no leads[] record. A file with a post that has no outcome is refused.',
   new_job: 'Review: does the work match the title. Warn, never drop except on a mismatch. Score 0 to 100.',
   review_due: 'The posting changed. Review again.',
   contacts_requested: 'Free ways only (the router\'s people search is `J contacts route`, in code). Find a contact with a source link, or `J leave contacts:<key> --reason none_found`.',
   prepare_due: 'The sheet needs new writing, or its questions need the browser first (Lever, Ashby). Round writer call: `J write-prompt --round`, then `J write-result --round`. Facts only from the profile.',
+  linkedin_ready: 'The person applies on LinkedIn: `J linkedin show <key>` prints the job\'s own LinkedIn link and the prepared answers; show both in the reply. Never open, fetch or fill LinkedIn.',
+  linkedin_applied: 'A LinkedIn link was shown: ask once, `J ask applied --key <key>`, then `J linkedin applied <key> yes|not_yet|skip`. Applied is recorded only on the person\'s word.',
   apply_ready: 'Attended: show the sheet, wait for a yes. Never submit without it.',
   follow_up_due: 'Ask the person for the status. Do not contact the employer.',
 };
@@ -100,14 +102,29 @@ export const hasAccount = (profile, job) => {
   const host = signInHost(job);
   return Boolean(host) && String((profile.facts || {}).account || '').split(/[\s,]+/).filter(Boolean).map(hostOf).some((a) => a === host || host.endsWith(`.${a}`) || a.endsWith(`.${host}`));
 };
-// What the choice rested on. `other_system` also rests on the release's list of supported hiring systems (graph.json), so a
-// release that adds the system brings the job back; `sign_in` rests on whether the person said they have an account there.
+// What the choice rested on, per reason: each hash holds only what bears on that reason, so saving a form fact or an answer
+// revives no left job. `low_score` rests on the role, the place, the level rules, the resume and the score floor;
+// `no_match` and `no_careers_page` on the job's data and the boards that could match it; `sign_in` on whether the person
+// said they have an account at that host; `other_system` on the deny list. Form facts and saved answers are in none of them.
 export function inputsHash(state, job, overlay, profile = {}, reason = null) {
   const co = employerName(job.company);
   const boards = (state.found || []).filter((b) => employerName(b.name) === co).map((b) => b.board).sort();
   const ep = job.employerPosting;
-  const extra = reason === 'other_system' ? { systems: sha(JSON.stringify([...graph().hosts].sort())).slice(0, 8) } : reason === 'sign_in' ? { account: hasAccount(profile, job) } : null;
-  return sha(canonical({ hash: job.hash, closed: job.status === 'closed', alsoAt: job.alsoAt || [], links: job.applyLinks || [], ep: ep ? [ep.url, ep.confidence] : null, boards, answers: state.answerV || 0, rules: rulesVersion(overlay), floor: (profile.unattended || {}).minScore ?? null, search: [(profile.search || {}).place || '', (profile.search || {}).remote === true], ...(extra ? { extra } : {}) })).slice(0, 16);
+  const base = { hash: job.hash, closed: job.status === 'closed' };
+  const search = profile.search || {};
+  let parts;
+  if (reason === 'low_score') {
+    parts = { ...base, role: search.role || '', variants: search.variants || [], place: search.place || '', remote: search.remote === true, rules: rulesVersion(overlay), levels: (profile.unattended || {}).excludeLevels || [], floor: (profile.unattended || {}).minScore ?? null, resume: sha(String(profile.resumeText || '')).slice(0, 12) };
+  } else if (reason === 'other_system') {
+    parts = { ...base, host: signInHost(job), denied: sha(JSON.stringify([...graph().neverHosts].sort())).slice(0, 8) };
+  } else if (reason === 'sign_in') {
+    parts = { host: signInHost(job), account: hasAccount(profile, job) };
+  } else if (reason === 'no_match' || reason === 'no_careers_page') {
+    parts = { ...base, alsoAt: job.alsoAt || [], links: job.applyLinks || [], ep: ep ? [ep.url, ep.confidence] : null, boards };
+  } else {
+    parts = { ...base, alsoAt: job.alsoAt || [] };
+  }
+  return sha(canonical(parts)).slice(0, 16);
 }
 export function leaveRecord(state, job, overlay, reason, profile = {}) {
   if (!LEAVE_REASONS.includes(reason)) throw new Error(`the reason is one of ${LEAVE_REASONS.join(', ')}`);
@@ -170,13 +187,13 @@ export const unclaimedDue = (state, items, now = Date.now()) => items.filter((i)
 // Every write to an item raises its state version: the version is a hash of the job's own record, apart from the clocks
 // that a re-verify touches without any news.
 export function itemVersion(job) {
-  const { lastSeen, verifiedAt, firstSeen, statusAt, ...rest } = job;
+  const { lastSeen, verifiedAt, firstSeen, statusAt, linkedinShownAt, linkedinAskedV, broughtAt, ...rest } = job;
   return sha(canonical(rest)).slice(0, 10);
 }
 // What waits for the person never wakes the model: a sheet that needs their yes (unless they gave it, or the mode is auto),
 // a filled form waiting for their submit, a follow-up that asks them. Each keeps its one notification.
 export function waitsForPerson(state, profile, item, overlay = { rules: [] }) {
-  if (item.reason === 'fill_ready' || item.reason === 'follow_up_due') return true;
+  if (item.reason === 'fill_ready' || item.reason === 'follow_up_due' || item.reason === 'linkedin_applied') return true;
   if (item.reason === 'email_due') return !emailConsentCurrent(state, profile, overlay);
   if (item.reason === 'apply_ready') return !(String(profile.applyMode || '').startsWith('auto') || state.approvals[item.key]);
   return false;
@@ -199,12 +216,14 @@ export function inPeriodSet(state, job, profile, overlay, now = Date.now()) {
 const PLAN_STATES = ['reviewed', 'shortlisted', 'prepared', 'apply_ready'];
 export function plannedJobs(state, profile, overlay, now = Date.now()) {
   const floor = (profile.unattended || {}).minScore;
-  const ok = (j) => j.employerPosting && ['exact', 'confirmed'].includes(j.employerPosting.confidence) && j.openConfirmed === true && !j.left && !(typeof floor === 'number' && !(typeof j.fit === 'number' && j.fit >= floor));
+  // A job the person applies to on LinkedIn is planned too: its link is shown with the prepared answers.
+  const ok = (j) => ((j.employerPosting && ['exact', 'confirmed'].includes(j.employerPosting.confidence) && j.openConfirmed === true) || (j.linkedinUrl && applyPathOf(j, profile) === 'linkedin')) && !j.left && !(typeof floor === 'number' && !(typeof j.fit === 'number' && j.fit >= floor));
   const all = Object.values(state.jobs).filter((j) => PLAN_STATES.includes(j.status) && ok(j)).sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1));
   const limit = periodLimit(overlay, { profile, now });
   if (limit === null) return all;
-  const started = all.filter((j) => j.status !== 'reviewed');
-  return [...started, ...all.filter((j) => j.status === 'reviewed').slice(0, Math.max(0, limit - started.length))];
+  const began = (j) => j.status !== 'reviewed' || Boolean(j.linkedinShownAt);
+  const started = all.filter(began);
+  return [...started, ...all.filter((j) => !began(j)).slice(0, Math.max(0, limit - started.length))];
 }
 
 // Where Tenjin would do better, and what it adds there. Code decides when; the model never does.
@@ -284,8 +303,21 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
       continue;
     }
     if (!holdSetup && j.status === 'reviewed' && !j.employerPosting && !j.careersChecked && ['no_board', 'unconfirmed_board', 'no_match', 'no_apply_link', 'yc_platform_only'].includes(j.unresolved) && inPeriodSet(state, j, profile, overlay, now)) {
-      items.push({ key: j.key, reason: 'employer_page', title: j.title, company: j.company, website: j.employerWebsite || null, gate: GATES.employer_page });
+      items.push({ key: j.key, reason: 'employer_page', title: j.title, company: j.company, website: j.employerWebsite || null, careersUrl: j.careersUrl || null, gate: GATES.employer_page });
       continue;
+    }
+    // A job confirmed from the employer's careers page (a system with no board API) is open while that page lists it: the
+    // re-verify reads the page again once the last check is a day old (v0-46).
+    if (!holdSetup && ['reviewed', 'shortlisted', 'prepared', 'apply_ready'].includes(j.status) && j.employerPosting && !j.employerPosting.token && j.employerPosting.source === 'careers_page' && (!j.verifiedAt || now - Date.parse(j.verifiedAt) > graph().unattendedWindow.verifiedHours * HOUR)) {
+      items.push({ key: j.key, reason: 'employer_page', title: j.title, company: j.company, website: j.employerWebsite || null, reverify: true, careersUrl: j.employerPosting.url, gate: GATES.employer_page });
+      continue;
+    }
+    // A job the person applies to on LinkedIn: show its link and the prepared answers, then ask once whether they applied.
+    if (j.linkedinUrl && applyPathOf(j, profile) === 'linkedin' && ['reviewed', 'shortlisted', 'prepared', 'apply_ready', 'submitted'].includes(j.status)) {
+      if (j.status === 'submitted') { /* applied: nothing more */ }
+      else if (!j.linkedinShownAt && (j.sheet || !j.employerPosting)) { add(j, 'linkedin_ready'); continue; }
+      else if (j.linkedinShownAt && j.linkedinAskedV !== itemVersion(j)) { add(j, 'linkedin_applied'); continue; }
+      else if (j.linkedinShownAt) continue;
     }
     if (j.status === 'new') {
       if (!(j.reviewedHash && j.reviewedHash === j.hash)) add(j, j.reviewedHash ? 'review_due' : 'new_job');
@@ -328,12 +360,12 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
     const start = periodStart(now, frequencyOf(profile));
     const brought = Object.values(state.jobs).filter((j) => j.broughtAt && Date.parse(j.broughtAt) >= start).length;
     let room = Math.max(0, limit - brought);
-    const fresh = items.filter((i) => i.reason === 'apply_ready' && !state.jobs[i.key].broughtAt).sort((a, b) => (state.jobs[b.key].fit ?? -1) - (state.jobs[a.key].fit ?? -1));
+    const fresh = items.filter((i) => (i.reason === 'apply_ready' || i.reason === 'linkedin_ready') && !state.jobs[i.key].broughtAt).sort((a, b) => (state.jobs[b.key].fit ?? -1) - (state.jobs[a.key].fit ?? -1));
     const allowed = new Set(fresh.slice(0, room).map((i) => i.key));
     for (const i of fresh) if (!allowed.has(i.key)) heldForPeriod++;
-    for (let k = items.length - 1; k >= 0; k--) if (items[k].reason === 'apply_ready' && !state.jobs[items[k].key].broughtAt && !allowed.has(items[k].key)) items.splice(k, 1);
+    for (let k = items.length - 1; k >= 0; k--) if ((items[k].reason === 'apply_ready' || items[k].reason === 'linkedin_ready') && !state.jobs[items[k].key].broughtAt && !allowed.has(items[k].key)) items.splice(k, 1);
     bring.push(...allowed);
-  } else bring.push(...items.filter((i) => i.reason === 'apply_ready' && !state.jobs[i.key].broughtAt).map((i) => i.key));
+  } else bring.push(...items.filter((i) => (i.reason === 'apply_ready' || i.reason === 'linkedin_ready') && !state.jobs[i.key].broughtAt).map((i) => i.key));
   return {
     bring,
     heldForPeriod,
@@ -346,7 +378,23 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
 }
 
 // What waits on the person, as key -> signature. A parked item that did not change keeps the same signature.
+// An item shown to the person in an attended turn (the report, an approval question, a reply) is marked with its signature,
+// and leaves the notify set until the item changes: a push never repeats what the person was just shown.
 export function waitingSet(state) {
+  const raw = waitingSetRaw(state);
+  const w = {};
+  for (const [k, v] of Object.entries(raw)) if ((state.shown || {})[k] !== v) w[k] = v;
+  return w;
+}
+export function markShown(state, keys = null) {
+  const raw = waitingSetRaw(state);
+  const next = {};
+  for (const [k, v] of Object.entries(state.shown || {})) if (raw[k] === v) next[k] = v; // a changed or gone item is not shown any more
+  for (const [k, v] of Object.entries(raw)) if (!keys || keys.some((x) => k === x || k.endsWith(`:${x}`))) next[k] = v;
+  state.shown = next;
+  return Object.keys(next).length;
+}
+export function waitingSetRaw(state) {
   const w = {};
   for (const j of Object.values(state.jobs)) {
     if (graph().terminal.includes(j.status)) continue;

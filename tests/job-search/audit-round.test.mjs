@@ -101,7 +101,7 @@ test('after a push that came back "not sent" there is no notify-only wake until 
   assert.equal(runJobs(home, ['notify', 'result', 'not_sent']).code, 0);
   store.updateState((s) => { const j = waiting(2); s.jobs[j.key] = j; s.sweep.lastAt = '2026-11-25T07:00:00Z'; });
   assert.deepEqual(await tick(NOW + 2000), [], 'no more notify-only wakes after "not sent"');
-  runJobs(home, ['report']);
+  runJobs(home, ['fact', 'set', 'phone', '+49 151 0000001']);
   assert.equal(store.loadState().watcher.notifyResult, null, 'the person\'s next turn lifts the stop');
   runJobs(home, ['notify', 'result', 'not_sent']);
   store.updateState((s) => { const j = noPosting(5); s.jobs[j.key] = j; });
@@ -317,20 +317,23 @@ test('the watcher\'s round never runs the people search; it stays an attended re
 
 // ---- item 12: what brings a left item back ---------------------------------------------------------------
 const due = () => work.workList({ now: NOW, commit: true }).items.map((i) => i.key).filter((k) => k !== 'search');
-test('other_system comes back when a release adds a supported system, and only then', () => {
-  const j = noPosting(1, { otherSystem: { system: 'Workday', url: 'https://acme.wd1.test/jobs' } });
+test('other_system comes back when a release takes the host off the deny list, and only then', () => {
+  const j = noPosting(1, { otherSystem: { system: 'linkedin.com', url: 'https://www.linkedin.com/jobs/view/1' } });
   reset([j]);
   runJobs(home, ['leave', j.key, '--reason', 'other_system']);
   assert.deepEqual(due(), []);
   const h1 = work.inputsHash(store.loadState(), store.loadState().jobs[j.key], empty, {}, 'other_system');
-  const g = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'graph.json'), 'utf8'));
   const gr = graphObj;
-  gr.hosts.push('workday');
+  const was = [...gr.neverHosts];
+  gr.neverHosts.splice(gr.neverHosts.indexOf('linkedin.com'), 1);
   const h2 = work.inputsHash(store.loadState(), store.loadState().jobs[j.key], empty, {}, 'other_system');
-  gr.hosts.pop();
-  assert.notEqual(h1, h2, 'a release that adds the system changes the hash');
-  assert.equal(work.inputsHash(store.loadState(), store.loadState().jobs[j.key], empty, {}, 'low_score'), work.inputsHash(store.loadState(), store.loadState().jobs[j.key], empty, {}, 'low_score'));
-  assert.ok(g.hosts.length >= 3);
+  gr.neverHosts.splice(0, gr.neverHosts.length, ...was);
+  assert.notEqual(h1, h2, 'a release that takes the host off the list changes the hash');
+  const lowA = work.inputsHash(store.loadState(), store.loadState().jobs[j.key], empty, {}, 'low_score');
+  store.updateState((s) => { s.answerV = 9; });
+  assert.equal(work.inputsHash(store.loadState(), store.loadState().jobs[j.key], empty, {}, 'low_score'), lowA, 'saved answers are in no leave reason\'s hash');
+  assert.notEqual(work.inputsHash(store.loadState(), store.loadState().jobs[j.key], empty, { search: { role: 'chef' } }, 'low_score'), lowA, 'a role change is');
+  assert.notEqual(work.inputsHash(store.loadState(), store.loadState().jobs[j.key], empty, { unattended: { minScore: 80 } }, 'low_score'), lowA, 'the score floor is');
 });
 const graphObj = (await import(`${S}graph.mjs`)).graph();
 

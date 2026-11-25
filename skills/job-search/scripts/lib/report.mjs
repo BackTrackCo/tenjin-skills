@@ -7,7 +7,7 @@ export const REASONS = {
   no_match: 'the employer board has no matching job',
   unconfirmed_board: 'only a board that may not be the employer\'s was found',
   multiple_matches: 'more than one job on the board matches',
-  no_careers_page: 'no careers page with a known board was found',
+  no_careers_page: 'no careers page on the employer\'s own site lists the job',
   sign_in_wall: 'the careers page needs a sign-in',
   yc_platform_only: 'a Y Combinator job with no other posting; apply at the Work at a Startup link',
 };
@@ -94,6 +94,20 @@ function renderShort(state, overlay, { since, now, profile }) {
   return L.join('\n');
 }
 
+// The first application on a host shows once in the full report, so a maintainer can look at a new site's terms. Never a check
+// that blocks anything: the default is to apply.
+export function firstApplicationHosts(state) {
+  const seen = new Set(state.hostsReported || []);
+  const out = [];
+  for (const a of state.applications || []) {
+    const j = state.jobs[a.key];
+    let host = null;
+    try { host = j && j.employerPosting ? new URL(j.employerPosting.url).hostname.toLowerCase() : null; } catch {}
+    if (host && !seen.has(host) && !out.some((o) => o.host === host)) out.push({ host, title: j.title, company: j.company });
+  }
+  return out;
+}
+
 // The report is rendered from state and the overlay, never written by the model.
 export function renderReport(state, overlay, { since = null, now = Date.now(), profile = null, short = false } = {}) {
   if (short) return renderShort(state, overlay, { since, now, profile: profile || {} });
@@ -138,12 +152,17 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
   const unresolved = jobs.filter((j) => !j.employerPosting && j.unresolved && !['skipped', 'closed'].includes(j.status));
   const onSite = unresolved.filter((j) => j.otherSystem);
   L.push('', `## Apply on the employer's site (${onSite.length})`);
-  for (const j of onSite) L.push(`- ${j.title}, ${j.company}: ${j.otherSystem.url} (${j.otherSystem.system}; this skill does not fill that system)`);
+  for (const j of onSite) L.push(`- ${j.title}, ${j.company}: ${j.otherSystem.url} (${j.otherSystem.system}; that site's terms ban automated use)`);
   const ay = unresolved.filter((j) => !j.otherSystem);
   L.push('', `## Apply yourself (${ay.length})`);
   for (const j of ay.slice(-20)) {
     const links = j.workAtStartupUrl ? [j.workAtStartupUrl] : (j.applyLinks || [j.url]).filter((u) => typeof u === 'string');
     L.push(`- ${j.title}, ${j.company}: ${REASONS[j.unresolved] || j.unresolved}. ${links.join(' | ')}`);
+  }
+  const firstHosts = firstApplicationHosts(state);
+  if (firstHosts.length) {
+    L.push('', `## First application on a new site (${firstHosts.length})`);
+    for (const h of firstHosts) L.push(`- first application on ${h.host}: ${h.title}, ${h.company}`);
   }
   const readyYes = jobs.filter((j) => j.status === 'apply_ready' && j.sheet && j.employerPosting && !state.approvals[j.key]).sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1));
   if (readyYes.length) {

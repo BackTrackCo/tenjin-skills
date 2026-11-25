@@ -27,6 +27,8 @@ export function emptyState() {
     update: { lastCheckAt: null, status: null, installed: null, waiting: null },
     consent: { unattended: null, writing: null, dryRun: { records: [], confirmedAt: null } },
     notified: {},
+    shown: {},
+    hostsReported: [],
     rounds: [],
     queryYield: {},
     stops: [],

@@ -6,7 +6,7 @@ const q = (header, question, options, multiSelect = false) => ({ header, questio
 
 export const START_RESUME_QUESTION = 'Which file is your resume? Give its path. (A plain question: I read only that file and never search your files.)';
 
-// The start, after the resume: one call, three questions. Remote Control is a reminder line, not a question.
+// The start, after the resume: one call, four questions. Remote Control is a reminder line, not a question.
 export const RC_REMINDER = 'Type /rc to get these notifications on your phone and answer from the Claude app while this session keeps running here.';
 export function startQuestions() {
   return {
@@ -26,6 +26,11 @@ export function startQuestions() {
         { label: '100 now, 20 daily', description: 'A big push: up to a hundred jobs from the last two weeks on the first run, then up to twenty a day.' },
         { label: '20 now, 5 daily', description: 'A light search: up to twenty jobs on the first run, then up to five a day.' },
         { label: 'No limit', description: 'Every job that fits, on the first run and after, with no number set.' },
+      ]),
+      q('Where', 'Where do you prefer to apply?', [
+        { label: 'Employer\'s site (Recommended)', description: 'I apply on the employer\'s own application page where I can, in the mode you chose.' },
+        { label: 'LinkedIn, I apply', description: 'For a job that is on LinkedIn, I prepare the answers and show you its LinkedIn link; you apply there, so it connects to your account. I never open LinkedIn.' },
+        { label: 'Ask me each job', description: 'For a job that is on LinkedIn and on an employer site, I ask which one with the application.' },
       ]),
     ],
     reminder: RC_REMINDER,
@@ -119,16 +124,24 @@ export function emailModeQuestion() {
 // (the fields, any new answer in full, the warnings). A fact the form needs that the profile lacks is asked in the same call,
 // with its fixed answers and "Skip this job"; one with no fixed answers comes back as a plain question. The answer is saved as
 // a fact (`J approve <key> --facts`), the sheet is completed, and the yes covers the completed sheet.
-export function approvalQuestions(job) {
+// `path` is 'ask' when the job is on LinkedIn and on an employer site and the person chose "Ask me each job": the choice joins
+// the approval call, and a LinkedIn pick means the person applies there (the skill never opens LinkedIn).
+export function approvalQuestions(job, path = 'employer') {
   const sheet = job.sheet || { fields: [], unanswered: [] };
   const application = [
     ...(sheet.fields || []).map((f) => `${f.label}: ${f.tag === 'upload' ? 'your resume' : f.value} (${f.tag.replace('_', ' ')})`),
     ...(job.warnings || []).map((w) => `warning: ${w}`),
   ];
-  const asks = [q('Apply', `Apply to ${job.title} at ${job.company} with the application shown above?`, [
-    { label: 'Yes, apply (Recommended)', description: 'Records your yes for this exact application, then fills it and submits it in one pass.' },
-    { label: 'Not this one', description: 'Skip this job.' },
-  ])];
+  const asks = [path === 'ask'
+    ? q('Apply', `Where should ${job.title} at ${job.company} go, with the application shown above?`, [
+      { label: 'Employer\'s site (I apply)', description: 'Records your yes for this exact application, then I fill it and submit it on the employer\'s page.' },
+      { label: 'LinkedIn (you apply)', description: 'I show its LinkedIn link and the answers; you apply there. I never open LinkedIn.' },
+      { label: 'Skip this job', description: 'Do not apply to this job.' },
+    ])
+    : q('Apply', `Apply to ${job.title} at ${job.company} with the application shown above?`, [
+      { label: 'Yes, apply (Recommended)', description: 'Records your yes for this exact application, then fills it and submits it in one pass.' },
+      { label: 'Not this one', description: 'Skip this job.' },
+    ])];
   const plain = [];
   for (const u of (sheet.unanswered || []).filter((x) => x.factKey)) {
     const form = (job.questions || []).find((x) => x.label === u.label) || {};
@@ -137,6 +150,15 @@ export function approvalQuestions(job) {
     else plain.push({ label: u.label, fact: u.factKey });
   }
   return { application, questions: asks, plain, next: 'show the application, ask these in one call; save with J approve <key> --facts <json> (a plain question: J fact set <name> <value> first)' };
+}
+
+// After a LinkedIn link was shown: did the person apply there? Asked once per version of the job, in an attended turn.
+export function appliedQuestion({ company, title }) {
+  return { questions: [q('Applied', `Did you apply to ${title} at ${company} on LinkedIn?`, [
+    { label: 'Yes', description: 'Record it as applied, on your word.' },
+    { label: 'Not yet', description: 'Keep it shown; I ask again only if the job changes.' },
+    { label: 'Skip this job', description: 'Do not apply to this job.' },
+  ])] };
 }
 
 // Attended, many sheets at once: the report lists every ready sheet in rank order, then one question asks how to approve them.
@@ -171,7 +193,7 @@ export function validateAsk(p) {
     if (!Array.isArray(x.options) || x.options.length < 2 || x.options.length > 4) bad.push(`${at}: 2 to 4 options`);
     else {
       for (const o of x.options) if (!o.label || !o.description || o.description.includes('\n')) bad.push(`${at}: each option needs a label and a one-line description`);
-      if (!x.multiSelect && !/\((Recommended|from your resume|from your LinkedIn)\)$/.test(x.options[0].label) && !/^(Skip them|Yes|Install)/.test(x.options[0].label)) bad.push(`${at}: the first option is the default and carries its marker`);
+      if (!x.multiSelect && !/\((Recommended|from your resume|from your LinkedIn)\)$/.test(x.options[0].label) && !/^(Skip them|Yes|Install|Employer's site \(I apply\))/.test(x.options[0].label)) bad.push(`${at}: the first option is the default and carries its marker`);
     }
   }
   return bad;

@@ -36,7 +36,8 @@ test('attended: a yes names this job and this sheet; a changed sheet needs a new
 
 test('both modes: each common check holds the job', () => {
   const cases = [
-    ['host_not_allowed', { ats: 'workday' }],
+    ['platform_url', { employerPosting: { url: 'https://www.linkedin.com/jobs/view/1', system: 'employer_site', token: null, jobId: null, source: 'careers_page', confidence: 'confirmed' } }],
+    ['host_not_allowed', { employerPosting: { url: 'http://jobs.acme.test/1', system: 'employer_site', token: null, jobId: null, source: 'careers_page', confidence: 'confirmed' } }],
     ['not_verified_recently', { verifiedAt: new Date(NOW - 25 * 3600000).toISOString() }],
     ['sheet_not_checked', { sheet: { hash: 'sh1', passed: false } }],
     ['sheet_not_checked', { sheet: null }],
@@ -174,7 +175,7 @@ test('consent needs complete rules and the EEO choice; no rule or lesson can rec
   const s = stateWith();
   assert.throws(() => ap.recordConsent(s, { eeo: 'decline_all' }, empty()), /not set/);
   assert.throws(() => ap.recordConsent(s, { unattended: U }, empty()), /EEO/);
-  assert.throws(() => ap.recordConsent(s, { eeo: 'decline_all', unattended: { ...U, hosts: ['workday'] } }, empty()), /hosts/);
+  assert.throws(() => ap.recordConsent(s, { eeo: 'decline_all', unattended: { ...U, hosts: [] } }, empty()), /hiring systems/);
   assert.equal(s.consent.unattended, null);
   for (const effect of ['unattended_consent', 'consent']) assert.throws(() => ov.addRule({ effect, value: true, words: 'yes do it' }), /vocabulary/);
   assert.throws(() => ov.addLesson({ effect: 'unattended_consent', subject: 'x' }), /tighten-only/);

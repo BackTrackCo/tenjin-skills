@@ -33,7 +33,7 @@ test('the start shows that it waits: a three-item setup task list, both task too
   const fm = /^allowed-tools: (.*)$/m.exec(md)[1];
   for (const tool of ['TaskCreate', 'TaskUpdate', 'TodoWrite']) assert.ok(fm.split(' ').includes(tool), `${tool} is allowed`);
   assert.match(md, /`TaskCreate` and `TaskUpdate`, or `TodoWrite`/);
-  assert.match(md, /"Share your resume \(waiting on you\)" in progress, "Three quick choices", "First search and report"/);
+  assert.match(md, /"Share your resume \(waiting on you\)" in progress, "Four quick choices", "First search and report"/);
   assert.match(md, /mark each done as it completes/);
   assert.match(md, /Waiting for your resume: drop the file here, paste a link, or paste the text\./);
   assert.match(md, /none: skip it/, 'with neither tool, only the waiting line');

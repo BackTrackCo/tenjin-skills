@@ -12,6 +12,7 @@ export function validateProfile(p) {
   for (const k of ['remote', 'includeOld', 'updates', 'hn']) if (has(k)) need(typeof p[k] === 'boolean', `${k} must be true or false`);
   if (has('frequency')) need(['daily', 'twice_daily', 'weekly'].includes(p.frequency), 'frequency must be daily, twice_daily or weekly');
   if (has('applyMode')) need(['attended', 'auto_no_new', 'auto_write'].includes(p.applyMode), 'applyMode must be attended, auto_no_new or auto_write');
+  if (has('apply')) need(p.apply && typeof p.apply === 'object' && ['employer', 'linkedin', 'ask'].includes(p.apply.where) && p.apply.source === 'person', 'apply must be {"where": "employer"|"linkedin"|"ask", "source": "person"}');
   if (has('windowDays')) need(num(p.windowDays) && p.windowDays > 0, 'windowDays must be a positive number');
   if (has('sweepHour')) need(Number.isInteger(p.sweepHour) && p.sweepHour >= 0 && p.sweepHour <= 23, 'sweepHour must be a whole number from 0 to 23');
   for (const k of ['resumePath', 'resumeText']) if (has(k)) need(isStr(p[k]), `${k} must be text`);

@@ -5,10 +5,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { graph } from './lib/graph.mjs';
 import { SKILL_DIR, ensureDir, readJson, stateDir, writeJsonAtomic } from './lib/paths.mjs';
-import { applyOp, applyOps, compact, loadState, updateState, view } from './lib/store.mjs';
+import { applyOp, applyOps, bump, companyTitleKey, compact, loadState, updateState, view } from './lib/store.mjs';
+
 import { addLesson, addRule, deriveLessons, loadOverlay, removeRule } from './lib/overlay.mjs';
 import { persist, runSweep } from './lib/sweep.mjs';
-import { refreshClaims, releaseClaims, LEAVE_REASONS, ITEM_LEAVE_REASONS, advanceSearch, askFirst, itemKind, leaveItem, leaveRecord, park, unpark, workList } from './lib/work.mjs';
+import { markShown, refreshClaims, releaseClaims, itemVersion, LEAVE_REASONS, ITEM_LEAVE_REASONS, advanceSearch, askFirst, itemKind, leaveItem, leaveRecord, park, unpark, workList } from './lib/work.mjs';
 import { applyRoundDrafts, checkJobSheet, prepareInCode, writableFields } from './lib/prepare.mjs';
 import { logRun } from './lib/runlog.mjs';
 import * as em from './lib/email.mjs';
@@ -18,13 +19,13 @@ import { webPlan } from './lib/websearch.mjs';
 import { claimLease, leaseFresh, touchLease, watcherStatus } from './lib/lease.mjs';
 import { readProfile, runWatcher, tick, watcherCodeHash } from './lib/watcher.mjs';
 import { applyUpdate, checkRelease, gatesHash, recordRelease } from './lib/release.mjs';
-import { applyNext, confirmDryRun, recordConsent, recordDryRun, recordWritingConsent, revokeConsent } from './lib/apply.mjs';
+import { applyNext, applyPathOf, confirmDryRun, recordConsent, recordDryRun, recordWritingConsent, revokeConsent } from './lib/apply.mjs';
 import { addAnswer, approveWriting, loadAnswers } from './lib/answers.mjs';
 import * as batch from './lib/batch.mjs';
 import { hintState, defaultRun, findTenjin } from './lib/tenjin.mjs';
 import { buildSheet, checkReadBack, checkSheet, parseGreenhouseQuestions } from './lib/sheet.mjs';
 import { buildContactMessageRequest, buildIntroRequest, buildLeadIntroRequest, buildWritingRequest, parseIntroResult, parseWritingResult, readWritingRules } from './lib/writing.mjs';
-import { renderReport } from './lib/report.mjs';
+import { firstApplicationHosts, renderReport } from './lib/report.mjs';
 import * as qs from './lib/questions.mjs';
 import { FREQUENCIES, frequencyOf, periodStart } from './lib/schedule.mjs';
 import { appendPending, isCareerOpsDir, pipelineLine, readCareerOps } from './lib/careerops.mjs';
@@ -184,7 +185,12 @@ const commands = {
   },
 
   async rules([sub, ...rest], flags) {
-    if (sub === 'add') return out(addRule({ effect: flags.effect, value: flags.value === undefined ? null : coerce(flags.value), words: flags.words }));
+    if (sub === 'add') {
+      // A rule asked as a question-tool call: the chosen option's label is the person's words, with the date.
+      const words = flags['from-choice'] !== undefined ? flags['from-choice'] : flags.words;
+      if (flags['from-choice'] !== undefined && (flags['from-choice'] === true || !String(flags['from-choice']).trim())) return out({ error: 'rules add --from-choice "<the option label the person chose>" --effect e --value v' }, 2);
+      return out(addRule({ effect: flags.effect, value: flags.value === undefined ? null : coerce(flags.value), words }));
+    }
     if (sub === 'remove') return out({ removed: removeRule(rest[0]) });
     return out(loadOverlay().rules);
   },
@@ -266,6 +272,16 @@ const commands = {
   async approve(keys, flags) {
     let st = loadState();
     let list = keys;
+    // "Ask me each job" (v0-47): the choice joins the approval. LinkedIn means the person applies there; nothing is approved.
+    if (flags.via !== undefined) {
+      if (keys.length !== 1 || !['employer', 'linkedin'].includes(flags.via)) return out({ error: 'approve <key> --via employer|linkedin takes one job' }, 2);
+      const job = st.jobs[keys[0]];
+      if (!job) return out({ error: `unknown job: ${keys[0]}` }, 2);
+      if (flags.via === 'linkedin' && !job.linkedinUrl) return out({ error: 'that job has no LinkedIn link' }, 2);
+      updateState((s) => { s.jobs[keys[0]].applyVia = flags.via; bump(s.jobs[keys[0]]); });
+      if (flags.via === 'linkedin') return out({ key: keys[0], via: 'linkedin', next: 'J linkedin show <key>, then show the link and the answers; you never open LinkedIn' });
+      st = loadState();
+    }
     // A fact the form needed and the profile lacked is answered in the approval itself: `--facts '{"name":"value"}'` saves it,
     // completes the sheet, and the yes covers the completed sheet.
     if (flags.facts !== undefined) {
@@ -288,6 +304,11 @@ const commands = {
     }
     if (flags.all === true || flags['no-new'] === true) list = readySheets(st).filter((r) => !r.missingFacts.length && (flags.all === true || !r.newAnswers.length)).map((r) => r.key);
     if (!list.length) return out({ error: 'approve <key...> | --all | --no-new (nothing to approve)' }, 2);
+    for (const k of list) if (st.jobs[k] && applyPathOf(st.jobs[k], readProfile()) === 'ask') {
+      if (flags.all === true || flags['no-new'] === true) { list = list.filter((x) => applyPathOf(st.jobs[x], readProfile()) !== 'ask'); break; }
+      return out({ error: `${k} is on LinkedIn and on an employer site: ask which with J ask approval --key ${k}, then J approve ${k} --via employer|linkedin` }, 4);
+    }
+    if (!list.length) return out({ error: 'every listed job waits for its where choice (J ask approval --key <job>)' }, 4);
     for (const k of list) if (!st.jobs[k] || !st.jobs[k].sheet || !st.jobs[k].sheet.passed) return out({ error: `${k} has no complete sheet yet: answer its missing facts (J ask approval <key>)` }, 4);
     return out({ ...applyOps(list.map((key) => ({ op: 'approve', key, sheetHash: st.jobs[key].sheet.hash }))), approved: list.length });
   },
@@ -515,9 +536,11 @@ const commands = {
       if (all) {
         st.updateLines = [];
         st.dropLines = [];
+        st.hostsReported = [...new Set([...(st.hostsReported || []), ...firstApplicationHosts(st).map((h) => h.host)])];
         if ((st.found || []).length) st.watchTipShown = true;
       }
       for (const c of st.consentLog || []) c.acked = true;
+      markShown(st); // the person is shown the waiting items now: no push repeats them
     });
     process.stdout.write(text + '\n');
     // The reply ends with one line on what Tenjin adds. It is not part of the report file. No price.
@@ -592,6 +615,42 @@ const commands = {
     return out(await runHn({ fetch: globalThis.fetch, profile: readProfile(), state: loadState(), budgetMs }));
   },
   // Fill-only: per job, or with a fill_only rule. Fill, read back, never submit, leave the tab open.
+  // The person applies on LinkedIn (v0-47). The skill only shows the job's own link and the prepared answers; it never opens,
+  // fetches or fills LinkedIn. `applied` is recorded only on the person's word.
+  async linkedin([sub, key, answer]) {
+    const profile = readProfile();
+    if (sub === 'show') {
+      const res = updateState((s) => {
+        const job = s.jobs[key];
+        if (!job || !job.linkedinUrl) throw new Error('that job has no LinkedIn link');
+        if (applyPathOf(job, profile) !== 'linkedin') throw new Error('that job goes to the employer\'s site under your choice');
+        job.linkedinShownAt = job.linkedinShownAt || new Date().toISOString();
+        job.broughtAt = job.broughtAt || job.linkedinShownAt;
+        const answers = job.sheet ? (job.sheet.fields || []).map((f) => ({ label: f.label, value: f.tag === 'upload' ? 'your resume' : f.value, tag: f.tag })) : [];
+        return { key, company: job.company, title: job.title, link: job.linkedinUrl, answers, facts: job.sheet ? undefined : profile.facts || {}, note: job.sheet ? 'answers from the employer posting\'s questions; LinkedIn\'s own questions are yours to answer' : 'no employer form was found: the facts above and a short note you draft from the resume, facts only from the profile' };
+      });
+      return out(res);
+    }
+    if (sub === 'applied') {
+      if (!['yes', 'not_yet', 'skip'].includes(answer)) return out({ error: 'linkedin applied <key> yes|not_yet|skip' }, 2);
+      return out(updateState((s) => {
+        const job = s.jobs[key];
+        if (!job || !job.linkedinShownAt) throw new Error('its LinkedIn link was not shown yet');
+        if (answer === 'yes') {
+          const at = new Date().toISOString();
+          job.status = 'submitted';
+          job.statusAt = at;
+          job.applied = { source: 'person', via: 'linkedin', at };
+          s.applications.push({ key: job.key, companyKey: companyTitleKey(job), at, source: 'person' });
+          bump(job);
+        } else if (answer === 'skip') {
+          applyOp(s, { op: 'transition', key, to: 'skipped', reason: 'the person skipped it after the LinkedIn link' });
+        } else job.linkedinAskedV = itemVersion(job);
+        return { key, recorded: answer };
+      }));
+    }
+    return out({ error: 'linkedin show <key> | applied <key> yes|not_yet|skip' }, 2);
+  },
   async fillonly([key, onoff]) {
     return out(updateState((s) => {
       if (!s.jobs[key]) throw new Error(`unknown job: ${key}`);
@@ -637,10 +696,11 @@ const commands = {
     if (sub === 'status' || !sub) {
       const missing = [];
       if (!profile.resumeText && !profile.resumePath) missing.push('resume');
-      if (!profile.applyMode || !profile.frequency || !(st.start && st.start.positionsAt)) missing.push('start_questions');
+      if (!profile.applyMode || !profile.frequency || !(st.start && st.start.positionsAt) || !(profile.apply && profile.apply.where)) missing.push('start_questions');
       return out({ missing, next: missing[0] === 'resume' ? 'ask for the resume as a plain question: a file, a link or the text; end with: Waiting for your resume: drop the file here, paste a link, or paste the text.' : missing.length ? 'J ask start, then J start record' : 'run the free search and the report', start: st.start || null });
     }
-    if (sub !== 'record') return out({ error: 'start status | record --mode m --frequency f --catch-up n --per-day n|none (or --positions n|none|skip, or --no-limit) [--words text]' }, 2);
+    if (sub !== 'record') return out({ error: 'start status | record --mode m --frequency f --catch-up n --per-day n|none (or --positions n|none|skip, or --no-limit) --where employer|linkedin|ask [--words text]' }, 2);
+    if (flags.where !== undefined && !['employer', 'linkedin', 'ask'].includes(flags.where)) return out({ error: 'where must be employer, linkedin or ask' }, 2);
     if (!['attended', 'auto_no_new', 'auto_write'].includes(flags.mode || 'attended')) return out({ error: 'mode must be attended, auto_no_new or auto_write' }, 2);
     if (flags.frequency && !FREQUENCIES.includes(flags.frequency)) return out({ error: 'frequency must be daily, twice_daily or weekly' }, 2);
     const mode = flags.mode || 'attended';
@@ -658,12 +718,14 @@ const commands = {
       positions = String(flags.positions);
       addRule({ effect: 'period_max', value: positions === 'none' ? 'none' : coerce(positions), words: String(flags.words || `positions per period: ${positions}`) });
     }
-    writeJsonAtomic(profileFile(), { ...profile, applyMode: mode, frequency, frequencySource: 'person' });
+    // No answer to where means the employer's site, recorded as the person's own setting.
+    const where = flags.where || 'employer';
+    writeJsonAtomic(profileFile(), { ...profile, applyMode: mode, frequency, frequencySource: 'person', apply: { where, source: 'person' } });
     const now = new Date().toISOString();
     updateState((s) => {
-      s.start = { ...(s.start || {}), modeAt: now, frequencyAt: now, positionsAt: now };
+      s.start = { ...(s.start || {}), modeAt: now, frequencyAt: now, positionsAt: now, whereAt: now };
     });
-    return out({ recorded: { mode, frequency, positions }, reminder: qs.RC_REMINDER, note: mode === 'attended' ? 'attended is the default; nothing more to record' : 'an auto mode also needs the unattended rules shown back, a clear yes, then consent record (and consent record writing for Fully auto apply)' });
+    return out({ recorded: { mode, frequency, positions, where }, reminder: qs.RC_REMINDER, note: mode === 'attended' ? 'attended is the default; nothing more to record' : 'an auto mode also needs the unattended rules shown back, a clear yes, then consent record (and consent record writing for Fully auto apply)' });
   },
   // The payload for Claude Code's question tool, so the questions are asked as choices, never as a list in prose.
   async ask([kind], flags) {
@@ -671,9 +733,15 @@ const commands = {
     if (kind === 'approval') {
       const job = loadState().jobs[flags.key];
       if (!job || !job.sheet) return out({ error: 'ask approval --key <job>: prepare its sheet first' }, 2);
-      return out(qs.approvalQuestions(job));
+      updateState((st) => { markShown(st, [`yes:${flags.key}`]); }); // the application is shown with this call: no push repeats it
+      return out(qs.approvalQuestions(job, applyPathOf(job, readProfile())));
     }
     if (kind === 'approve-pick') return out({ groups: qs.approvePickQuestions(readySheets(loadState())) });
+    if (kind === 'applied') {
+      const job = loadState().jobs[flags.key];
+      if (!job || !job.linkedinShownAt) return out({ error: 'ask applied --key <job>: its LinkedIn link was not shown yet' }, 2);
+      return out(qs.appliedQuestion(job));
+    }
     const make = { approve: () => qs.approveListQuestion(readySheets(loadState()).length), start: () => qs.startQuestions(), resume: () => qs.resumeChoiceQuestion(arg), tenjin: () => qs.tenjinAsk(arg), eeo: () => qs.eeoQuestion(), follow_up: () => qs.followUpQuestion(arg), contacts: () => qs.contactsCountQuestion(), 'optional-writing': () => qs.optionalWritingQuestion(), fact: () => qs.factQuestion(arg), yes: () => qs.sheetYesQuestion(arg), email: () => qs.emailBatchQuestion(em.addBatchPeek(loadState())), 'email-mode': () => qs.emailModeQuestion() }[kind];
     if (!make) return out({ error: 'ask start | resume --json {header,question,guess,next} | tenjin --json {line,status} | eeo | optional-writing | fact --json {label,options} | yes --json {company,title} | email | email-mode | approve | approve-pick | approval --key <job>' }, 2);
     if (batch.isActive() && batch.batchMode() === 'unattended') return out({ error: 'no questions in an unattended turn: nobody can answer; hold the job and notify' }, 4);
@@ -844,6 +912,10 @@ const commands = {
     return out({ read: true, source: next.resumeSource, saved: r.resumeTextFile || r.resumePath || null, needsText: next.resumeNeedsText, next: next.resumeNeedsText ? 'read the file with your file reader, then save its text: J resume set --text' : next.resumeThin ? 'a LinkedIn profile has employers but no job titles: confirm the target role with a choice question, your guess first (J ask resume --json {header,question,guess,next,source:"LinkedIn"}); a form that needs more asks for a file or the text' : 'read role, role words, place and remote from the resume' });
   },
 
+  // Items shown to the person in a reply: they leave the notify set until their version changes.
+  async shown(keys, flags) {
+    return out(updateState((s) => ({ shown: markShown(s, flags.all === true || !keys.length ? null : keys) })));
+  },
   async notify([sub, result]) {
     // The model records each push's answer. A "not sent" notify-only push stops further notify-only wakes until the person's
     // next turn; an answer that cannot tell sent from not sent allows them only for items that block work.

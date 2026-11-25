@@ -38,7 +38,7 @@ export function unattendedProblems(profile) {
   if (!Array.isArray(u.roles) || !u.roles.length) p.push('no role terms');
   if (!Array.isArray(u.places) || !u.places.length) p.push('no place');
   if (typeof u.minScore !== 'number') p.push('no lowest fit score');
-  if (!Array.isArray(u.hosts) || !u.hosts.length || u.hosts.some((h) => !graph().hosts.includes(h))) p.push('hosts must be from Greenhouse, Lever, Ashby');
+  if (!Array.isArray(u.hosts) || !u.hosts.length || u.hosts.some((h) => typeof h !== 'string' || !h.trim())) p.push('no hiring systems (a list, or "*" for any)');
   if (!profile.eeo) p.push('the EEO choice is not made');
   return p;
 }
@@ -107,7 +107,7 @@ export const dryRunDone = (state, profile, overlay) => Boolean(state.consent.dry
 export function unattendedRuleFailure(job, profile, overlay, now = Date.now()) {
   const u = profile.unattended;
   const title = job.title.toLowerCase();
-  if (!u.hosts.includes(job.ats)) return 'host_not_in_rules';
+  if (!u.hosts.includes('*') && !u.hosts.includes(job.ats)) return 'host_not_in_rules';
   if (!u.roles.some((r) => title.includes(String(r).toLowerCase()))) return 'role_not_in_rules';
   const hay = `${job.city} ${job.region} ${job.country}`.toLowerCase();
   if (!u.places.some((p) => hay.includes(String(p).toLowerCase())) && !(job.remote && u.remote === true)) return 'place_not_in_rules';
@@ -168,13 +168,28 @@ export function applyNext(ctx) {
   return out({});
 }
 
+// Where the person applies this job (v0-47): 'employer' (the skill applies on the employer's page), 'linkedin' (the person
+// applies on the job's own LinkedIn link, which the skill only shows) or 'ask' (both exist and the person chose to be asked).
+// A job with no LinkedIn link takes the employer site under the apply mode.
+export function applyPathOf(job, profile = {}) {
+  if (job.applyVia === 'employer' || job.applyVia === 'linkedin') return job.applyVia;
+  if (!job.linkedinUrl) return 'employer';
+  const where = (profile.apply && profile.apply.where) || 'employer';
+  if (where === 'linkedin') return 'linkedin';
+  if (where === 'ask') return job.employerPosting ? 'ask' : 'linkedin';
+  return 'employer';
+}
+
 export function jobFailure({ job, state, profile, overlay, mode, now, writingOk = false }) {
-  // Only the employer's own posting on Greenhouse, Lever or Ashby, found exactly or confirmed, is ever handed out.
+  const path = applyPathOf(job, profile);
+  if (path === 'linkedin') return 'linkedin_path'; // shown to the person, never opened
+  if (path === 'ask') return 'where_needs_answer'; // the choice joins the approval call; nothing is handed out before it
+  // Only the employer's own posting, found exactly or confirmed, on any host off the deny list, is ever handed out.
   const ep = job.employerPosting;
   if (!ep || !['exact', 'confirmed'].includes(ep.confidence)) return 'no_employer_posting';
   if (job.openConfirmed !== true) return 'not_confirmed_open';
   if (isNeverAutomated(ep.url)) return 'platform_url';
-  if (!graph().hosts.includes(ep.system) || !(graph().applyHostNames[ep.system] || []).includes(new URL(ep.url).hostname)) return 'host_not_allowed';
+  if (!/^https:\/\//.test(String(ep.url || ''))) return 'host_not_allowed';
   if (job.parked) return 'parked';
   if (job.noChromeTools) return 'no_chrome_tools';
   if (!job.verifiedAt || now - Date.parse(job.verifiedAt) > graph().unattendedWindow.verifiedHours * HOUR) return 'not_verified_recently';

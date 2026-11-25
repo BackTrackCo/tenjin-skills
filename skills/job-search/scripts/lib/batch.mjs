@@ -37,7 +37,7 @@ export const batchMode = (state) => (batchOf(state) || {}).mode || null;
 // Hosts only from graph.json, so a page cannot widen them.
 export function openBatch({ mode = 'attended', uploadPath = null, now = Date.now() } = {}) {
   const g = graph();
-  const batch = { mode, uploadPath, hosts: g.hosts.flatMap((h) => g.applyHostNames[h] || []), openedAt: new Date(now).toISOString(), touchedAt: new Date(now).toISOString() };
+  const batch = { mode, uploadPath, denied: g.neverHosts, openedAt: new Date(now).toISOString(), touchedAt: new Date(now).toISOString() };
   updateState((s) => { s.batch = batch; });
   return batch;
 }

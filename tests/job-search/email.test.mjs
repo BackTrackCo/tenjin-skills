@@ -189,7 +189,8 @@ test('an X lead\'s DM is the person\'s: code gives the profile link and the text
 test('SKILL.md and the references: send only what J email next handed out; no connector tool name is hard-coded', () => {
   const skill = fs.readFileSync(path.join(SKILL, 'SKILL.md'), 'utf8');
   assert.match(skill, /send only what `J email next` handed out/i);
-  assert.match(skill, /Never LinkedIn, Indeed, Glassdoor, ZipRecruiter, X/);
+  assert.match(skill, /except the deny list: LinkedIn, Indeed, Glassdoor, ZipRecruiter, Monster, SimplyHired, CareerBuilder, Dice, Wellfound/);
+  assert.match(skill, /X \(x\.com, twitter\.com\)/);
   const contacts = fs.readFileSync(path.join(SKILL, 'references', 'contacts.md'), 'utf8');
   assert.match(contacts, /Gmail connector/);
   assert.match(contacts, /word for word/);

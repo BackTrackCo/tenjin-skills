@@ -18,11 +18,11 @@ const rule = (value) => ({ rules: [{ id: 'r', effect: 'period_max', value, words
 const profile = { eeo: 'decline_all', unattended: { roles: ['engineer'], places: ['Berlin'], minScore: 70, hosts: ['greenhouse'] }, search: { role: 'engineer' } };
 
 // ---- the start questions: four in one call after the resume ------------------
-test('the start: the resume is a plain question, then one call with three questions and a /rc reminder', () => {
+test('the start: the resume is a plain question, then one call with four questions and a /rc reminder', () => {
   assert.match(q.START_RESUME_QUESTION, /plain question/);
   const p = q.startQuestions();
-  assert.equal(p.questions.length, 3);
-  assert.deepEqual(p.questions.map((x) => x.header), ['Apply mode', 'Search', 'Positions']);
+  assert.equal(p.questions.length, 4);
+  assert.deepEqual(p.questions.map((x) => x.header), ['Apply mode', 'Search', 'Positions', 'Where']);
   assert.match(p.reminder, /\/rc/);
   assert.doesNotMatch(JSON.stringify(p), /remote-control|Remote Control/);
   assert.deepEqual(q.validateAsk(p), []);
@@ -30,6 +30,7 @@ test('the start: the resume is a plain question, then one call with three questi
   assert.deepEqual(p.questions[1].options.map((o) => o.label), ['Every day (Recommended)', 'Twice a day', 'Once a week']);
   assert.deepEqual(p.questions[2].options.map((o) => o.label), ['50 now, 10 daily (Recommended)', '100 now, 20 daily', '20 now, 5 daily', 'No limit']);
   assert.deepEqual(p.questions[0].options.map((o) => o.label), ['Ask me each time (Recommended)', 'Auto apply, approve new answers', 'Fully auto apply']);
+  assert.deepEqual(p.questions[3].options.map((o) => o.label), ['Employer\'s site (Recommended)', 'LinkedIn, I apply', 'Ask me each job']);
   assert.match(p.questions[0].options[1].description, /the answer is drafted and that job waits for your yes/);
   assert.match(p.questions[1].options[0].description, /runs in code at the router's price, with no Claude usage for the searches/);
 });
@@ -45,7 +46,7 @@ test('the other questions go through the same tool: resume choice, Tenjin ask, E
 
 test('the CLI prints the payload for the question tool, and none in an unattended turn', () => {
   const r = runJobs(home, ['ask', 'start']);
-  assert.equal(r.json.questions.length, 3);
+  assert.equal(r.json.questions.length, 4);
   assert.equal(runJobs(home, ['ask', 'nonsense']).code, 2);
   const b = runJobs(home, ['batch', 'open', '--unattended']);
   assert.equal(b.code, 0);
