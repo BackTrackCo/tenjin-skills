@@ -7,14 +7,6 @@ import { graph } from './graph.mjs';
 const price = (need) => graph().prices.needs[need].estimateCents;
 const tenths = (cents) => Math.round(cents * 10);
 
-// The estimate from a recorded provider price in USD: the price, plus the fee share for a routed query (none for a tool-id call),
-// rounded up to a tenth of a cent, in integers.
-export function estimateCentsFromUsd(usd, via = 'routed_query') {
-  const micro = Math.round(usd * 1e6); // millionths of a dollar
-  const pct = via === 'tool_id' ? 100 : Math.round((1 + graph().prices.routingFeeShare) * 100);
-  return Math.ceil((micro * pct) / 100 / 1000) / 10; // tenths of a cent, rounded up
-}
-
 export const fmt = (cents) => `${Number.isInteger(cents) ? cents : (Math.round(cents * 10) / 10).toString()}¢`;
 const sumTenths = (...needs) => needs.reduce((n, k) => n + tenths(price(k)), 0);
 

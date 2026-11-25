@@ -57,13 +57,12 @@ test('the ask: at most once per session, a recorded no with its date, only a men
   assert.equal(work.tenjinAsk({ tenjin: { status: 'ready' } }, {}), false);
 });
 
-test('the start never stops for Tenjin: with none installed, setup check and the work-list still run', () => {
+test('the start never stops for Tenjin: with none installed, the work-list still runs', () => {
   reset();
   runJobs(home, ['profile', 'set', JSON.stringify({ search: { role: 'engineer', place: 'Berlin' } })]);
   const t = runJobs(home, ['tenjin']);
   assert.equal(t.code, 0);
   assert.equal(t.json.status, 'missing');
-  assert.equal(runJobs(home, ['setup', 'check']).code, 0);
   const w = runJobs(home, ['work']);
   assert.ok(w.json.items.some((i) => i.reason === 'search_due' && i.routed === false && i.hint));
   assert.equal(w.json.notify, null, 'a missing Tenjin is a hint, not something that waits on the person');

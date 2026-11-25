@@ -5,10 +5,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { graph } from './lib/graph.mjs';
 import { SKILL_DIR, ensureDir, readJson, stateDir, writeJsonAtomic } from './lib/paths.mjs';
-import { applyOp, applyOps, bump, companyTitleKey, compact, loadState, updateState, view } from './lib/store.mjs';
+import { applyOp, applyOps, bump, companyTitleKey, loadState, updateState, view } from './lib/store.mjs';
 
-import { addLesson, addRule, deriveLessons, loadOverlay, removeRule } from './lib/overlay.mjs';
-import { persist, runSweep } from './lib/sweep.mjs';
+import { addRule, deriveLessons, loadOverlay, removeRule } from './lib/overlay.mjs';
 import { markShown, refreshClaims, releaseClaims, itemVersion, LEAVE_REASONS, ITEM_LEAVE_REASONS, advanceSearch, askFirst, itemKind, leaveItem, leaveRecord, park, unpark, workList } from './lib/work.mjs';
 import { applyRoundDrafts, checkJobSheet, prepareInCode, writableFields } from './lib/prepare.mjs';
 import { logRun } from './lib/runlog.mjs';
@@ -30,12 +29,11 @@ import { firstApplicationHosts, renderReport } from './lib/report.mjs';
 import { CHROME_STEPS, maySubmit, stateLine } from './lib/approval.mjs';
 import { openPage, checkOpenUrl, openUrlOf } from './lib/open.mjs';
 import { pushSettings } from './lib/pushsettings.mjs';
-import { copyToUploads, migrateResume, uploadBlockedStep, uploadsDir, uploadsGranted, uploadsLine } from './lib/uploads.mjs';
+import { copyToUploads, uploadBlockedStep, uploadsDir, uploadsGranted, uploadsLine } from './lib/uploads.mjs';
 import * as qs from './lib/questions.mjs';
 import { FREQUENCIES, frequencyOf, periodStart } from './lib/schedule.mjs';
-import { observations } from './lib/signals.mjs';
 import { ingest, joinLeads, leadKey } from './lib/ingest.mjs';
-import { eeoTextOf, validateProfile } from './lib/profile.mjs';
+import { eeoTextOf, oldFieldError, oldFields, validateProfile } from './lib/profile.mjs';
 import { routeContacts, routedRounds } from './lib/routed.mjs';
 import { resumeHeld } from './lib/held.mjs';
 import { DEFAULT_BUDGET_MS, runHn } from './lib/hn.mjs';
@@ -108,35 +106,17 @@ const commands = {
     return out(r);
   },
 
-  async setup([sub, ...rest], flags) {
-    if (sub === 'check') {
-      return out({ tenjin: loadState().tenjin || null, profile: fs.existsSync(profileFile()), setup: loadState().setup });
-    }
-    if (sub === 'resume') {
-      const p = rest[0] || '';
-      if (!p || /\[PATH TO/i.test(p) || !fs.existsSync(p)) return out({ ask: 'Which file is your resume? Give its path.', read: false }, 4);
-      const text = fs.readFileSync(p, 'utf8');
-      const prof = readProfile();
-      writeJsonAtomic(profileFile(), { ...prof, resumePath: path.resolve(p), resumeText: text });
-      return out({ read: true, chars: text.length });
-    }
-    if (sub === 'stage') {
-      updateState((s) => {
-        s.setup = { ...s.setup, stage: rest[0] || null, next: rest[1] || null };
-      });
-      return out({ saved: true });
-    }
-    return out({ error: 'setup check | resume <path> | stage <stage> <next>' }, 2);
-  },
 
   async profile([sub, arg]) {
     if (sub === 'get') return out(readProfile());
     if (sub === 'set') {
       ensureDir(stateDir());
       const given = readJsonArg(arg);
-      // The compatibility feature for an external tool is gone: the field is refused from now on. An old profile that still has it loads, and the field is ignored.
-      if (given && typeof given === 'object' && 'careerOps' in given) return out({ error: 'the profile was not saved: careerOps is no longer a profile field (that feature was removed)' }, 2);
+      // A field from an earlier version is never converted: it is refused with its name, and removed with null.
       const next = { ...readProfile(), ...given };
+      for (const o of oldFields(given)) {
+        if (given[o.field] === null) delete next[o.field];
+      }
       const bad = validateProfile(next);
       if (bad.length) return out({ error: `the profile was not saved: ${bad.join('; ')}` }, 2);
       writeJsonAtomic(profileFile(), next);
@@ -158,28 +138,13 @@ const commands = {
     return out({ error: 'batch open [--unattended] [--upload path] | close' }, 2);
   },
 
-  async sweep() {
-    const state = loadState();
-    const payload = await runSweep({ state, profile: readProfile(), overlay: loadOverlay(), fetch: globalThis.fetch });
-    const r = persist(payload);
-    return out({ ...r, dropped: payload.dropped.length, held: payload.held });
-  },
 
-  async view(_, flags) {
-    return out(view(loadState(), { keys: flags.keys ? String(flags.keys).split(',') : undefined, limit: Number(flags.limit) || 30 }));
-  },
   async ops([arg]) {
     const ops = readJsonArg(arg);
     const r = applyOps(ops);
     const ranked = (Array.isArray(ops) ? ops : []).filter((o) => o.op === 'rank').length;
     if (ranked) updateState((s) => logRun(s, 'review', ranked));
     return out(r);
-  },
-  async persist([arg]) {
-    return out(persist(readJsonArg(arg)));
-  },
-  async compact() {
-    return out({ archived: updateState((s) => compact(s)) });
   },
 
   async rules([sub, ...rest], flags) {
@@ -194,8 +159,6 @@ const commands = {
   },
   async lessons([sub, ...rest], flags) {
     if (sub === 'derive') return out(deriveLessons(loadState()));
-    if (sub === 'remove') return out({ removed: removeRule(rest[0]) });
-    if (sub === 'add') return out(addLesson({ effect: flags.effect, subject: flags.subject, evidence: String(flags.evidence || '').split(',').filter(Boolean) }));
     return out(loadOverlay().lessons);
   },
 
@@ -446,9 +409,6 @@ const commands = {
       return { parked: kind, ...(kind === 'upload_blocked' && flags.unattended !== true && !(s.batch && s.batch.mode === 'unattended') ? { say: uploadBlockedStep() } : {}) };
     });
     return out({ ...r, batchClosed: closed });
-  },
-  async park([key, ...reasons]) {
-    return out(updateState((s) => ({ changed: park(s.jobs[key], reasons) })));
   },
   async unpark([key]) {
     return out(updateState((s) => {
@@ -940,9 +900,6 @@ const commands = {
     updateState((s) => logRun(s, 'writer', ops.length));
     return out(applyOps(ops));
   },
-  async ack() {
-    return out(updateState((s) => { for (const c of s.consentLog || []) c.acked = true; return { acked: true }; }));
-  },
 
   // A search round in code through the router, for one attended or manual run. The watcher does the same on its tick.
   async route() {
@@ -1098,9 +1055,6 @@ const commands = {
     return out({ gatesHash: h });
   },
 
-  async signals() {
-    return out(observations(loadState()));
-  },
 };
 
 // A lead's intro must fit its channel. Never sent.
@@ -1128,10 +1082,13 @@ async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   const { pos, flags } = parseArgs(rest);
   if (!commands[cmd]) return out({ error: `unknown command: ${cmd}`, commands: Object.keys(commands) }, 2);
+  // A profile that holds a field from an older version is refused with the field's name; `J profile` itself still runs, to remove it.
+  if (cmd !== 'profile') {
+    const old = oldFields(readProfile());
+    if (old.length) return out({ error: oldFieldError(old) }, 2);
+  }
   // A command that changes what a submit may do is refused while a batch is open, whoever calls it.
   if (batch.isBatchDenied(cmd, pos[0]) && batch.isActive()) return out({ error: `${cmd} ${pos[0] || ''} is refused while a batch is open; close it in an attended session first`.replace('  ', ' ') }, 4);
-  // An install from before the uploads folder: the first command that sees a saved resume file with no copy there copies it.
-    try { const prof = readProfile(); const m = migrateResume(prof); if (m) writeJsonAtomic(profileFile(), { ...prof, ...m }); } catch {}
   try {
     await commands[cmd](pos, flags);
     if (cmd !== 'watch') touchLease();

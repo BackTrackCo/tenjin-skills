@@ -13,10 +13,10 @@ const paths = await import('../../skills/job-search/scripts/lib/paths.mjs');
 const seed = (jobs) => store.updateState((s) => { for (const j of jobs) s.jobs[j.key] = j; });
 
 test('writes are atomic: no temp files linger, file is valid JSON, mode 0600', () => {
-  store.updateState((s) => { s.setup.stage = 'x'; });
+  store.updateState((s) => { s.chrome = 'x'; });
   const dir = paths.stateDir();
   assert.deepEqual(fs.readdirSync(dir).filter((f) => f.endsWith('.tmp') || f.endsWith('.lock')), []);
-  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'state.json'), 'utf8')).setup.stage, 'x');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'state.json'), 'utf8')).chrome, 'x');
   assert.equal(fs.statSync(path.join(dir, 'state.json')).mode & 0o777, 0o600);
 });
 
@@ -55,17 +55,6 @@ test('view is bounded', () => {
   assert.ok(v.truncated >= 40);
 });
 
-test('compact archives old terminal jobs but keeps their dedupe keys', () => {
-  const old = mkJob({ status: 'closed', statusAt: new Date(Date.now() - 40 * 864e5).toISOString() });
-  seed([old]);
-  const n = store.updateState((s) => store.compact(s));
-  assert.ok(n >= 1);
-  const s = store.loadState();
-  assert.equal(s.jobs[old.key], undefined);
-  assert.ok(s.dedupe[old.key]);
-  assert.ok(s.dedupe[`ct:${store.companyTitleKey(old)}`]);
-});
-
 test('a newer schema is refused by older code', () => {
   const f = store.stateFile();
   const s = JSON.parse(fs.readFileSync(f, 'utf8'));
@@ -87,6 +76,6 @@ test('two processes writing 100 ops each land all 200', async () => {
 
 test('a stale lock whose pid is gone is reclaimed', () => {
   fs.writeFileSync(path.join(paths.stateDir(), 'state.lock'), '999999');
-  store.updateState((s) => { s.setup.stage = 'again'; });
-  assert.equal(store.loadState().setup.stage, 'again');
+  store.updateState((s) => { s.chrome = 'again'; });
+  assert.equal(store.loadState().chrome, 'again');
 });

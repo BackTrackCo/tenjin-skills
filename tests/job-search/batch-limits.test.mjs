@@ -17,8 +17,6 @@ const profile = { eeoText: 'Decline every voluntary demographic question (test p
 const LIMIT_COMMANDS = [
   ['rules', 'add', '--effect', 'period_max', '--value', '9', '--words', 'more'],
   ['rules', 'remove', 'r1'],
-  ['lessons', 'add', '--effect', 'drop_query', '--subject', 'q'],
-  ['lessons', 'remove', 'l1'],
   ['consent', 'record', 'unattended', '--optional-writing', 'skip'],
   ['consent', 'record', 'writing'],
   ['writing', 'approve', 'k1'],
@@ -28,7 +26,6 @@ const LIMIT_COMMANDS = [
   ['frequency', 'set', 'weekly'],
   ['start', 'record', '--mode', 'auto_write'],
   ['watch', 'remove', 'acme'],
-  ['setup', 'resume', '/tmp/x'],
   ['dryrun', 'confirm'],
   ['batch', 'open', '--unattended'],
   ['release', 'apply'],

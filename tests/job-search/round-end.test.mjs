@@ -41,7 +41,7 @@ test('a round with a job left to submit stays open; held and parked jobs end it'
   assert.equal(first.json.handout.key, j.key);
   assert.equal(first.json.batchClosed, false);
   assert.equal(b.batchExists(), true);
-  runJobs(home, ['park', j.key, 'captcha']);
+  store.updateState((s) => { s.jobs[j.key].parked = { key: `${j.key}@${s.jobs[j.key].hash}`, reasons: ['captcha'] }; });
   assert.equal(runJobs(home, ['apply', 'next', '--unattended']).json.batchClosed, true);
 });
 

@@ -112,7 +112,6 @@ test('SKILL.md: run a free path only from what those commands printed', () => {
 
 // ---- the ask lists everything, with each price ---------------------------------------------------
 const graph = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'graph.json'), 'utf8'));
-const prices = await import('../../skills/job-search/scripts/lib/prices.mjs');
 const FIXTURE_FOR = { board_search: ['exa-search', 'step2'], job_postings: ['job-postings', 'step2'], x_hiring_posts: ['x-posts', 'step2'], careers_page: ['careers-page', 'step2'], people_search: ['people-search', 'step2'], company_lookup: ['company-lookup', 'step2'], linkedin_profile: ['linkedin-profile', 'step2'] };
 
 test('each price estimate equals its fixture\'s recorded cost, plus 15% for a routed query only, rounded up to a tenth of a cent', () => {
@@ -126,7 +125,6 @@ test('each price estimate equals its fixture\'s recorded cost, plus 15% for a ro
     assert.equal(entry.providerUsd, usd, `${need}: the recorded provider price`);
     const fee = entry.via === 'tool_id' ? 1 : 1.15;
     assert.equal(entry.estimateCents, Math.ceil(usd * 100 * fee * 10 - 1e-9) / 10, `${need}: ${entry.via}, rounded up`);
-    assert.equal(prices.estimateCentsFromUsd(usd, entry.via), entry.estimateCents, need);
   }
 });
 
@@ -174,12 +172,14 @@ test('the ask is the approved copy word for word, the moment\'s line first, with
 });
 
 test('every hint and offer line names its price, no seller name appears, and every routed need has a line', () => {
-  const o = work.OFFER_LINES;
-  for (const k of ['posting', 'contacts', 'linkedin']) assert.match(o[k], /\d(\.\d)?¢/, k);
-  const text = Object.values(work.HINT_LINES).join(' ') + work.tenjinOffer('daily_search', { tenjin: { status: 'missing' } });
+  const offer = work.tenjinOffer('daily_search', { tenjin: { status: 'missing' } });
+  for (const bullet of offer.split('\n').filter((l) => /^- (The company's|A hiring manager|Your LinkedIn)/.test(l))) assert.match(bullet, /\d(\.\d)?¢/, bullet);
+  const text = Object.values(work.HINT_LINES).join(' ') + offer;
   assert.doesNotMatch(text, /orthogonal|icypeas|exa\b|agentsearch|brave|companyenrich|x402|apollo|blockrun/i);
   assert.doesNotMatch(text, /Neon|writing/);
-  for (const kind of [...Object.keys(graph.needTemplates), 'web_search', 'company_lookup']) assert.ok(o[work.NEED_LINES[kind]], `${kind} has a line`);
+  // every routed need has a price in graph.json, so it has a figure in the ask
+  const PRICE_KEY = { job_postings: 'job_postings', x_hiring_posts: 'x_hiring_posts', web_search: 'board_search', careers_page: 'careers_page', people_search: 'people_search', company_lookup: 'company_lookup', linkedin_profile: 'linkedin_profile' };
+  for (const kind of [...Object.keys(graph.needTemplates), 'web_search', 'company_lookup']) assert.ok(graph.prices.needs[PRICE_KEY[kind]], `${kind} has a price`);
   for (const need of Object.keys(graph.prices.needs)) assert.ok(graph.prices.needs[need].estimateCents > 0, need);
   const a = work.askFirst({ tenjin: { status: 'missing' }, lease: null }, 'contacts');
   assert.equal(a.question.questions[0].question, work.tenjinOffer('contacts', { tenjin: { status: 'missing' } }));

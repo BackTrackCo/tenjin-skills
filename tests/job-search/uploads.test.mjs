@@ -54,21 +54,19 @@ test('a PDF from a link is saved in the uploads folder, and resume.txt stays in 
   assert.equal(fs.existsSync(path.join(stateDir(), 'uploads', 'resume.txt')), false);
 });
 
-test('an install from before the uploads folder: the first J command that sees a saved resume file with no copy copies it', () => {
+test('there is no migration: a saved resume file outside the uploads folder is not copied by any command', () => {
   reset();
   const old = path.join(stateDir(), 'resume.pdf');
   fs.mkdirSync(stateDir(), { recursive: true });
   fs.writeFileSync(old, '%PDF-1.4 saved before');
   fs.writeFileSync(path.join(stateDir(), 'profile.json'), JSON.stringify({ resumeSource: 'link', resumePath: old }));
-  assert.equal(fs.existsSync(path.join(stateDir(), 'uploads')), false);
   assert.equal(J('arm').code, 0);
-  const copy = path.join(stateDir(), 'uploads', 'resume.pdf');
-  assert.equal(fs.readFileSync(copy, 'utf8'), '%PDF-1.4 saved before');
-  assert.equal(J('profile', 'get').json.resumeUploadPath, copy);
-  assert.equal(fs.readFileSync(old, 'utf8'), '%PDF-1.4 saved before', 'the old file stays');
-  fs.writeFileSync(copy, 'changed');
-  J('arm');
-  assert.equal(fs.readFileSync(copy, 'utf8'), 'changed', 'a copy that is there is not overwritten');
+  assert.equal(fs.existsSync(path.join(stateDir(), 'uploads')), false, 'nothing is copied on read');
+  assert.equal(J('profile', 'get').json.resumeUploadPath, undefined);
+  assert.equal(up.migrateResume, undefined);
+  // the person's own J resume set puts the copy in place
+  assert.equal(J('resume', 'set', '--file', old).code, 0);
+  assert.equal(fs.readFileSync(path.join(stateDir(), 'uploads', 'resume.pdf'), 'utf8'), '%PDF-1.4 saved before');
 });
 
 // ---- the grant check ---------------------------------------------------------------------------------------

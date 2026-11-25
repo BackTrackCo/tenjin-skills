@@ -23,7 +23,6 @@ export function emptyState() {
     signals: { counts: {}, observations: [] },
     held: [],
     lease: null,
-    setup: { stage: null, next: null, deepseek: null },
     update: { lastCheckAt: null, status: null, installed: null, waiting: null },
     consent: { unattended: null, writing: null, dryRun: { records: [], confirmedAt: null } },
     notified: {},
@@ -255,27 +254,8 @@ export function view(state, { keys, limit = 30 } = {}) {
     jobs: jobs.slice(0, limit).map(pick),
     truncated: Math.max(0, jobs.length - limit),
     held: state.held,
-    setup: state.setup,
     lease: state.lease,
     update: { status: state.update.status, waiting: state.update.waiting },
   };
 }
 
-export function compact(state, now = Date.now(), days = 30) {
-  const cutoff = now - days * 86400000;
-  const archive = [];
-  for (const [k, j] of Object.entries(state.jobs)) {
-    if (graph().terminal.includes(j.status) && Date.parse(j.statusAt || j.lastSeen || 0) < cutoff) {
-      archive.push(j);
-      state.dedupe[k] = 1;
-      state.dedupe[`ct:${companyTitleKey(j)}`] = 1;
-      delete state.jobs[k];
-    }
-  }
-  if (archive.length) {
-    const dir = ensureDir(path.join(stateDir(), 'archive'));
-    const file = path.join(dir, `${new Date(now).toISOString().slice(0, 7)}.jsonl`);
-    fs.appendFileSync(file, archive.map((j) => JSON.stringify(j)).join('\n') + '\n', { mode: 0o600 });
-  }
-  return archive.length;
-}

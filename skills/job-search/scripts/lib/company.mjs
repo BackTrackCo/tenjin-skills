@@ -28,15 +28,3 @@ export function nameMatches(a, b) {
   const y = normName(b);
   return x.length > 0 && x.length === y.length && x.every((w, i) => w === y[i]);
 }
-
-// Does the domain's own label equal a company name, with its words joined ("Scope Labs" and scopelabs.com)? Same normalization,
-// no containment.
-export function domainMatchesCompany(url, names) {
-  const label = websiteLabel(url);
-  if (!label) return false;
-  const l = label.replace(/-/g, '');
-  return names.some((n) => {
-    const w = normName(n);
-    return w.length > 0 && l === w.join('');
-  });
-}

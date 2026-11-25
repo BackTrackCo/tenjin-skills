@@ -49,7 +49,7 @@ export function unpark(job) {
   job.parked = null;
 }
 
-// The guard denies every MCP tool in an unattended batch, the request tool included, so the search waits.
+// No routed need runs while an unattended batch is open, so the search waits.
 export function unattendedBatchOpen() {
   return isActive() && batchMode() === 'unattended';
 }
@@ -234,9 +234,6 @@ export function plannedJobs(state, profile, overlay, now = Date.now()) {
 export const HINT_LINES = { ...hintLines(), outdated: outdatedLine(null) };
 // The ask lists each capability with its own price: this moment's hint line first, then the list, then the pace line. A hint stays one
 // line about its moment. Writing has no line until the Neon switch.
-export const OFFER_LINES = offerItems();
-// Every routed need in graph.json has a line here, so a new need cannot be left out (a test checks it).
-export const NEED_LINES = { job_postings: 'sources', x_hiring_posts: 'sources', web_search: 'boards', careers_page: 'posting', people_search: 'contacts', company_lookup: 'contacts', linkedin_profile: 'linkedin' };
 export function tenjinOffer(moment, state = {}, frequency = 'daily') {
   const t = state.tenjin || {};
   const first = t.status === 'outdated' ? outdatedLine(t.version) : hintLines()[moment] || null;

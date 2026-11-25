@@ -49,17 +49,6 @@ export function matchAnswer(field, entries) {
   return e;
 }
 
-export function nearMatch(label, entries) {
-  const q = normalizeQuestion(label);
-  if (entries.some((e) => e.q === q)) return { exact: true };
-  const words = new Set(q.split(' '));
-  for (const e of entries) {
-    const kw = e.q.split(' ');
-    if (kw.filter((w) => words.has(w)).length / Math.max(kw.length, words.size) >= 0.6) return { exact: false, near: e.q };
-  }
-  return null;
-}
-
 // The person approved the drafts, as they are or edited: each new-writing field becomes an earlier answer.
 export function approveWriting(job, profile, edits = {}, now = Date.now()) {
   const approved = [];

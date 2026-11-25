@@ -4,29 +4,24 @@ const strList = (v) => Array.isArray(v) && v.every(isStr);
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
 
 // The voluntary demographic answers (gender, race or ethnicity, veteran status, disability) are the person's own text, never a
-// choice. An older profile stored them as `eeo`: "decline_all" or {answers: {<field>: <answer>}}. Both shapes are converted to text
-// once, on read.
-export function eeoTextOf(p) {
-  if (!p || typeof p !== 'object') return null;
-  if (typeof p.eeoText === 'string' && p.eeoText.trim()) return p.eeoText.trim();
-  const e = p.eeo;
-  if (e === 'decline_all') return 'Decline to answer every voluntary demographic question.';
-  if (e && typeof e === 'object' && e.answers && typeof e.answers === 'object') {
-    const lines = Object.entries(e.answers).map(([k, v]) => `${k}: ${v}`);
-    return lines.length ? lines.join('\n') : null;
-  }
-  return null;
+// choice: `eeoText`.
+export const eeoTextOf = (p) => (p && typeof p === 'object' && typeof p.eeoText === 'string' && p.eeoText.trim() ? p.eeoText.trim() : null);
+
+// A field from an older version of the skill. Until v0 ships there are no converters or shims: a profile that holds one is refused
+// with an error that names the field, and the person (or the model) removes it. `J profile set '{"<field>": null}'` removes it.
+const OLD_FIELDS = {
+  eeo: 'the voluntary demographic answers are the person\'s own text now (eeoText); set it with J eeo set',
+  careerOps: 'that compatibility feature no longer exists',
+};
+export function oldFields(p) {
+  return p && typeof p === 'object' ? Object.keys(OLD_FIELDS).filter((k) => p[k] !== undefined).map((k) => ({ field: k, why: OLD_FIELDS[k] })) : [];
 }
-export function normalizeProfile(p) {
-  if (!p || typeof p !== 'object' || p.eeo === undefined) return p;
-  const { eeo, ...rest } = p;
-  const t = eeoTextOf(p);
-  return t ? { ...rest, eeoText: t } : rest;
-}
+export const oldFieldError = (list) => `profile.json has ${list.length > 1 ? 'old fields' : 'an old field'} the skill no longer reads: ${list.map((o) => `${o.field} (${o.why})`).join('; ')}. Remove ${list.length > 1 ? 'them' : 'it'} with J profile set '${JSON.stringify(Object.fromEntries(list.map((o) => [o.field, null])))}'.`;
 
 export function validateProfile(p) {
   const bad = [];
   const need = (ok, msg) => ok || bad.push(msg);
+  for (const o of oldFields(p)) bad.push(`${o.field} is an old field: ${o.why}`);
   if (!p || typeof p !== 'object' || Array.isArray(p)) return ['the profile must be a JSON object'];
   const has = (k) => p[k] !== undefined;
   if (has('places')) need(strList(p.places), 'places must be a list of strings, for example ["San Francisco"]');
@@ -52,7 +47,6 @@ export function validateProfile(p) {
     }
   }
   if (has('facts')) need(p.facts && typeof p.facts === 'object' && !Array.isArray(p.facts) && Object.values(p.facts).every((v) => ['string', 'number', 'boolean'].includes(typeof v)), 'facts must be an object of text, number or true/false values');
-  if (has('eeo')) bad.push('eeo is no longer a profile field: the voluntary demographic answers are the person\'s own text (J eeo set), asked as a plain question (J eeo question)');
   if (has('eeoText')) need(isStr(p.eeoText), 'eeoText must be the person\'s own text');
   if (has('unattended')) {
     const u = p.unattended;

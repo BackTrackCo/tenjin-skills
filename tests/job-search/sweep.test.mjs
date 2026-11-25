@@ -108,13 +108,6 @@ test('cross-source merge keeps one job and records the other URL', () => {
 import { mergeJobs } from '../../skills/job-search/scripts/lib/dedupe.mjs';
 function require_merge(s, jobs) { return mergeJobs(s, jobs, new Date().toISOString()); }
 
-test('a dropped job never comes back after compact', () => {
-  const j = mkJob({ status: 'skipped', statusAt: new Date(NOW - 60 * 864e5).toISOString() });
-  store.updateState((s) => { s.jobs = { [j.key]: j }; store.compact(s, NOW); });
-  store.updateState((s) => { mergeJobs(s, [{ ...j, status: undefined }], new Date(NOW).toISOString()); });
-  assert.equal(store.loadState().jobs[j.key], undefined);
-});
-
 test('an unchanged content hash skips review; a changed one asks again', () => {
   const j = mkJob({ status: 'new', reviewedHash: 'h1', hash: 'h1' });
   store.updateState((s) => { s.jobs = { [j.key]: j }; });
@@ -137,8 +130,7 @@ test('catch-up math: due after 20 hours on the first tick, capped at 14 days', (
 });
 
 test('an unreplaced [PATH TO RESUME] asks and reads nothing', () => {
-  const r = runJobs(home, ['setup', 'resume', '[PATH TO RESUME]']);
-  assert.equal(r.code, 4);
+  const r = runJobs(home, ['resume', 'set', '--file', '[PATH TO RESUME]']);
   assert.equal(r.json.read, false);
   assert.equal(fs.existsSync(path.join(home, '.tenjin-skills', 'job-search', 'profile.json')), false);
 });

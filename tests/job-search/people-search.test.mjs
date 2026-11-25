@@ -57,10 +57,6 @@ test('the website comes from what code has, with its source: record, posting, bo
   assert.deepEqual(company.websiteOf({ employerWebsite: 'x.test', employerWebsiteSource: 'company_lookup' }), { url: 'x.test', source: 'company_lookup' });
   assert.deepEqual(company.websiteOf({ boardHomepage: 'https://acme.test' }), { url: 'https://acme.test', source: 'board_page' });
   assert.equal(company.websiteOf({}), null);
-  assert.equal(company.domainMatchesCompany('https://www.acmerobotics.test', ['Acme Robotics']), true);
-  assert.equal(company.domainMatchesCompany('https://acme-robotics.test', ['Acme Robotics, Inc.']), true);
-  assert.equal(company.domainMatchesCompany('https://zetaholdings.test', ['Acme Robotics', 'Acme']), false);
-  assert.equal(company.domainMatchesCompany('https://acme.test', ['Acme Robotics', 'acme']), true, 'the board\'s company name counts too');
 });
 
 const BYNAME = fixture('router/people-search-by-name.json');
@@ -186,17 +182,15 @@ test('J contacts route prints the reasons through the CLI', () => {
 test('the contacts question and the Tenjin ask cover the company lookup; no seller name appears', () => {
   const desc = JSON.stringify(qs.contactsCountQuestion());
   assert.match(desc, /company lookup \(about 1\.3¢\) for a job whose website is not known/);
-  assert.match(work.OFFER_LINES.contacts, /about 2\.5¢ when the company's website must be looked up first/);
-  assert.equal(work.OFFER_LINES[work.NEED_LINES.company_lookup], work.OFFER_LINES.contacts);
+  assert.match(work.tenjinOffer('contacts', { tenjin: { status: 'missing' } }), /about 2\.5¢ when the company's website must be looked up first/);
   const graph = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'graph.json'), 'utf8'));
   assert.equal(graph.needTemplates.company_lookup, undefined, 'called by tool id, no need text');
-  for (const kind of [...Object.keys(graph.needTemplates), 'company_lookup']) assert.ok(work.OFFER_LINES[work.NEED_LINES[kind]], kind);
+  assert.ok(graph.prices.needs.company_lookup && graph.prices.needs.people_search, 'both are priced');
   assert.doesNotMatch(desc + work.tenjinOffer('contacts'), /orthogonal|icypeas|agentsearch|companyenrich/i);
 });
 
 test('the company lookup request input has only keys from its spec', () => {
   const allowed = ['name', 'linkedinUrl', 'linkedinId', 'twitterUrl', 'facebookUrl', 'instagramUrl', 'youTubeUrl'];
-  assert.deepEqual(cl.INPUTS, allowed);
   for (const fields of [{ company: 'Acme' }, { company: 'Acme', linkedinUrl: 'https://www.linkedin.com/company/acme' }, { company: 'Acme', url: 'https://boards.example/x', city: 'New York' }, { linkedinUrl: 'https://www.linkedin.com/company/acme' }]) {
     const input = cl.mapper(fields);
     assert.ok(Object.keys(input).every((k) => allowed.includes(k)), JSON.stringify(input));
@@ -219,10 +213,6 @@ test('names match only when their normalized word lists are equal: no containmen
   assert.equal(company.nameMatches('', ''), false);
   assert.equal(company.nameMatches('Inc', 'Co'), false, 'nothing is left after the suffix words');
   assert.deepEqual(company.normName('The Meow-Wolf Company, Inc.'), ['the', 'meow', 'wolf']);
-  assert.equal(company.domainMatchesCompany('https://scopelabs.com', ['Scope Labs']), true);
-  assert.equal(company.domainMatchesCompany('https://scope-labs.com', ['Scope Labs, Inc.']), true);
-  assert.equal(company.domainMatchesCompany('https://scope.com', ['Scope Labs']), false, 'no containment for the domain either');
-  assert.equal(company.domainMatchesCompany('https://scopelabs.com', ['Scope']), false);
   // "Meow" against a lookup that answers "Meow Wolf": the domain is not saved
   const ing = await import(`${S}ingest.mjs`);
   reset();

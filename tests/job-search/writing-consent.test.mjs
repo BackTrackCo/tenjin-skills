@@ -185,7 +185,7 @@ test('approving the text, as it is or edited, makes each field an earlier answer
   fs.writeFileSync(q, JSON.stringify(Q));
   store.updateState((s) => { s.jobs[j.key].drafts = DRAFTS; });
   runJobs(home, ['sheet', 'build', j.key, '--questions', q]);
-  runJobs(home, ['park', j.key, 'writing_needs_yes']);
+  store.updateState((s) => { s.jobs[j.key].parked = { key: `${j.key}@${s.jobs[j.key].hash}`, reasons: ['writing_needs_yes'] }; });
   const edits = path.join(home, 'edits.json');
   fs.writeFileSync(edits, JSON.stringify({ 'Why do you want to work here?': 'I like small teams.' }));
   const r = runJobs(home, ['writing', 'approve', j.key, '--edits', edits]);

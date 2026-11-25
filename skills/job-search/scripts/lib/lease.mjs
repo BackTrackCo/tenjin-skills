@@ -19,7 +19,7 @@ export const pidAlive = (pid) => {
     return e.code === 'EPERM';
   }
 };
-// A lease with no recorded pid (the older shape) counts as alive while its heartbeat is fresh.
+// A lease with no recorded pid counts as alive while its heartbeat is fresh.
 const aliveAt = (l) => Date.parse(l.alive || l.heartbeat);
 export const leaseFresh = (lease, now) => Boolean(lease && now - aliveAt(lease) < STALE_MS && (lease.pid === undefined || lease.pid === null || pidAlive(lease.pid)));
 

@@ -29,16 +29,6 @@ export function saveToUploads(name, data) {
   return dest;
 }
 
-// An install from before the uploads folder: the first command that sees a saved resume file with no copy in the uploads folder
-// copies it there. Returns the profile fields to change, or null.
-export function migrateResume(profile) {
-  const cur = profile.resumeUploadPath;
-  if (cur && fs.existsSync(cur)) return null;
-  const src = profile.resumePath;
-  if (!src || !fs.existsSync(src) || !fs.statSync(src).isFile()) return null;
-  return { resumeUploadPath: copyToUploads(src) };
-}
-
 // ---- the grant ----------------------------------------------------------------------------------------------
 // Claude Code's working directories include `permissions.additionalDirectories` from settings. Read-only, and only that one key,
 // from the user settings, the project's settings and its local settings; nothing else is kept and nothing is written.

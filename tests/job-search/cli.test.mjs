@@ -33,14 +33,13 @@ test('`J tenjin` only sets the hint state, from --version and balance --json; it
   assert.equal(runJobs(home, ['tenjin']).json.status, 'unfunded');
   fs.writeFileSync(balFile, '5000000');
   runJobs(home, ['tenjin']);
-  const c = runJobs(home, ['setup', 'check']);
-  assert.equal(c.json.tenjin.status, 'ready');
-  assert.equal(c.json.deepseek, undefined, 'no DeepSeek question, no DeepSeek read');
+  assert.equal(store.loadState().tenjin.status, 'ready');
+  assert.equal(store.loadState().setup, undefined, 'no setup state, no DeepSeek question, no DeepSeek read');
   assert.ok(calls().every((x) => ['--version', 'balance --json'].includes(x)), 'no Tenjin setting is read for DeepSeek or changed');
 });
 
-test('there are no guard or DeepSeek commands any more', () => {
-  for (const args of [['guard', 'install'], ['guard', 'hook'], ['setup', 'deepseek']]) {
+test('the guard, DeepSeek, setup and other removed commands do not exist', () => {
+  for (const args of [['guard', 'install'], ['guard', 'hook'], ['setup', 'deepseek'], ['setup', 'check'], ['sweep'], ['view'], ['persist'], ['compact'], ['signals'], ['park', 'k'], ['ack'], ['pipeline', 'add']]) {
     const r = runJobs(home, args);
     assert.notEqual(r.code, 0, args.join(' '));
   }

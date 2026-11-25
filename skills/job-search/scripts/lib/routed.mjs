@@ -50,8 +50,6 @@ export function jobNeeds(state, profile, overlay, { kinds = ['careers_page', 'pe
   return out;
 }
 
-// The watcher runs the rounds in code only when the searches that can run in code have adapters; `J route` runs them by hand.
-export const allNeedsCovered = () => SEARCH_KINDS.every((k) => SUPPLIERS.some((s) => s.kind === k));
 
 const hold = (r, now, { clock = true } = {}) => updateState((s) => {
   s.held = [...s.held.filter((h) => !String(h.detail).startsWith(`routed:${r.need}:`)), { reason: 'source_empty', detail: `routed:${r.need}: ${r.status}: ${r.reason}` }];

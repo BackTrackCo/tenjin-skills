@@ -69,10 +69,6 @@ test('routed needs run one by one: a need with an unknown supplier becomes one H
   assert.equal(store.loadState().search.needPending.length, 0);
 });
 
-test('the watcher no longer waits for every need to have an adapter', () => {
-  assert.doesNotMatch(fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'scripts', 'lib', 'watcher.mjs'), 'utf8'), /allNeedsCovered\(\)/);
-});
-
 // ---- items 3 and 4: one wake per round, the notify line -------------------------------------
 const waiting = (i) => mkJob({ key: `https://boards.greenhouse.io/acme/jobs/9${i}`, status: 'apply_ready', company: `Wait${i}`, sheet: { hash: 'h', passed: true, eeoMissing: false, fields: [] }, v: 1 });
 

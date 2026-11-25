@@ -41,7 +41,7 @@ export function rcReminder({ rc = 'unknown', pushSent = false, settings = {} } =
   return [first, second].filter(Boolean).join(' ') || null;
 }
 // What to say at a push that came back "not sent", once: off (the push setting is off) the /config sentence, from the file as
-// it is now, with "Push when Claude decides" named since the push says it is off; none (no transport) both sentences; present
+// the file as it stands, with "Push when Claude decides" named since the push says it is off; none (no transport) both sentences; present
 // (the person is at the terminal) nothing.
 export const rcAtPush = (reason, settings = {}) => (reason === 'off' ? configSentence({ input: settings.input ?? null, agent: false }) : reason === 'none' ? `${RC_FIRST} ${configSentence({ input: settings.input ?? null, agent: false })}` : null);
 

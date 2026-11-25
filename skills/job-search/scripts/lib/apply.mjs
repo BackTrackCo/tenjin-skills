@@ -20,7 +20,7 @@ const HOUR = 3600000;
 export function periodLimit(overlay, { profile = {}, now = Date.now(), ignoreCatchUp = false } = {}) {
   const v = ruleValue(overlay, 'period_max');
   if (v === undefined || v === 'none' || v === null) return null;
-  if (typeof v !== 'object') return Number(v); // the older rule: a number per period
+  if (typeof v !== 'object') return Number(v); // a whole number of positions per period
   const freq = frequencyOf(profile);
   const obj = v;
   const at = obj.at ? Date.parse(obj.at) : NaN;
@@ -238,4 +238,3 @@ export function jobFailure({ job, state, profile, overlay, mode, now, writingOk 
   return null;
 }
 
-export const sheetHashOf = (fields) => sha(canonical(fields)).slice(0, 16);

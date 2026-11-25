@@ -261,20 +261,21 @@ test('without Tenjin the reply ends with one line about what it adds; the report
 });
 
 // ---- the career-ops compatibility feature is gone --------------------------------------
-test('an old profile with the removed careerOps field loads and the field is ignored; J profile set refuses it from now on', () => {
+test('a profile with the removed careerOps field is refused with the field named, never converted; J profile removes it', () => {
   reset();
   const pf = path.join(home, '.tenjin-skills', 'job-search', 'profile.json');
   fs.mkdirSync(path.dirname(pf), { recursive: true });
   fs.writeFileSync(pf, JSON.stringify({ search: { role: 'software engineer' }, careerOps: { dir: '/old/folder', pipeline: true } }));
-  const got = runJobs(home, ['profile', 'get']);
-  assert.equal(got.code, 0);
-  assert.equal(got.json.search.role, 'software engineer');
-  const set = runJobs(home, ['profile', 'set', JSON.stringify({ frequency: 'weekly' })]);
-  assert.equal(set.code, 0, set.stdout);
-  assert.equal(runJobs(home, ['work']).code, 0, 'the old field breaks nothing');
-  const refused = runJobs(home, ['profile', 'set', JSON.stringify({ careerOps: { dir: '/x', pipeline: true } })]);
+  const refused = runJobs(home, ['work']);
   assert.equal(refused.code, 2);
-  assert.match(refused.json.error, /careerOps is no longer a profile field/);
+  assert.match(refused.json.error, /careerOps \(/);
+  assert.equal(runJobs(home, ['profile', 'get']).json.careerOps.dir, '/old/folder', 'nothing was converted or dropped');
+  const set = runJobs(home, ['profile', 'set', JSON.stringify({ careerOps: { dir: '/x' } })]);
+  assert.equal(set.code, 2);
+  assert.match(set.json.error, /careerOps is an old field/);
+  assert.equal(runJobs(home, ['profile', 'set', JSON.stringify({ careerOps: null })]).code, 0);
+  assert.equal(runJobs(home, ['profile', 'get']).json.careerOps, undefined);
+  assert.equal(runJobs(home, ['work']).code, 0);
   for (const cmd of [['setup', 'careerops'], ['pipeline', 'add']]) assert.equal(runJobs(home, cmd).code, 2, cmd.join(' '));
 });
 

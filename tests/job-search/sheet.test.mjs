@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fixture, mkJob, tmpHome } from './helpers/env.mjs';
-import { nearMatch } from '../../skills/job-search/scripts/lib/answers.mjs';
 
 tmpHome();
 const s = await import('../../skills/job-search/scripts/lib/sheet.mjs');
@@ -84,14 +83,11 @@ test('a read-back that does not match the sheet stops before submit', () => {
   assert.equal(s.checkReadBack(sheet, read.filter((r) => r.label !== 'Last Name')).ok, false);
 });
 
-test('a saved answer is reused for the same question; a near match goes to the person', () => {
+test('a saved answer is reused for the same question', () => {
   const entries = [{ q: 'will you now or in the future require sponsorship', answer: 'No', how: 'typed', type: 'input_text', options: null }];
   const qs = [{ label: 'Will you now or in the future require sponsorship?', required: true, type: 'input_text' }];
   const sheet = s.buildSheet({ job: mkJobM(), questions: qs, profile: { ...profile, facts: {} }, answers: entries });
   assert.equal(sheet.fields[0].tag, 'answer');
-  assert.deepEqual(nearMatch('Do you now or in the future require visa sponsorship', entries).exact, false);
-  assert.equal(nearMatch('Will you now or in the future require sponsorship', entries).exact, true);
-  assert.equal(nearMatch('Favourite colour', entries), null);
 });
 
 test('the sheet hash changes when a value changes', () => {

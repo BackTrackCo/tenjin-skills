@@ -287,8 +287,10 @@ test('SKILL.md: the every-start order, approvals only from J ask, withdraw first
   assert.match(skill, /Approvals come only from `J ask approval\|approve`/);
   assert.match(skill, /`J approve <key\|--all> --withdraw`/);
   assert.match(skill, /`J may-submit <key> <sheet hash>`/);
-  assert.match(skill, /plain question with your guess in its text/);
-  assert.match(skill, /never say to type under Other/);
+  const q = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'references', 'questions.md'), 'utf8');
+  assert.match(q, /plain question with your guess in its text/);
+  assert.match(q, /No question or option text names the tool's own free-text option/);
+  assert.match(skill, /references\/questions\.md has every rule/, 'SKILL.md points to the one place');
   const setup = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'references', 'setup.md'), 'utf8');
   assert.match(setup, /After `claude --chrome --resume` nothing runs by itself/);
   assert.doesNotMatch(skill + setup, /v0-\d\d/);

@@ -191,6 +191,5 @@ test('board search: with Tenjin it runs in code by tool id, ingests board-confir
   assert.equal(s.search.webPending, null, 'never a model step with Tenjin');
   const wl = (await import('../../skills/job-search/scripts/lib/work.mjs')).buildWorkList(s, empty, NOW, prof);
   assert.ok(!wl.items.some((i) => i.reason === 'web_search_due'));
-  assert.equal(routed.allNeedsCovered(), true);
   assert.equal(routed.roundNeeds(prof, s, NOW, 0).find((n) => n.kind === 'web_search').tool, 'exa-search');
 });

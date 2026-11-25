@@ -15,10 +15,10 @@ export const STALE_MS = 2 * 60 * 60 * 1000;
 
 // Commands refused while a batch is open, whoever calls them: [command, sub-command or null for any].
 export const BATCH_DENIED = [
-  ['rules', 'add'], ['rules', 'remove'], ['lessons', 'add'], ['lessons', 'remove'],
+  ['rules', 'add'], ['rules', 'remove'],
   ['consent', 'record'], ['writing', 'approve'], ['answer', 'add'], ['fact', 'set'],
   ['profile', 'set'], ['frequency', 'set'], ['start', 'record'], ['watch', 'remove'],
-  ['setup', 'resume'], ['dryrun', 'confirm'], ['batch', 'open'],
+  ['dryrun', 'confirm'], ['batch', 'open'],
   ['release', 'apply'], ['intros', 'save'], ['contacts', 'count'], ['leads', 'save'], ['leads', 'mark'], ['email', 'approve'], ['email', 'mode'],
 ];
 export const isBatchDenied = (cmd, sub) => BATCH_DENIED.some(([c, s]) => c === cmd && (s === null || s === sub));

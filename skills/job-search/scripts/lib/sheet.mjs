@@ -24,8 +24,6 @@ const LEGAL = /\b(arbitration|privacy (notice|policy|statement)|terms (of (use|s
 const ATTEST = /\b(i (confirm|certify|attest|declare|affirm)|accurate and complete|true and (correct|complete)|information (provided |given )?is (true|accurate))/i;
 export const ackKind = (label) => (LEGAL.test(label) ? 'legal' : ATTEST.test(label) ? 'attest' : null);
 export const factKeyFor = (label) => { const hit = FACTS.find(([re]) => re.test(normLabel(label))); return hit ? hit[1] : null; };
-export const isForbiddenLabel = (label) => FORBIDDEN.test(label);
-export const isEeoLabel = (label) => EEO.test(label);
 
 // Greenhouse's questions=true shape: questions, location_questions, compliance, demographic_questions.
 export function parseGreenhouseQuestions(json) {

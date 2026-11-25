@@ -250,7 +250,8 @@ test('SKILL.md and apply.md: gate 4 is the deny list, LinkedIn is only shown, ru
   assert.match(skill, /except the deny list: LinkedIn, Indeed/);
   assert.match(skill, /A form that needs an account or a sign-in is a stop/);
   assert.doesNotMatch(skill, /on Greenhouse, Lever or Ashby, found/);
-  assert.match(skill, /J rules add --from-choice/);
+  assert.match(fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'references', 'questions.md'), 'utf8'), /J rules add --from-choice/, 'the rule lives in questions.md only');
+  assert.doesNotMatch(skill, /from-choice/);
   assert.match(skill, /J linkedin show <key>/);
   const apply = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'references', 'apply.md'), 'utf8');
   assert.match(apply, /the host is on the deny list, the form needs an account, a bot check appeared, or no employer posting was found/);

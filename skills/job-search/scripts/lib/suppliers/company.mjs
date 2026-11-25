@@ -10,7 +10,6 @@ export const KIND = 'company_lookup';
 export const RECORDED = true;
 export const NO_CACHE = true;
 export const ANY_HOST = true;
-export const INPUTS = ['name', 'linkedinUrl', 'linkedinId', 'twitterUrl', 'facebookUrl', 'instagramUrl', 'youTubeUrl'];
 
 export function mapper({ company, linkedinUrl }) {
   if (!company && !linkedinUrl) throw new Error('no company name for the lookup');

@@ -99,19 +99,19 @@ test('the watcher records its process id and last tick in the lease', async () =
 
 test('every J command reports watcher: stopped once armed and no watcher lives; none before, none while one runs', () => {
   reset();
-  assert.equal(runJobs(home, ['view']).json.watcher, undefined, 'before any arm there is no noise');
+  assert.equal(runJobs(home, ['profile', 'get']).json.watcher, undefined, 'before any arm there is no noise');
   assert.equal(runJobs(home, ['arm']).json.armed, true);
-  assert.equal(runJobs(home, ['view']).json.watcher, 'stopped', 'armed, but no watcher is running');
+  assert.equal(runJobs(home, ['profile', 'get']).json.watcher, 'stopped', 'armed, but no watcher is running');
   assert.equal(runJobs(home, ['work']).json.watcher, 'stopped');
   const now = () => new Date().toISOString();
   store.updateState((s) => { s.lease = { holder: 'w', heartbeat: now(), lastTick: now(), pid: process.pid }; });
-  assert.equal(runJobs(home, ['view']).json.watcher, undefined, 'a live watcher with a recent tick');
+  assert.equal(runJobs(home, ['profile', 'get']).json.watcher, undefined, 'a live watcher with a recent tick');
   store.updateState((s) => { s.lease.lastTick = new Date(Date.now() - 5 * 60000).toISOString(); s.lease.heartbeat = s.lease.lastTick; });
-  assert.equal(runJobs(home, ['view']).json.watcher, 'stopped', 'a stale last tick');
+  assert.equal(runJobs(home, ['profile', 'get']).json.watcher, 'stopped', 'a stale last tick');
   // J commands never write the liveness field
   const before = new Date(Date.now() - 20000).toISOString();
   store.updateState((s) => { s.lease.alive = before; s.lease.heartbeat = before; s.lease.lastTick = before; });
-  runJobs(home, ['view']);
+  runJobs(home, ['profile', 'get']);
   assert.equal(store.loadState().lease.alive, before, 'a J command did not refresh the liveness field');
   assert.equal(store.loadState().lease.heartbeat, before);
 });

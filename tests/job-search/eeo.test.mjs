@@ -114,7 +114,7 @@ test('decline_all is gone: J profile set refuses the old field, and the code and
   reset();
   const r = J('profile', 'set', JSON.stringify({ eeo: 'decline_all' }));
   assert.equal(r.code, 2);
-  assert.match(r.json.error, /eeo is no longer a profile field/);
+  assert.match(r.json.error, /eeo is an old field/);
   assert.equal(J('profile', 'set', JSON.stringify({ eeo: { answers: { gender: 'x' } } })).code, 2);
   const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]));
   for (const f of walk(ROOT).filter((x) => /\.(md|mjs)$/.test(x))) {
@@ -125,19 +125,24 @@ test('decline_all is gone: J profile set refuses the old field, and the code and
   }
 });
 
-test('the old saved shapes become the person\'s text once, on read', () => {
+test('an old saved EEO shape is never converted: any command but J profile is refused with the field named, and J profile removes it', () => {
   reset({ eeo: 'decline_all' });
-  const a = J('profile', 'get').json;
-  assert.equal(a.eeo, undefined);
-  assert.equal(a.eeoText, 'Decline to answer every voluntary demographic question.');
-  reset({ eeo: { answers: { gender: 'placeholder one', 'veteran status': 'placeholder two' } } });
-  const b = J('profile', 'get').json;
-  assert.equal(b.eeo, undefined);
-  assert.equal(b.eeoText, 'gender: placeholder one\nveteran status: placeholder two');
-  assert.equal(eeoTextOf({ eeo: { answers: {} } }), null);
-  // another command still works on the old profile, and the next write stores the text
-  assert.equal(J('profile', 'set', JSON.stringify({ frequency: 'weekly' })).code, 0);
-  const stored = JSON.parse(fs.readFileSync(pf(), 'utf8'));
-  assert.equal(stored.eeo, undefined);
-  assert.match(stored.eeoText, /placeholder two/);
+  const r = J('work');
+  assert.equal(r.code, 2);
+  assert.match(r.json.error, /old field/);
+  assert.match(r.json.error, /eeo \(/, 'the field is named');
+  assert.equal(J('arm').code, 2);
+  const old = J('profile', 'get').json;
+  assert.equal(old.eeo, 'decline_all', 'nothing was converted');
+  assert.equal(old.eeoText, undefined);
+  assert.equal(J('profile', 'set', JSON.stringify({ frequency: 'weekly' })).code, 2, 'the old field is still refused');
+  assert.equal(J('profile', 'set', JSON.stringify({ eeo: null })).code, 0);
+  const after = J('profile', 'get').json;
+  assert.equal(after.eeo, undefined);
+  assert.equal(after.eeoText, undefined, 'removed, not converted');
+  assert.equal(J('work').code, 0);
+  reset({ eeo: { answers: { gender: 'placeholder' } } });
+  assert.match(J('work').json.error, /eeo \(/);
+  assert.equal(eeoTextOf({ eeo: 'decline_all' }), null, 'the reader reads only eeoText');
+  assert.equal(eeoTextOf({ eeoText: ' my words ' }), 'my words');
 });
