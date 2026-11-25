@@ -335,19 +335,20 @@ test('sign_in comes back when the person says they have an account on that host:
 });
 
 test('J leave takes every work-list key; search items come back at the next period, a post batch is never left', () => {
+  const T0 = Date.now(); // `J leave` stamps the period with the real clock
   const c = noPosting(3);
   reset([c], { contactsRequested: [c.key], posts: [{ url: 'https://x.com/a/status/1', author: 'a', source: 'x', text: 't', status: 'new' }] });
-  store.updateState((s) => { s.search.webPending = { round: 0, at: new Date(NOW).toISOString() }; s.search.needPending = [{ kind: 'x_hiring_posts', text: 't', query: {}, round: 0, at: new Date(NOW).toISOString() }]; });
+  store.updateState((s) => { s.search.webPending = { round: 0, at: new Date(T0).toISOString() }; s.search.needPending = [{ kind: 'x_hiring_posts', text: 't', query: {}, round: 0, at: new Date(T0).toISOString() }]; });
   runJobs(home, ['profile', 'set', JSON.stringify({ search: { role: 'e', place: '' } })]);
-  const keys = () => work.buildWorkList(store.loadState(), empty, NOW, store.loadState() && JSON.parse(fs.readFileSync(path.join(process.env.TENJIN_SKILLS_DIR, 'job-search', 'profile.json'), 'utf8'))).items.map((i) => i.key);
+  const keys = () => work.buildWorkList(store.loadState(), empty, T0, store.loadState() && JSON.parse(fs.readFileSync(path.join(process.env.TENJIN_SKILLS_DIR, 'job-search', 'profile.json'), 'utf8'))).items.map((i) => i.key);
   assert.ok(keys().includes('web') && keys().includes('need:x_hiring_posts') && keys().includes('search'));
   assert.equal(runJobs(home, ['leave', 'search', 'web', 'need:x_hiring_posts', '--reason', 'no_web_search']).code, 0);
   assert.ok(!keys().includes('web') && !keys().includes('search') && !keys().includes('need:x_hiring_posts'));
-  assert.equal(work.buildWorkList(store.loadState(), empty, NOW + 86400000 * 2, { search: { role: 'e', place: '' } }).items.some((i) => i.key === 'web'), true, 'comes back at the next period');
+  assert.equal(work.buildWorkList(store.loadState(), empty, T0 + 86400000 * 2, { search: { role: 'e', place: '' } }).items.some((i) => i.key === 'web'), true, 'comes back at the next period');
   assert.equal(runJobs(home, ['leave', `contacts:${c.key}`, '--reason', 'none_found']).code, 0);
-  assert.ok(!keys().includes(c.key) || !work.buildWorkList(store.loadState(), empty, NOW, {}).items.some((i) => i.reason === 'contacts_requested'));
+  assert.ok(!keys().includes(c.key) || !work.buildWorkList(store.loadState(), empty, T0, {}).items.some((i) => i.reason === 'contacts_requested'));
   assert.equal(runJobs(home, ['leave', `contacts:${c.key}`, '--reason', 'low_score']).code, 2, 'a reason from another kind is refused');
-  const batch = work.buildWorkList(store.loadState(), empty, NOW, {}).items.find((i) => i.reason === 'post_review').key;
+  const batch = work.buildWorkList(store.loadState(), empty, T0, {}).items.find((i) => i.reason === 'post_review').key;
   const r = runJobs(home, ['leave', batch, '--reason', 'no_match']);
   assert.equal(r.code, 2);
   assert.match(r.json.error, /never left/);
