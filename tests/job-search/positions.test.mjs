@@ -15,7 +15,7 @@ const q = await import('../../skills/job-search/scripts/lib/questions.mjs');
 const NOW = Date.parse('2026-11-23T12:00:00');
 const empty = { rules: [], lessons: [] };
 const rule = (value) => ({ rules: [{ id: 'r', effect: 'period_max', value, words: 'x', date: '2026-11-23' }], lessons: [] });
-const profile = { eeoText: 'Decline every voluntary demographic question (test placeholder).', unattended: { roles: ['engineer'], places: ['Berlin'], minScore: 70, hosts: ['greenhouse'] }, search: { role: 'engineer' } };
+const profile = { eeoText: 'Decline every voluntary demographic question (test placeholder).', referrals: Object.fromEntries(['acme', 'initech', 'globex', ...Array.from({ length: 100 }, (_, i) => `co${i}`)].map((k) => [k, { status: 'none' }])), unattended: { roles: ['engineer'], places: ['Berlin'], minScore: 70, hosts: ['greenhouse'] }, search: { role: 'engineer' } };
 
 // ---- the start questions: four in one call after the resume ------------------
 test('the start: the resume is a plain question, then one call with four questions and a /rc reminder', () => {
