@@ -7,7 +7,7 @@ import { mkJob, runJobs, tmpHome } from './helpers/env.mjs';
 const home = tmpHome();
 const store = await import('../../skills/job-search/scripts/lib/store.mjs');
 const work = await import('../../skills/job-search/scripts/lib/work.mjs');
-const lease = await import('../../skills/job-search/scripts/lib/lease.mjs');
+const lease = await import('../../skills/loop-base/lib/lease.mjs');
 const watcher = await import('../../skills/job-search/scripts/lib/watcher.mjs');
 const report = await import('../../skills/job-search/scripts/lib/report.mjs');
 const q = await import('../../skills/job-search/scripts/lib/questions.mjs');

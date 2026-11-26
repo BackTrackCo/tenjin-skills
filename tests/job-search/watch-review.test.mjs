@@ -12,7 +12,7 @@ const em = await import(`${S}email.mjs`);
 const report = await import(`${S}report.mjs`);
 const ing = await import(`${S}ingest.mjs`);
 const watcher = await import(`${S}watcher.mjs`);
-const lease = await import(`${S}lease.mjs`);
+const lease = await import('../../skills/loop-base/lib/lease.mjs');
 
 const NOW = Date.parse('2026-11-25T10:00:00Z');
 const empty = { rules: [], lessons: [] };

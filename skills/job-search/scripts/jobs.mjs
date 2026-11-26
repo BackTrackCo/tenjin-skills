@@ -15,7 +15,7 @@ import * as em from './lib/email.mjs';
 import * as rs from './lib/resume.mjs';
 import { buildRoundRequest, parseRoundResult } from './lib/writing.mjs';
 import { webPlan } from './lib/websearch.mjs';
-import { claimLease, leaseFresh, touchLease, watcherStatus } from './lib/lease.mjs';
+import { claimLease, leaseFresh, touchLease, watcherStatus } from '../../loop-base/lib/lease.mjs';
 import { readProfile, runWatcher, tick, watcherCodeHash } from './lib/watcher.mjs';
 import { applyUpdate, checkRelease, gatesHash, recordRelease } from './lib/release.mjs';
 import { applyNext, applyPathOf, inFlight, confirmDryRun, recordConsent, recordDryRun, recordWritingConsent, revokeConsent } from './lib/apply.mjs';
