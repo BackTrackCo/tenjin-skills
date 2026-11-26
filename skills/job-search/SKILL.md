@@ -1,7 +1,7 @@
 ---
 name: job-search
 description: >-
-  Use this skill for any job hunt: finding jobs that fit a person, rerunning a search for only the new postings, finding key people and events at the companies, and applying to the good ones through Claude in Chrome, attended with a yes on each or unattended under the person's rules. It reads watched boards, Hacker News and the web, checks each job is open, ranks them, prepares the application. Not for a cover letter, resume tailoring, interview prep or a job offer alone.
+  Use this skill for any job hunt: finding jobs that fit a person, rerunning a search for only the new postings, finding the hiring manager or team lead, events at the companies, and applying to the good ones through Claude in Chrome, attended with a yes on each or unattended under the person's rules. It reads watched boards, Hacker News and the web, checks jobs are open, ranks them, prepares applications. Do not use it for a cover letter, resume tailoring, interview prep or a job offer alone.
 allowed-tools: Bash(node ${CLAUDE_SKILL_DIR}/scripts/jobs.mjs *) TaskCreate TaskUpdate TodoWrite PushNotification mcp__claude-in-chrome__*
 ---
 
@@ -51,7 +51,7 @@ When the watcher exits with a line, or the person asks, run `J work --commit` (a
 
 Every handled item ends with its J outcome command (`J ops`, `J ingest`, `J leave <key...> --reason <low_score|no_match|no_careers_page|sign_in|other_system|not_a_job|duplicate>`; others: references/setup.md), or the watcher shows it again. Never leave a post batch.
 
-Shown in a reply: `J shown <key>`. If `notify` is set, send it with PushNotification as given, then `J notify result sent|not_sent|unknown [--reason off|present|none]` and say its `say` line if any.
+If `notify` is set, send it with PushNotification as given, then `J notify result sent|not_sent|unknown [--reason off|present|none]` and say its `say` line if any.
 
 ## Unattended applying (opt-in)
 
