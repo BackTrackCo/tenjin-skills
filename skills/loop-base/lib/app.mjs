@@ -28,6 +28,14 @@ export function setApp(app) {
   return app;
 }
 
+// An app adds a declared part after its own module has loaded (the state shape lives with the code that builds it): the registered
+// object is replaced by a copy that carries the part.
+export function extendApp(part) {
+  const app = getApp();
+  current = Object.freeze({ ...app, ...part });
+  return current;
+}
+
 export function getApp() {
   if (!current) throw new Error('no app is registered: the app\'s own paths module must call setApp(defineApp({ skillDir })) before a base module is used');
   return current;
