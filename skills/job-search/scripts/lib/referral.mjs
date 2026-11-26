@@ -27,8 +27,6 @@ const planned = (j) => LIVE.includes(j.status) && j.employerPosting && ['exact',
 export function referralWaiting(state, profile, overlay, now = Date.now()) {
   const check = new Map();
   const due = new Map();
-  // The question matters for an automatic apply only: an attended person approves each job and can wait on their own.
-  if (!String((profile && profile.applyMode) || '').startsWith('auto')) return { check: [], due: [] };
   for (const j of Object.values(state.jobs)) {
     if (!planned(j)) continue;
     const k = referralKey(j.company);
@@ -64,3 +62,6 @@ export const followUpQuestion = (company) => ({ questions: [{ header: 'Referral'
 // A form's referral field: the referrer's name the person gave, never guessed.
 export const REFERRED_BY = /\b(referred by|referrer|who referred you|employee referral|referral (name|source))\b/i;
 export const EMPLOYEE_OPTION = /\b(employee|referr|current or former)\b/i;
+
+// A pending referral shown beside a job the person submits or opens themselves (fill-only, just open the pages, a job site): it never blocks.
+export const referralNote = (profile, job) => { const r = recordOf(profile, job.company); return r && r.status === 'pending' ? `referral pending at ${job.company}${r.referrer ? `: ${r.referrer}` : ''}` : null; };

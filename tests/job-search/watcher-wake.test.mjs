@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkJob, runJobs, tmpHome } from './helpers/env.mjs';
+import { mkJob, runJobs, tmpHome, noReferrals } from './helpers/env.mjs';
 
 const home = tmpHome();
 const store = await import('../../skills/job-search/scripts/lib/store.mjs');
@@ -18,6 +18,7 @@ import path from 'node:path';
 const reset = (jobs = []) => {
   fs.rmSync(path.join(process.env.TENJIN_SKILLS_DIR, 'job-search', 'rules.json'), { force: true }); // rules from an earlier test must not leak
   store.updateState((s) => { Object.assign(s, store.emptyState()); for (const j of jobs) s.jobs[j.key] = j; });
+  noReferrals();
 };
 const tick = async (seen, at) => (await watcher.tick({ holder: 'w', now: at, seen })).lines;
 const arm = async () => { await lease.claimLease({ holder: 'w', now: NOW }); };

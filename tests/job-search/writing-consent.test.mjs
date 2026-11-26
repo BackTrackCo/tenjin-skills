@@ -116,7 +116,7 @@ test('writing_needs_yes sends one notification and the job stays out of the queu
   assert.match(a.line, /a written answer waiting for your yes/);
   s.notified = a.next;
   assert.equal(work.notifyLine(s, ov0, NOW).line, null, 'one notification');
-  assert.equal(work.buildWorkList(s, ov0, NOW, {}).items.length, 0);
+  assert.equal(work.buildWorkList(s, ov0, NOW, profile).items.length, 0);
 });
 
 test('a submit goes through once the writing consent exists; a changed writing rule makes it stale', () => {

@@ -35,7 +35,7 @@ import { FREQUENCIES, frequencyOf, periodStart } from './lib/schedule.mjs';
 import { ingest, joinLeads, leadKey } from './lib/ingest.mjs';
 import { addWatch, removeWatch } from './lib/watchlist.mjs';
 import { candidateEvents, confirmedEvents, filterEvents, dedupeEvents, matchTargets, planTargets, runEvents, saveEvents, windowDays } from './lib/events.mjs';
-import { followUpQuestion, recordOf, referralCalls, referralKey, referralWaiting } from './lib/referral.mjs';
+import { followUpQuestion, recordOf, referralCalls, referralKey, referralNote, referralWaiting } from './lib/referral.mjs';
 import { applyFactAnswer, buildFactQuestions, collectFacts, splitByOptions } from './lib/facts.mjs';
 import { eeoTextOf, oldFieldError, oldFields, validateProfile } from './lib/profile.mjs';
 import { routeContacts, routeEvents, routeWarmPaths, routedRounds } from './lib/routed.mjs';
@@ -738,7 +738,7 @@ const commands = {
           key, company: job.company, title: job.title, site: first.site, link: first.url,
           opened: opened.ok, ...(woken ? { held: 'open_ready', line: 'A turn the watcher woke opens nothing: the job holds, and the next attended turn opens its page.' } : {}),
           ...(opened.line ? { line: opened.line } : {}), ...(!woken && !opened.ok ? { why: opened.why } : {}),
-          otherLinks: job.siteLinks.slice(1), answers, facts: job.sheet ? undefined : profile.facts || {},
+          ...(referralNote(profile, job) ? { referral: referralNote(profile, job) } : {}), otherLinks: job.siteLinks.slice(1), answers, facts: job.sheet ? undefined : profile.facts || {},
           note: job.sheet ? `answers from the employer posting's questions; ${first.site}'s own questions are yours to answer` : 'no employer form was found: the facts the profile holds are listed; the site\'s own questions are yours to answer',
         };
       });
@@ -837,7 +837,7 @@ const commands = {
       const bad = checkOpenUrl(url);
       if (bad) { res.push({ key: k, opened: false, why: bad }); continue; }
       const r = openPage(url);
-      res.push({ key: k, url, opened: r.ok, ...(r.ok ? {} : { why: r.why }), ...(r.line ? { line: r.line } : {}), sheet: job.sheet ? (job.sheet.fields || []).map((f) => ({ label: f.label, value: f.tag === 'upload' ? 'your resume' : f.value, tag: f.tag })) : [] });
+      res.push({ key: k, url, opened: r.ok, ...(r.ok ? {} : { why: r.why }), ...(r.line ? { line: r.line } : {}), ...(referralNote(profile, job) ? { referral: referralNote(profile, job) } : {}), sheet: job.sheet ? (job.sheet.fields || []).map((f) => ({ label: f.label, value: f.tag === 'upload' ? 'your resume' : f.value, tag: f.tag })) : [] });
       if (r.ok) updateState((s) => { s.jobs[k].openedAt = new Date().toISOString(); s.jobs[k].broughtAt = s.jobs[k].broughtAt || s.jobs[k].openedAt; bump(s.jobs[k]); });
     }
     return out({ opened: res.filter((x) => x.opened).length, results: res, next: 'show each opened job\'s sheet as text; the outcome is the person\'s word: J submitted <key>' });
@@ -1143,7 +1143,7 @@ const commands = {
       if (!job) return out({ error: `unknown job: ${id}` }, 2);
       return out({ key: id, waiting: true, next: 'nothing is applied now; the follow-up asks when the referral is due' });
     }
-    if (!['answer', 'name', 'in', 'notyet', 'without', 'draft', 'draft-save'].includes(sub) || !id) return out({ error: 'referral answer <id> someone|none|skip | name <id> <name> | in|notyet|without <id> | draft <id> | draft-save <id> --text file | wait <job key>' }, 2);
+    if (!['answer', 'name', 'in', 'notyet', 'without', 'draft', 'draft-save', 'email'].includes(sub) || !id) return out({ error: 'referral answer <id> someone|none|skip | name <id> <name> | in|notyet|without <id> | draft <id> | draft-save <id> --text file | wait <job key>' }, 2);
     const rec = (profile.referrals || {})[id];
     const nowIso = new Date().toISOString();
     if (sub === 'answer') {
@@ -1168,6 +1168,15 @@ const commands = {
     if (sub === 'in') { save((r) => { r[id] = { ...r[id], status: 'in', inAt: nowIso }; }); return out({ recorded: 'in', next: 'the jobs at this company go on under the apply mode; if the company uses a link the employee sends, the person applies through it and says so: J submitted <key> --referral-link' }); }
     if (sub === 'notyet') { save((r) => { r[id] = { ...r[id], pendingAt: nowIso }; }); return out({ recorded: 'not yet' }); }
     if (sub === 'without') { save((r) => { r[id] = { ...r[id], status: 'without' }; }); return out({ recorded: 'without' }); }
+    if (sub === 'email') {
+      // The referrer's address, only as the person typed it in this session. It makes the draft an email the person approves with their own yes.
+      const address = String(rest[0] || '').trim();
+      if (!rec.draft) return out({ error: 'save the draft first: J referral draft-save <id> --text <file>' }, 2);
+      if (!/^[^\s@<>"']+@[^\s@<>"']+\.[A-Za-z]{2,}$/.test(address)) return out({ error: 'referral email <id> <address>: the address the person typed for the referrer' }, 2);
+      save((r) => { r[id] = { ...r[id], referrerEmail: { address, at: nowIso, source: 'person_typed' } }; });
+      updateState((s) => { s.referralEmails = [...(s.referralEmails || []).filter((x) => x.id !== id), { id, to: address, subject: `Referral request: ${(plan && plan.company) || id}`, text: rec.draft.text, company: (plan && plan.company) || id }]; });
+      return out({ saved: true, next: 'it is an email draft now: J email batch lists it, and it goes only after the person\'s own yes (J email approve), never under the email consent' });
+    }
     if (sub === 'draft') {
       if (!rec.referrer) return out({ error: 'a draft needs the referrer\'s name first: J referral name <id> <name>' }, 2);
       const company = (plan && plan.company) || id;
@@ -1178,7 +1187,8 @@ const commands = {
     const words = text.split(/\s+/).filter(Boolean).length;
     if (!text || words > 120 || /\[[^\]]*\]|\bTODO\b|lorem ipsum|\{\{/i.test(text)) return out({ error: 'the draft must be plain text of at most 120 words, with no placeholder' }, 2);
     save((r) => { r[id] = { ...r[id], draft: { text, at: nowIso } }; });
-    return out({ saved: true, draft: text, next: 'show it as a draft; the person sends it. Nothing is sent by the skill.' });
+    updateState((s) => { s.referralEmails = (s.referralEmails || []).map((x) => (x.id === id ? { ...x, text } : x)); });
+    return out({ saved: true, draft: text, next: 'show it as a draft; the person sends it, or gives the referrer\'s address for the email flow: J referral email <company> <address>. Nothing is sent without that yes.' });
   },
   // The answer to one merged fact question, recorded for every job it names (and as the profile fact when it is one).
   async facts([sub, id, ...rest]) {

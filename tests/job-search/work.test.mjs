@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkJob, runJobs, tmpHome } from './helpers/env.mjs';
+import { mkJob, runJobs, tmpHome, noReferrals } from './helpers/env.mjs';
 
 const home = tmpHome();
 const store = await import('../../skills/job-search/scripts/lib/store.mjs');
@@ -9,7 +9,7 @@ const lease = await import('../../skills/job-search/scripts/lib/lease.mjs');
 const watcher = await import('../../skills/job-search/scripts/lib/watcher.mjs');
 const overlay = await import('../../skills/job-search/scripts/lib/overlay.mjs');
 const NOW = Date.parse('2026-11-23T12:00:00Z');
-const reset = (jobs = []) => store.updateState((s) => { Object.assign(s, store.emptyState()); for (const j of jobs) s.jobs[j.key] = j; });
+const reset = (jobs = []) => { store.updateState((s) => { Object.assign(s, store.emptyState()); for (const j of jobs) s.jobs[j.key] = j; }); noReferrals(); };
 
 test('the work-list has items, held, inventory, rules, lessons; an empty one says so and still exits 0', () => {
   reset();

@@ -26,6 +26,9 @@ export function candidates(state) {
       out.push({ ref: `contact:${jobKey}:${c.name}`, to: c.email, subject: c.intro.subject || '', text: c.intro.text, employer: job ? job.company : '', role: job ? job.title : '', job: jobKey });
     }
   }
+  // A referral request: the only address allowed is one the person typed in the session for that referrer (`J referral email`); never
+  // a found, guessed or looked-up address. It is never sent without its own yes, and never under the email consent.
+  for (const r of state.referralEmails || []) out.push({ ref: `referral:${r.id}`, to: r.to, subject: r.subject, text: r.text, employer: r.company, role: '', job: null, referral: true });
   return out.map((c) => ({ ...c, id: sha(canonical([lower(c.to), c.subject, c.text])).slice(0, 12) }));
 }
 
@@ -84,7 +87,7 @@ export function nextEmail(state, { profile, overlay, unattended = false, now = D
     if (!d) { queue.push({ id: c.id, reason: 'not_in_batch' }); continue; } // never added by `J email batch`: say so
     if (FINAL.includes(d.status)) continue;
     // a draft-only connector sends nothing, so an unattended run may make the drafts; a send needs a yes or the consent
-    const allowed = d.status === 'approved' || (unattended && (consent || via === 'drafts'));
+    const allowed = d.status === 'approved' || (!c.referral && unattended && (consent || via === 'drafts'));
     if (!allowed) {
       queue.push({ id: c.id, reason: unattended ? 'no_email_consent' : 'not_approved' });
       continue;

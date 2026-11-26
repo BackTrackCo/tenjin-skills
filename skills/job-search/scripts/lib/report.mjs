@@ -2,6 +2,7 @@ import { notifyLine, plannedJobs, stillLeft, tenjinHint } from './work.mjs';
 import { dmLink, emailConsentCurrent, handleIn, mailto, due as pendingEmails, emailState } from './email.mjs';
 import { graph } from './graph.mjs';
 import { confirmedEvents, eventKind } from './events.mjs';
+import { referralNote } from './referral.mjs';
 
 export const REASONS = {
   no_apply_link: 'no apply link in the posting',
@@ -84,7 +85,7 @@ function renderShort(state, overlay, { since, now, profile }) {
     }
   }
   const filled = jobs.filter((j) => j.fillReady && live(j));
-  if (filled.length) { L.push('', `## Filled, waiting for your submit (${filled.length})`); for (const j of filled) L.push(`- ${j.title}, ${j.company}: the form is filled in an open tab. Press submit in Chrome and tell me, or say "Submit it now" and I submit it.`); }
+  if (filled.length) { L.push('', `## Filled, waiting for your submit (${filled.length})`); for (const j of filled) L.push(`- ${j.title}, ${j.company}: the form is filled in an open tab. Press submit in Chrome and tell me, or say "Submit it now" and I submit it.${referralNote(profile || {}, j) ? ` (${referralNote(profile || {}, j)})` : ''}`); }
   const stuck = jobs.filter((j) => j.parked && live(j));
   if (stuck.length) {
     L.push('', '## Waiting on you');
@@ -195,7 +196,7 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
   }
   const filled = jobs.filter((j) => j.fillReady && live(j));
   L.push('', `## Filled, waiting for your submit (${filled.length})`);
-  for (const j of filled) L.push(`- ${j.title}, ${j.company}: the form is filled in an open tab. Press submit in Chrome and tell me, or say "Submit it now" and I submit it.`);
+  for (const j of filled) L.push(`- ${j.title}, ${j.company}: the form is filled in an open tab. Press submit in Chrome and tell me, or say "Submit it now" and I submit it.${referralNote(profile || {}, j) ? ` (${referralNote(profile || {}, j)})` : ''}`);
   const held = state.held.filter((h) => h.reason === 'source_empty');
   L.push('', '## Sources held this run');
   if (held.length) for (const h of held) L.push(`- ${h.detail}`);

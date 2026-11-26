@@ -147,7 +147,7 @@ test('the request draft is saved as a draft and never sent: no email draft or ha
   fs.writeFileSync(file, 'Hi Placeholder Person, would you be willing to refer me for the engineering role at Acme Placeholder? Thank you.');
   const saved = J('referral', 'draft-save', 'acme placeholder', '--text', file);
   assert.equal(saved.code, 0, saved.stdout);
-  assert.match(saved.json.next, /The skill never sends it|Nothing is sent/);
+  assert.match(saved.json.next, /Nothing is sent without that yes/);
   assert.match(profileFile().referrals['acme placeholder'].draft.text, /refer me/);
   fs.writeFileSync(file, 'Hi [name], please refer me.');
   assert.equal(J('referral', 'draft-save', 'acme placeholder', '--text', file).code, 2, 'a placeholder is refused');
@@ -249,4 +249,38 @@ test('hints are shown as contacts marked "also worked at", and nothing reads or 
   assert.match(out, /Target Placeholder: Alex Sample, Engineer: also worked at Placeholder Labs \(small employer\)/);
   for (const f of ['lib/warmpath.mjs', 'lib/referral.mjs']) assert.doesNotMatch(text(f).replace(/\/\/.*$/gm, ''), /connections?\b/i, f);
   assert.doesNotMatch(text('lib/suppliers/linkedin-history.mjs').replace(/\/\/.*$/gm, ''), /connection/i);
+});
+
+test('the referral question is asked in every apply mode, attended and fill-only too; only an unattended submit is held', () => {
+  for (const applyMode of ['attended', 'fill_only', 'open_only', 'auto_write']) {
+    reset([job(20, 'Acme Placeholder')], prof({ applyMode }));
+    const r = J('ask', 'referral');
+    assert.equal(r.json.count, 1, applyMode);
+    assert.equal(ref.referralWaiting(store.loadState(), profileFile(), { rules: [], lessons: [] }, NOW).check.length, 1, applyMode);
+  }
+  const j = job(21, 'Acme Placeholder');
+  reset([j], prof({ applyMode: 'attended', referrals: { 'acme placeholder': { status: 'pending', pendingAt: new Date(NOW).toISOString() } } }));
+  assert.equal(ref.referralNote(profileFile(), j), 'referral pending at Acme Placeholder');
+});
+
+test('the referral request goes through the email flow only to an address the person typed, with its own yes, never under the consent or unattended', () => {
+  reset([job(30, 'Acme Placeholder')]);
+  J('referral', 'answer', 'acme placeholder', 'someone');
+  J('referral', 'name', 'acme placeholder', 'Placeholder Person');
+  assert.equal(J('referral', 'email', 'acme placeholder', 'person@example.test').code, 2, 'save the draft first');
+  const file = path.join(home, 'draft2.txt');
+  fs.writeFileSync(file, 'Hi Placeholder Person, would you be willing to refer me for the engineering role at Acme Placeholder? Thank you.');
+  J('referral', 'draft-save', 'acme placeholder', '--text', file);
+  assert.equal(J('referral', 'email', 'acme placeholder', 'not an address').code, 2);
+  assert.equal(J('referral', 'email', 'acme placeholder', 'person@example.test').code, 0);
+  const b = J('email', 'batch');
+  assert.deepEqual(b.json.drafts.map((d) => d.to), ['person@example.test']);
+  J('email', 'connector', 'send');
+  J('consent', 'record', 'email');
+  assert.equal(J('email', 'next', '--unattended').json.handout, null, 'the consent and an unattended turn never send it');
+  assert.equal(J('email', 'next').json.handout, null, 'not without its own yes');
+  J('email', 'approve', b.json.drafts[0].id);
+  const h = J('email', 'next').json.handout;
+  assert.equal(h.to, 'person@example.test');
+  assert.match(h.text, /refer me/);
 });

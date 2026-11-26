@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { mkJob, runJobs, tmpHome } from './helpers/env.mjs';
+import { mkJob, runJobs, tmpHome, noReferrals } from './helpers/env.mjs';
 
 const home = tmpHome();
 const S = '../../skills/job-search/scripts/lib/';
@@ -19,6 +19,7 @@ const reset = (jobs = []) => {
   fs.rmSync(path.join(dir(), 'profile.json'), { force: true });
   store.updateState((s) => { Object.assign(s, store.emptyState()); for (const j of jobs) s.jobs[j.key] = j; });
   J('profile', 'set', JSON.stringify({ updates: false }));
+  noReferrals();
 };
 const run = async (opts = {}) => {
   const lines = [];

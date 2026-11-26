@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { fakeFetch, fixture, mkJob, runJobs, tmpHome } from './helpers/env.mjs';
+import { fakeFetch, fixture, mkJob, runJobs, tmpHome, noReferrals } from './helpers/env.mjs';
 
 const home = tmpHome();
 const S = '../../skills/job-search/scripts/lib/';
@@ -28,6 +28,7 @@ const FX = Object.fromEntries(['job-postings', 'x-posts', 'exa-search'].map((n) 
 const reset = (jobs = [], extra = {}) => {
   fs.rmSync(path.join(process.env.TENJIN_SKILLS_DIR, 'job-search', 'rules.json'), { force: true });
   store.updateState((s) => { Object.assign(s, store.emptyState(), extra); for (const j of jobs) s.jobs[j.key] = j; });
+  noReferrals();
 };
 const arm = () => lease.claimLease({ holder: 'w', now: NOW });
 const tick = async (at, ctx = {}) => (await watcher.tick({ holder: 'w', now: at, seen: { sig: null }, ...ctx })).lines;
@@ -181,7 +182,7 @@ test('a Greenhouse job gets its questions from the board in code; a failed fetch
   assert.ok(store.loadState().jobs[g.key].questions.length > 0, 'questions read by code');
   reset([mkJob({ key: 'https://boards.greenhouse.io/acme/jobs/82', status: 'shortlisted' })]);
   await prep.prepareInCode({ fetch: fakeFetch({}), profile });
-  assert.deepEqual(work.buildWorkList(store.loadState(), empty, NOW, profile).items.map((i) => i.reason), ['prepare_due']);
+  assert.deepEqual(work.buildWorkList(store.loadState(), empty, NOW, profile).items.map((i) => i.reason).filter((r) => r !== 'referral_check'), ['prepare_due']);
 });
 
 test('one writer call per round covers the sheets, the new leads and the contacts; its result lands in code', () => {
