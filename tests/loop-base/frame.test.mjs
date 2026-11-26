@@ -43,6 +43,7 @@ test('the base tooling exists: the workflow loops over every manifest with a gat
   const wf = code(path.join(ROOT, '.github', 'workflows', 'pr.yml'));
   assert.match(wf, /for m in skills\/\*\/manifest\.json/);
   assert.match(wf, /gatesHash/);
+  assert.match(wf, /if \[ ! -e "\$m" \]; then continue; fi/, 'a folder with no manifest is skipped');
   assert.match(code(path.join(ROOT, 'scripts', 'check-dashes.sh')), /skills\/loop-base/);
   assert.match(code(path.join(ROOT, 'scripts', 'check-skills.sh')), /ls skills\/\*\/SKILL\.md/);
   const pkg = JSON.parse(code(path.join(ROOT, 'package.json')));

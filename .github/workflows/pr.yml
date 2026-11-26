@@ -28,6 +28,7 @@ jobs:
       - name: Gates hash matches every manifest that has one
         run: |
           for m in skills/*/manifest.json; do
+            if [ ! -e "$m" ]; then continue; fi
             d=$(dirname "$m")
             want=$(node -p "require('./$m').gatesHash || ''")
             if [ -z "$want" ]; then continue; fi
