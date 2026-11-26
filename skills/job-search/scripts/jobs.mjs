@@ -216,7 +216,8 @@ const commands = {
   async work(_, flags) {
     await prepareInCode({ fetch: globalThis.fetch, profile: readProfile() });
     const wl = workList({ commit: flags.commit === true, unattended: flags.unattended === true });
-    return out(wl); // an empty list is not an error: wl.empty says so (exit 0 for every list)
+    // An empty list is not an error: wl.empty says so (exit 0 for every list). A committed round ends by starting the watcher again.
+    return out(flags.commit === true ? { ...wl, then: 'start J watch last, with run_in_background, after every item is handed out or done' } : wl);
   },
 
   async sheet([sub, key], flags) {

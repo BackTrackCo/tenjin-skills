@@ -46,7 +46,7 @@ test('it exits 0 with one line when an actionable wake is due, and that line nam
   assert.equal(r.exit, 0);
   assert.equal(r.out.length, 2);
   assert.equal(r.out[0], 'watching; exits when work is due');
-  assert.match(r.out[1], /^job-search: 2 employer_page\. Run: jobs\.mjs work$/);
+  assert.match(r.out[1], /^Job Search round: run J work --commit --unattended \(J is node .*scripts\/jobs\.mjs\), handle each item, then start J watch last with run_in_background\. Due: 2 employer_page\.$/);
   assert.equal(store.loadState().lease, null);
 });
 
@@ -177,7 +177,7 @@ test('the CLI: J watch prints one line, exits 0 when work arrives, and a second 
   store.updateState((s) => { s.jobs[due(7).key] = due(7); });
   const code = await Promise.race([exited, new Promise((r) => setTimeout(() => r('timeout'), 20000))]);
   assert.equal(code, 0);
-  assert.match(out, /^watching; exits when work is due\njob-search: 1 employer_page/);
+  assert.match(out, /^watching; exits when work is due\nJob Search round: run J work --commit --unattended .*Due: 1 employer_page/);
   assert.equal(store.loadState().lease, null, 'the exited watcher released the lease');
   claimAll();
   store.updateState((s) => { s.lease = { holder: 'other', heartbeat: new Date().toISOString(), alive: new Date().toISOString(), pid: process.pid }; });

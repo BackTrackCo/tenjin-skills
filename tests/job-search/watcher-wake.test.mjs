@@ -126,7 +126,8 @@ test('items that wait for the person never wake the model; they keep their one n
   // the first sight wakes once, for the notification only
   const first = await tick({ sig: null }, NOW + 1000);
   assert.equal(first.length, 1);
-  assert.match(first[0], /notify: /);
+  assert.match(first[0], /^Job Search round: run J work --commit --unattended /);
+  assert.match(first[0], /Due: waiting on you; notify: .*\.$/, 'the counts and the notify text still follow');
   assert.doesNotMatch(first[0], /apply_ready|fill_ready|follow_up_due/);
   work.workList({ now: NOW, commit: true });
   for (let i = 2; i < 6; i++) assert.deepEqual(await tick({ sig: null }, NOW + i * 3600000), [], 'never again');
@@ -136,6 +137,11 @@ test('items that wait for the person never wake the model; they keep their one n
   assert.equal(actionable.waitsForPerson, false);
   const woke = await tick({ sig: null }, NOW + 7 * 3600000);
   assert.match(woke[0], /1 apply_ready/);
+  // the wake line is one line that carries the round's last step, then the counts
+  assert.equal(woke.length, 1);
+  assert.doesNotMatch(woke[0], /\n/);
+  assert.match(woke[0], /^Job Search round: run J work --commit --unattended \(J is node .*scripts\/jobs\.mjs\), handle each item, then start J watch last with run_in_background\. Due: 1 apply_ready/);
+  assert.doesNotMatch(woke[0], /Run: jobs\.mjs work/);
   // in an auto mode a ready sheet is work the model can act on
   reset([sheet({})]);
   runJobs(home, ['profile', 'set', JSON.stringify({ applyMode: 'auto_no_new', unattended: { roles: ['engineer'], places: ['Berlin'], minScore: 0, hosts: ['*'] } })]);

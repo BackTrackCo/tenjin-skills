@@ -24,6 +24,16 @@ test('the work-list has items, held, inventory, rules, lessons; an empty one say
   assert.equal(runJobs(home, ['work']).code, 0);
 });
 
+test('J work --commit says to start the watcher last; J work without --commit does not, and J arm keeps its own text', () => {
+  reset([mkJob()]);
+  const plain = runJobs(home, ['work']);
+  assert.equal(plain.json.then, undefined);
+  const commit = runJobs(home, ['work', '--commit']);
+  assert.equal(commit.code, 0);
+  assert.match(commit.json.then, /start J watch last, with run_in_background, after every item is handed out or done/);
+  assert.equal(runJobs(home, ['arm']).json.watch.startsWith('start J watch with the Bash tool, run_in_background true'), true, 'the arm text is unchanged');
+});
+
 test('every item carries its closed reason and gate text', () => {
   reset([mkJob(), mkJob({ status: 'shortlisted', needsWriting: true }), mkJob({ status: 'apply_ready' })]);
   const wl = work.workList({ now: NOW });

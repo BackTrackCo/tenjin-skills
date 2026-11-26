@@ -115,7 +115,8 @@ export async function tick(ctx) {
     const counts = {};
     for (const i of actionable.filter((x) => fresh.includes(`${x.key}:${x.reason}:${x.v}`))) counts[i.reason] = (counts[i.reason] || 0) + 1;
     updateState((state) => logWake(state, counts, newNotify, now));
-    lines.push(`job-search: ${Object.entries(counts).map(([k, n]) => `${n} ${k}`).join(', ') || 'waiting on you'}${newNotify ? `; notify: ${wl.notify}` : ''}. Run: jobs.mjs work`);
+    // One line: the round's steps first (so a woken model that has only this line knows the last one), then what is due.
+    lines.push(`Job Search round: run J work --commit --unattended (J is node ${path.join(SKILL_DIR, 'scripts', 'jobs.mjs')}), handle each item, then start J watch last with run_in_background. Due: ${Object.entries(counts).map(([k, n]) => `${n} ${k}`).join(', ') || 'waiting on you'}${newNotify ? `; notify: ${wl.notify}` : ''}.`);
   }
   const sent = newNotify && (fresh.length || notifyOnly);
   updateState((state) => {
