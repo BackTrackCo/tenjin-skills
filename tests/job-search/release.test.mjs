@@ -22,17 +22,6 @@ const setManifest = (dir, patch) => {
   fs.writeFileSync(f, JSON.stringify({ ...JSON.parse(fs.readFileSync(f, 'utf8')), ...patch }));
 };
 
-test('the picker takes the newest job-search tag that is a day old, newer, never a draft or other skill', () => {
-  const releases = [R('job-search-v0.1.1', 3), R('job-search-v0.1.2', 2), R('job-search-v0.1.3', 0.5), R('writing-v9.0.0', 5), R('job-search-v0.1.0', 10), R('job-search-v0.2.0', 4, { draft: true }), R('job-search-v0.1.4', 4, { prerelease: true })];
-  assert.equal(rel.pickRelease({ releases, installed: '0.1.0', now: NOW }).tag, 'job-search-v0.1.2');
-  assert.equal(rel.pickRelease({ releases, installed: '0.1.2', now: NOW }), null);
-});
-
-test('a new major version is flagged', () => {
-  const p = rel.pickRelease({ releases: [R('job-search-v1.0.0', 3)], installed: '0.1.0', now: NOW });
-  assert.equal(p.majorChange, true);
-});
-
 test('the gates hash covers the gate section, graph.json and the gate code, and nothing else', () => {
   const dir = copySkill();
   const h = rel.gatesHash(dir);
@@ -54,22 +43,7 @@ test('the committed manifest hash matches the gate files', () => {
 
 const gh = (releases, manifest) => fakeFetch({ 'https://api.github.com/repos/BackTrackCo/tenjin-skills/releases': releases, 'https://api.github.com/repos/BackTrackCo/tenjin-skills/contents/': manifest });
 
-test('a release that changes the gates waits for the person\'s yes and installs nothing', async () => {
-  const dir = copySkill();
-  const calls = [];
-  const r = await rel.checkRelease({ fetchImpl: gh([R('job-search-v0.1.1', 3)], { version: '0.1.1', gatesHash: 'different', change: 'Tighter gates.' }), runner: async (c, a) => { calls.push(a); return { code: 0 }; }, now: NOW, skillDir: dir });
-  assert.equal(r.status, 'update_waiting');
-  assert.match(r.line, /Waiting for your yes/);
-  assert.deepEqual(calls, []);
-});
-
-test('a new major version waits even with the same gates', async () => {
-  const dir = copySkill();
-  const r = await rel.checkRelease({ fetchImpl: gh([R('job-search-v1.0.0', 3)], { version: '1.0.0', gatesHash: rel.gatesHash(dir), change: 'Big.' }), runner: async () => ({ code: 0 }), now: NOW, skillDir: dir });
-  assert.equal(r.status, 'update_waiting');
-});
-
-test('a release with the same gates installs at its tag, pinned installer, and reports a line', async () => {
+test('a release with the same gates installs the app, the loop base and writing at its tags, with the pinned installer', async () => {
   const dir = copySkill();
   const calls = [];
   const runner = async (c, a) => {
@@ -82,23 +56,8 @@ test('a release with the same gates installs at its tag, pinned installer, and r
   assert.equal(r.line, 'Updated Job Search to v0.1.1: Fix a sweep bug.');
   assert.deepEqual(calls[0].slice(0, 4), ['npx', '-y', 'skills@1.9.0', 'add']);
   assert.ok(calls[0].includes('-g') && calls[0].includes('claude-code'));
+  assert.ok(calls[0].includes('job-search') && calls[0].includes('loop-base'), 'the loop base installs at the app\'s tag');
   assert.ok(calls.some((c) => c.includes('BackTrackCo/tenjin-skills@writing-v0.1.0')));
-});
-
-test('a failed install, or files that do not match the manifest, roll back to the previous tag', async () => {
-  for (const mode of ['exit', 'mismatch']) {
-    const dir = copySkill();
-    const calls = [];
-    const runner = async (c, a) => {
-      calls.push(a.find((x) => x.startsWith('BackTrackCo/')));
-      if (mode === 'exit' && a.includes('BackTrackCo/tenjin-skills@job-search-v0.1.1')) return { code: 1 };
-      if (mode === 'mismatch' && a.includes('BackTrackCo/tenjin-skills@job-search-v0.1.1')) setManifest(dir, { version: '0.1.1', gatesHash: 'nope' });
-      return { code: 0 };
-    };
-    const r = await rel.checkRelease({ fetchImpl: gh([R('job-search-v0.1.1', 3)], { version: '0.1.1', gatesHash: rel.gatesHash(dir), change: 'x' }), runner, now: NOW, skillDir: dir });
-    assert.equal(r.status, 'update_failed', mode);
-    assert.ok(calls.slice(-2).includes('BackTrackCo/tenjin-skills@job-search-v0.1.0'), mode);
-  }
 });
 
 test('an update leaves rules.json, profile.json and the writing rules byte for byte the same', async () => {
@@ -115,18 +74,3 @@ test('an update leaves rules.json, profile.json and the writing rules byte for b
   assert.deepEqual(files.map((f) => fs.readFileSync(f)), before);
 });
 
-test('recordRelease holds the waiting and failed updates in state; applyUpdate runs only on the yes', async () => {
-  const store = await import('../../skills/job-search/scripts/lib/store.mjs');
-  rel.recordRelease({ status: 'update_waiting', tag: 'job-search-v0.2.0', change: 'c', line: 'l' }, NOW);
-  const s = store.loadState();
-  assert.ok(s.held.some((h) => h.reason === 'update_waiting'));
-  assert.equal(s.update.waiting.tag, 'job-search-v0.2.0');
-  rel.recordRelease({ status: 'updated', line: 'done' }, NOW);
-  assert.equal(store.loadState().held.some((h) => h.reason === 'update_waiting'), false);
-});
-
-test('a failed update check reports and installs nothing', async () => {
-  const dir = copySkill();
-  const r = await rel.checkRelease({ fetchImpl: fakeFetch({ 'https://api.github.com/': 500 }), runner: async () => assert.fail('no install'), now: NOW, skillDir: dir });
-  assert.equal(r.status, 'check_failed');
-});

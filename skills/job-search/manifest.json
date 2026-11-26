@@ -4,5 +4,12 @@
   "minTenjin": "0.1.0-alpha.35",
   "writing": "writing-v0.1.0",
   "change": "First release.",
+  "gateFiles": [
+    "graph.json",
+    "scripts/lib/sheet.mjs",
+    "scripts/lib/apply.mjs",
+    "scripts/lib/batch.mjs",
+    "scripts/lib/net.mjs"
+  ],
   "gatesHash": "fb28792c25113eb40bcace1023dd5e3b050d409c86aad12d26ebddb8b3dcfdc2"
 }
