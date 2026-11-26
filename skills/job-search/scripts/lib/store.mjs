@@ -1,6 +1,7 @@
 import { graph } from '../../../loop-base/lib/graph.mjs';
 import { extendApp } from '../../../loop-base/lib/app.mjs';
 import * as base from '../../../loop-base/lib/store.mjs';
+import { transition } from '../../../loop-base/lib/kinds.mjs';
 import { isYc } from './platforms.mjs';
 import './paths.mjs';
 
@@ -82,19 +83,10 @@ export function applyOp(state, op) {
     case 'warn':
       job.warnings = [...new Set([...(job.warnings || []), String(op.warning).slice(0, 120)])];
       break;
-    case 'transition': {
-      const allowed = g.transitions[job.status] || [];
-      if (!g.statuses.includes(op.to) || !allowed.includes(op.to)) throw new Error(`illegal transition ${job.status} -> ${op.to}`);
-      job.status = op.to;
-      bump(job);
-      job.statusAt = op.at || new Date().toISOString();
-      if (op.to === 'submitted') { job.fillReady = null; job.submitNow = null; job.inFlight = null; }
-      if (op.to === 'skipped') job.skipReason = String(op.reason || 'no reason given').slice(0, 160);
-      if (op.to === 'submitted') {
-        state.applications.push({ key: job.key, companyKey: companyTitleKey(job), at: job.statusAt });
-      }
+    case 'transition':
+      // The rule that moves a job between statuses is the base's; the job's side effects run in its onTransition.
+      transition(state, 'job', job, op.to, op);
       break;
-    }
     case 'contact':
       // A contact needs a source link, how to reach them and one thing they care about. A likely person is shown only
       // when marked not confirmed. Never a guess, and never the YC company page or a fetched LinkedIn page.
@@ -179,4 +171,16 @@ export function view(state, { keys, limit = 30 } = {}) {
   };
 }
 
-extendApp({ state: { schemaVersion: SCHEMA_VERSION, empty: emptyState, applyOp, oldFields: oldStateFields } });
+
+// The job kind comes from graph.json (statuses, transitions, terminal); what a landed transition changes on the job is here.
+function onJobTransition({ state, item: job, to, op }) {
+  bump(job);
+  job.statusAt = op.at || new Date().toISOString();
+  if (to === 'submitted') { job.fillReady = null; job.submitNow = null; job.inFlight = null; }
+  if (to === 'skipped') job.skipReason = String(op.reason || 'no reason given').slice(0, 160);
+  if (to === 'submitted') {
+    state.applications.push({ key: job.key, companyKey: companyTitleKey(job), at: job.statusAt });
+  }
+}
+
+extendApp({ kinds: { job: { collection: 'jobs', statuses: graph().statuses, transitions: graph().transitions, terminal: graph().terminal, onTransition: onJobTransition } }, state: { schemaVersion: SCHEMA_VERSION, empty: emptyState, applyOp, oldFields: oldStateFields } });
