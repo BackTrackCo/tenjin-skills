@@ -1,0 +1,10 @@
+{
+  "name": "tenjin-skills",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "check:dashes": "sh scripts/check-dashes.sh",
+    "check:skills": "sh scripts/check-skills.sh"
+  }
+}

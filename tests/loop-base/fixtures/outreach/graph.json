@@ -1,0 +1,1 @@
+{ "statuses": ["new", "drafted", "sent"], "transitions": { "new": ["drafted"], "drafted": ["sent"] }, "terminal": ["sent"] }
