@@ -1,7 +1,7 @@
 ---
 name: job-search
 description: >-
-  Use this skill for any job hunt: finding jobs that fit a person, rerunning a search for only the new postings, finding the hiring manager, team lead or founder behind a role, events at the companies, and applying to the good ones through Claude in Chrome, attended with a yes on each or unattended under the person's rules. It reads watched boards, Hacker News and the web, checks jobs are open, ranks them, prepares applications. Do not use it for a cover letter, resume tailoring, interview prep or a job offer alone.
+  Use this skill for any job hunt: finding jobs that fit a person, rerunning a search for only the new postings, finding the hiring manager, team lead or founder behind a role, events at the companies, and applying to the good ones through Claude in Chrome, attended with a yes on each or unattended under the person's rules. It reads watched boards, Hacker News and the web, checks jobs are open, ranks and prepares them. Do not use it for a cover letter, resume tailoring, interview prep or a job offer alone.
 allowed-tools: Bash(node ${CLAUDE_SKILL_DIR}/scripts/jobs.mjs *) TaskCreate TaskUpdate TodoWrite PushNotification mcp__claude-in-chrome__*
 ---
 
@@ -46,7 +46,7 @@ When the watcher exits with a line, or the person asks, run `J work --commit` (a
 - `referral_check`, `referral_pending`: `J ask referral` (questions.md): auto applies there hold.
 - `contacts_requested`, `events_due`: references/contacts.md, events.md. First: `J ask contacts` (`J contacts count <n|all>`). With Tenjin `J contacts route` first; Haiku does the free ways. None: `J leave contacts:<key> --reason none_found`.
 - `email_due`: references/contacts.md. Only to an address the poster published; send only what `J email next` handed out, with the Gmail connector (its draft tool, or the mailto link), then `J email sent <id>`. An X DM is the person's.
-- `site_ready`: `J site show <key>` (attended: opens the job's page in the person's Chrome, no question); show the link and answers (references/apply.md). A woken turn opens nothing; the job holds as `open_ready`.
+- `site_ready`: `J site show <key>` (attended: opens the job's page in the person's Chrome, no question); show the link, answers (references/apply.md). A woken turn opens nothing; the job holds as `open_ready`.
 - `follow_up_due` (never a wake), attended: `J ask follow_up --json '{"company","title"}'`, then `J outcome <key> --status reply|interview|rejected|offer|no_reply`.
 
 Every handled item ends with its J outcome command (`J ops`, `J ingest`, `J leave <key...> --reason <low_score|no_match|no_careers_page|sign_in|other_system|not_a_job|duplicate>`; others: references/setup.md), or the watcher shows it again. Never leave a post batch.
@@ -61,4 +61,4 @@ Needs rules and consent (setup.md); the first run is a dry run (`J dryrun confir
 
 - `J report` is the short report (`J report --all`: everything), as printed; when it ends with a Contacts line, ask `J ask contacts` (5 first); Tenjin line last
 - `J rules`, `J rules remove <id>`; writing rules: writing skill.
-- Data: resume, profile, rules and records stay on this computer; the router gets LinkedIn links, past employers and candidates' profiles. Searches send terms and companies; writing sends the resume, job text and answers to Opus; applications go to employers; email from your Gmail; Remote Control syncs the transcript.
+- Data: resume, profile, rules and records stay on this computer; the router gets LinkedIn links, past employers and candidates' profiles. Searches send terms, company names and your place; writing sends the resume, job text and answers to Opus; applications go to employers; email from your Gmail; Remote Control syncs the transcript.
