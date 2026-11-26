@@ -5,6 +5,7 @@ import { employerName } from './employer.mjs';
 import { EMPLOYEE_OPTION, REFERRED_BY } from './referral.mjs';
 import { normLabel } from './store.mjs';
 import { matchAnswer } from './answers.mjs';
+import { hasParts, matchParts } from './parts.mjs';
 
 // Labels that always stop a job: the profile has no field for these.
 const FORBIDDEN = /\b(ssn|social security|national id|government id|passport|driver'?s? licen[cs]e|date of birth|birth ?date|birthday|\bdob\b|bank|routing number|account number|iban|password|tax id)\b|\bid number\b|\bid card\b/i;
@@ -189,7 +190,18 @@ export function buildSheet({ job, questions, profile, answers = [], drafts = {} 
       }
     }
     if (value === undefined) {
-      if (q.required && !(EEO.test(q.label) && eeoMissing)) unanswered.push({ label: q.label, why: 'no fact, earlier answer or checked draft', factKey: factKeyFor(q.label) });
+      if (q.required && !(EEO.test(q.label) && eeoMissing)) unanswered.push({ label: q.label, why: 'no fact, earlier answer or checked draft', factKey: factKeyFor(q.label), ...(hasParts(q) ? { type: q.type, parts: q.parts || null } : {}) });
+      continue;
+    }
+    // A field made of several controls carries each part's value, as the form spells it; an answer that does not match every part's own
+    // options is asked again, never guessed.
+    if (Array.isArray(q.parts) && q.parts.length && tag !== 'upload' && tag !== 'ack') {
+      const pv = matchParts(q.parts, value);
+      if (!pv) {
+        if (q.required) unanswered.push({ label: q.label, why: 'the answer does not match the form\'s own parts', factKey: factKeyFor(q.label), type: q.type, parts: q.parts });
+        continue;
+      }
+      fields.push({ label: q.label, value: pv.map((p) => p.value).join(' '), tag, required: q.required, parts: pv });
       continue;
     }
     fields.push({ label: q.label, value, tag, required: q.required });
@@ -224,6 +236,17 @@ export function checkReadBack(sheet, read) {
   const by = new Map(read.map((r) => [normLabel(r.label), String(r.value ?? '').trim()]));
   for (const f of sheet.fields) {
     if (f.value === '<resume>') continue;
+    if (Array.isArray(f.parts) && f.parts.length) {
+      // Each part's control is compared with its own value; a read of the whole field is compared with the parts joined.
+      const r = read.find((x) => x && normLabel(x.label) === normLabel(f.label));
+      const bad = f.parts.filter((p) => {
+        const mine = r && Array.isArray(r.parts) ? r.parts.find((x) => String(x.name).trim().toLowerCase() === String(p.name).trim().toLowerCase()) : null;
+        return !mine || String(mine.value ?? '').trim() !== String(p.value).trim();
+      });
+      const whole = r && !Array.isArray(r.parts) && String(r.value ?? '').trim() === String(f.value).trim();
+      if (!whole && bad.length) { for (const p of bad) problems.push(`read-back differs: ${f.label} (${p.name})`); fields.push({ label: f.label, value: r ? (Array.isArray(r.parts) ? r.parts.map((x) => `${x.name}: ${x.value ?? ''}`).join('; ') : String(r.value ?? '')) : null, parts: bad.map((p) => p.name) }); }
+      continue;
+    }
     const got = by.get(normLabel(f.label));
     if (got !== String(f.value).trim() && !(f.tag === 'ack' && /^(true|checked|yes|on)$/i.test(got || ''))) { problems.push(`read-back differs: ${f.label}`); fields.push({ label: f.label, value: got === undefined ? null : got }); }
   }
@@ -265,7 +288,7 @@ export function completeFromLive(job, live, profile = {}) {
       sheet.fields.push({ label: f.label, value: 'checked', tag: 'ack', required: true });
       changed = true;
     } else {
-      sheet.unanswered.push(kind ? { label: f.label, why: 'needs the person\'s own yes', ack: kind, live: true } : { label: f.label, why: 'required on the live form with no answer on the sheet', live: true, options: f.options || [] });
+      sheet.unanswered.push(kind ? { label: f.label, why: 'needs the person\'s own yes', ack: kind, live: true } : { label: f.label, why: 'required on the live form with no answer on the sheet', live: true, options: f.options || [], ...(hasParts(f) ? { type: f.type, parts: f.parts || null } : {}) });
       added.push(f.label);
     }
   }

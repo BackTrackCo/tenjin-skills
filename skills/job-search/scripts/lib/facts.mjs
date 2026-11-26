@@ -1,4 +1,5 @@
 import { normalizeQuestion } from './answers.mjs';
+import { hasParts, matchParts, partsPhrase } from './parts.mjs';
 
 // The missing facts of every job prepared in a moment, merged into questions code builds: the same profile fact, or the same
 // normalized label, is one question that names every job asking it. The model never writes a fact question list by hand.
@@ -19,7 +20,8 @@ export function collectFacts(state) {
       if (!u.factKey && !u.live && !options.length) continue;
       const id = u.factKey ? `fact:${u.factKey}` : `q:${normalizeQuestion(u.label)}`;
       const g = groups.get(id) || { id, label: u.label, factKey: u.factKey || null, jobs: [] };
-      g.jobs.push({ key: job.key, company: job.company, title: job.title, label: u.label, type: form.type || 'input_text', options, required: form.required !== false });
+      const parts = Array.isArray(form.parts) && form.parts.length ? form.parts : Array.isArray(u.parts) && u.parts.length ? u.parts : null;
+      g.jobs.push({ key: job.key, company: job.company, title: job.title, label: u.label, type: form.type || u.type || 'input_text', options, required: form.required !== false, ...(parts ? { parts } : {}) });
       groups.set(id, g);
     }
   }
@@ -75,7 +77,12 @@ export function buildFactQuestions(groups) {
   for (const g of split) {
     const opts = g.shown || [];
     const forWho = `For: ${namesOf(g.jobs)}`;
-    if (opts.length >= 2) {
+    // A date, or a field made of several controls, is typed in one plain message; its parts are asked for by name, never as a choice.
+    const dated = g.jobs.find((j) => hasParts(j));
+    if (dated) {
+      const named = g.jobs.find((j) => j.parts);
+      plain.push({ id: g.id, label: g.label, jobs: g.jobs.map((j) => j.key), text: `${g.label} (${forWho}) Give ${named ? partsPhrase(named.parts) : 'a date'}.` });
+    } else if (opts.length >= 2) {
       const shownOpts = toolOptions(opts);
       const skip = shownOpts.length <= 3 ? [{ label: 'Skip these jobs', description: `Do not apply to ${g.jobs.length > 1 ? 'these jobs' : 'this job'}.` }] : [];
       choice.push({ id: g.id, label: g.label, jobs: g.jobs.map((j) => j.key), question: { header: 'Missing fact', question: clip(`${g.label} ${forWho}`, 280), multiSelect: false, options: [...shownOpts.map((o) => ({ label: clip(o, 60), description: `Answer "${clip(o, 60)}" for ${g.jobs.length} job${g.jobs.length > 1 ? 's' : ''} and reuse it for the same question.` })), ...skip] } });
@@ -107,6 +114,14 @@ export function applyFactAnswer(state, profile, plan, id, value, addAnswer) {
   const needsMapping = [];
   for (const j of g.jobs) {
     // A typed answer is matched to the form's full list by the exact normalization; one that matches no option is never guessed.
+    if (j.parts) {
+      // A field made of several controls: each part is matched to its own options and recorded as the form spells it; a part code cannot
+      // match sends the job to its form's own mapping, never a guess.
+      const pv = matchParts(j.parts, value);
+      if (!pv) { needsMapping.push(j.key); continue; }
+      addAnswer({ question: j.label, answer: pv.map((p) => p.value).join(' '), how: 'typed', source: j.key, type: j.type, options: null, parts: pv });
+      continue;
+    }
     const mine = j.options.length ? j.options.find((o) => o === value) || j.options.find((o) => norm(o) === norm(value)) : value;
     if (!mine) { needsMapping.push(j.key); continue; }
     addAnswer({ question: j.label, answer: mine, how: 'typed', source: j.key, type: j.type, options: j.options.length ? j.options : null });

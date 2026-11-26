@@ -24,14 +24,14 @@ export function loadAnswers() {
 }
 
 // An entry: the normalized question, the answer, how it was given, the date and the source application.
-export function addAnswer({ question, answer, how, source = null, type = 'input_text', options = null, now = Date.now() }) {
+export function addAnswer({ question, answer, how, source = null, type = 'input_text', options = null, parts = null, now = Date.now() }) {
   if (!HOW.includes(how)) throw new Error('an answer is typed or approved');
   if (!String(answer).trim()) throw new Error('an empty answer is not saved');
   return withLock(() => {
     const store = loadAnswers();
     const q = normalizeQuestion(question);
     store.entries = store.entries.filter((e) => !(e.q === q && e.type === type));
-    const entry = { q, answer: String(answer), how, date: new Date(now).toISOString().slice(0, 10), source, type, options };
+    const entry = { q, answer: String(answer), how, date: new Date(now).toISOString().slice(0, 10), source, type, options, ...(parts ? { parts } : {}) };
     store.entries.push(entry);
     writeJsonAtomic(answersFile(), store);
     return entry;

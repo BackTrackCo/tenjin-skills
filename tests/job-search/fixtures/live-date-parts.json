@@ -1,0 +1,45 @@
+[
+  {
+    "label": "Email",
+    "required": true,
+    "type": "input_text",
+    "maxLength": null
+  },
+  {
+    "label": "When can you start a new role?",
+    "required": true,
+    "type": "date",
+    "parts": [
+      {
+        "name": "Month",
+        "options": [
+          "January",
+          "February",
+          "March",
+          "April",
+          "May",
+          "June",
+          "July",
+          "August",
+          "September",
+          "October",
+          "November",
+          "December"
+        ]
+      },
+      {
+        "name": "Year",
+        "options": [
+          "2027",
+          "2026",
+          "2025",
+          "2024",
+          "2023",
+          "2022",
+          "2021",
+          "2020"
+        ]
+      }
+    ]
+  }
+]

@@ -22,6 +22,7 @@ import { applyNext, applyPathOf, inFlight, confirmDryRun, recordConsent, recordD
 import { addAnswer, approveWriting, loadAnswers } from './lib/answers.mjs';
 import * as batch from './lib/batch.mjs';
 import { hintState, defaultRun, findTenjin } from './lib/tenjin.mjs';
+import { partsProblems } from './lib/parts.mjs';
 import { buildSheet, checkReadBack, checkSheet, completeFromLive, parseGreenhouseQuestions } from './lib/sheet.mjs';
 import { normLabel as normLabelFn } from './lib/store.mjs';
 import { buildContactMessageRequest, buildIntroRequest, buildLeadIntroRequest, buildWritingRequest, parseIntroResult, parseWritingResult, readWritingRules } from './lib/writing.mjs';
@@ -235,6 +236,7 @@ const commands = {
     const profile = readProfile();
     if (sub === 'build') {
       const questions = loadQuestions(flags.questions);
+      { const bad = partsProblems(questions); if (bad.length) return out({ error: bad.join('; ') }, 2); }
       return out(updateState((s) => {
         const job = s.jobs[key];
         if (!job) throw new Error(`unknown job: ${key}`);
@@ -246,6 +248,7 @@ const commands = {
     }
     if (sub === 'check') {
       const live = flags.live ? readJsonArg(flags.live) : null;
+      { const bad = partsProblems(live || []); if (bad.length) return out({ error: bad.join('; ') }, 2); }
       const unattendedTurn = flags.unattended === true || (batch.isActive() && batch.batchMode() === 'unattended');
       const res = updateState((s) => {
         const job = s.jobs[key];
