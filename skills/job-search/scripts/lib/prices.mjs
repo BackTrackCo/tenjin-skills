@@ -1,4 +1,4 @@
-import { graph } from './graph.mjs';
+import { graph } from '../../../loop-base/lib/graph.mjs';
 
 // What each Tenjin capability costs, as estimates: the recorded provider price, plus the routing fee (15%) for a routed query only,
 // rounded up to a tenth of a cent, kept in graph.json under `prices` with the date they were checked and how each need goes (`via`:

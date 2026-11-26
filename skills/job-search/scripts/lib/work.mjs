@@ -1,4 +1,4 @@
-import { graph } from './graph.mjs';
+import { graph } from '../../../loop-base/lib/graph.mjs';
 import { updateState, loadState } from './store.mjs';
 import { loadOverlay, activeLessons, ruleValue } from './overlay.mjs';
 import { readJson, stateDir } from './paths.mjs';

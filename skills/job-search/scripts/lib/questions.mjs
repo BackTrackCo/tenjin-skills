@@ -4,7 +4,7 @@
 // The tool adds its own free-text answer; no question or option text names it. A choice is only for a question whose options
 // usually hold the answer: a typed answer (a place, a phone, pay, an address, a name) is a plain question, `{plain}`, with the
 // guess in its text. Never in an unattended turn: nobody can answer there.
-import { graph } from './graph.mjs';
+import { graph } from '../../../loop-base/lib/graph.mjs';
 import { fmt } from './prices.mjs';
 import { REFERRAL_QUESTION } from './referral.mjs';
 const q = (header, question, options, multiSelect = false) => ({ header, question, multiSelect, options });

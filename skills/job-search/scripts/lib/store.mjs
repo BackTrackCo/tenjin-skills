@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { graph } from './graph.mjs';
+import { graph } from '../../../loop-base/lib/graph.mjs';
 import { isYc } from './platforms.mjs';
 import { ensureDir, readJson, stateDir, writeJsonAtomic } from './paths.mjs';
 

@@ -1,6 +1,6 @@
 import { notifyLine, plannedJobs, stillLeft, tenjinHint } from './work.mjs';
 import { dmLink, emailConsentCurrent, handleIn, mailto, due as pendingEmails, emailState } from './email.mjs';
-import { graph } from './graph.mjs';
+import { graph } from '../../../loop-base/lib/graph.mjs';
 import { confirmedEvents, eventKind } from './events.mjs';
 import { REFERRAL_LIST_LINE, referralListWaiting, referralNote } from './referral.mjs';
 

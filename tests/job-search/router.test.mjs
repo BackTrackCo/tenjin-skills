@@ -144,7 +144,8 @@ test('one process per round; stdin closes at the end; with Tenjin missing or the
 
 test('router.mjs is the only file that spawns tenjin mcp', () => {
   const dir = path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'scripts');
-  const files = [path.join(dir, 'jobs.mjs'), ...fs.readdirSync(path.join(dir, 'lib'), { recursive: true }).filter((f) => f.endsWith('.mjs')).map((f) => path.join(dir, 'lib', f))];
+  const base = path.join(import.meta.dirname, '..', '..', 'skills', 'loop-base', 'lib');
+  const files = [path.join(dir, 'jobs.mjs'), ...fs.readdirSync(path.join(dir, 'lib'), { recursive: true }).filter((f) => f.endsWith('.mjs')).map((f) => path.join(dir, 'lib', f)), ...fs.readdirSync(base, { recursive: true }).filter((f) => f.endsWith('.mjs')).map((f) => path.join(base, f))];
   const spawners = files.filter((f) => /\bmcp\b/.test(fs.readFileSync(f, 'utf8')) && /spawn/.test(fs.readFileSync(f, 'utf8')));
   assert.deepEqual(spawners.map((f) => path.basename(f)), ['router.mjs']);
   assert.equal(home.length > 0, true);

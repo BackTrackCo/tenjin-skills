@@ -333,7 +333,7 @@ test('other_system comes back when a release takes the host off the deny list, a
   assert.notEqual(work.inputsHash(store.loadState(), store.loadState().jobs[j.key], empty, { search: { role: 'chef' } }, 'low_score'), lowA, 'a role change is');
   assert.notEqual(work.inputsHash(store.loadState(), store.loadState().jobs[j.key], empty, { unattended: { minScore: 80 } }, 'low_score'), lowA, 'the score floor is');
 });
-const graphObj = (await import(`${S}graph.mjs`)).graph();
+const graphObj = (await import('../../skills/loop-base/lib/graph.mjs')).graph();
 
 test('sign_in comes back when the person says they have an account on that host: J fact set account', () => {
   const j = noPosting(1, { otherSystem: { system: 'Workday', url: 'https://acme.wd1.test/jobs' } });

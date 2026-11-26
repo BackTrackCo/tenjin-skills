@@ -1,4 +1,4 @@
-import { graph } from './graph.mjs';
+import { graph } from '../../../loop-base/lib/graph.mjs';
 import { applyRulesToJob } from './overlay.mjs';
 
 const DAY = 86400000;

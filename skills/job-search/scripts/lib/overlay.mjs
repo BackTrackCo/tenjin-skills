@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
-import { graph } from './graph.mjs';
+import { graph } from '../../../loop-base/lib/graph.mjs';
 import { readJson, stateDir, writeJsonAtomic } from './paths.mjs';
 import { withLock } from './store.mjs';
 

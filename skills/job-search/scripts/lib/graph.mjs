@@ -1,9 +1,3 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { SKILL_DIR } from './paths.mjs';
-
-let cached;
-export function graph() {
-  cached ||= JSON.parse(fs.readFileSync(path.join(SKILL_DIR, 'graph.json'), 'utf8'));
-  return cached;
-}
+// The gate files (apply, batch, net) still import the graph from here: the gates hash covers their bytes, so their import line moves with
+// the step that rewrites each of them. Every other module imports the base loader directly.
+export { graph } from '../../../loop-base/lib/graph.mjs';

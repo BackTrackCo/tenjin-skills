@@ -1,4 +1,4 @@
-import { graph } from './graph.mjs';
+import { graph } from '../../../loop-base/lib/graph.mjs';
 import { fetchBoard, parseCareersUrl } from './boards.mjs';
 import { mergeJobs, normalizeUrl } from './dedupe.mjs';
 import { effectiveProfile } from './overlay.mjs';

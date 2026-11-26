@@ -1,4 +1,4 @@
-import { graph } from './graph.mjs';
+import { graph } from '../../../loop-base/lib/graph.mjs';
 import { boardTarget, fetchBoard } from './boards.mjs';
 import { employerName } from './employer.mjs';
 import { companyNames, nameMatches } from './company.mjs';

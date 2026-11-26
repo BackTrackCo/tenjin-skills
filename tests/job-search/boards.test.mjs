@@ -52,7 +52,8 @@ test('the network door refuses every host outside the list', async () => {
 test('network host check: scripts name no host beyond the allowed list and documented pages', () => {
   const dir = path.join(ROOT, 'skills', 'job-search', 'scripts');
   const docs = ['tenjin.sh', 'github.com', 'creativecommons.org', 'x.com', 'www.linkedin.com', 'luma.com', 'www.ycombinator.com']; // x.com: only the profile link code gives the person, never fetched
-  const files = [path.join(dir, 'jobs.mjs'), ...fs.readdirSync(path.join(dir, 'lib'), { recursive: true }).filter((f) => f.endsWith('.mjs')).map((f) => path.join(dir, 'lib', f))];
+  const base = path.join(ROOT, 'skills', 'loop-base', 'lib');
+  const files = [path.join(dir, 'jobs.mjs'), ...fs.readdirSync(path.join(dir, 'lib'), { recursive: true }).filter((f) => f.endsWith('.mjs')).map((f) => path.join(dir, 'lib', f)), ...fs.readdirSync(base, { recursive: true }).filter((f) => f.endsWith('.mjs')).map((f) => path.join(base, f))];
   for (const f of files) {
     for (const m of fs.readFileSync(f, 'utf8').matchAll(/https?:\/\/([a-z0-9.-]+)/gi)) {
       const host = m[1].toLowerCase();

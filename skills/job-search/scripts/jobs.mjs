@@ -3,7 +3,7 @@
 import fs, { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { graph } from './lib/graph.mjs';
+import { graph } from '../../loop-base/lib/graph.mjs';
 import { SKILL_DIR, ensureDir, readJson, stateDir, writeJsonAtomic } from './lib/paths.mjs';
 import { applyOp, applyOps, bump, companyTitleKey, loadState, oldStateError, readOldStateFields, updateState, view } from './lib/store.mjs';
 

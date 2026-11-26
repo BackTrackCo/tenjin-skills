@@ -54,7 +54,8 @@ export function installCommands(tag, writingTag) {
   const base = ['-y', SKILLS_CLI, 'add'];
   const tail = ['-g', '-a', 'claude-code', '-y'];
   return [
-    ['npx', [...base, `${REPO}@${tag}`, '--skill', 'job-search', ...tail]],
+    // the loop base installs at the app's own tag, beside the app
+    ['npx', [...base, `${REPO}@${tag}`, '--skill', 'job-search', '--skill', 'loop-base', ...tail]],
     ...(writingTag ? [['npx', [...base, `${REPO}@${writingTag}`, '--skill', 'writing', ...tail]]] : []),
   ];
 }

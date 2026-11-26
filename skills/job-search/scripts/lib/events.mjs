@@ -1,4 +1,4 @@
-import { graph } from './graph.mjs';
+import { graph } from '../../../loop-base/lib/graph.mjs';
 import { guardedFetch } from './net.mjs';
 import { employerName } from './employer.mjs';
 import { placeKey } from './verify.mjs';
