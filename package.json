@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "check:dashes": "! grep -rn \"$(printf '\\342\\200\\224')\" skills/job-search skills/writing tests README.md package.json .github",
+    "check:dashes": "sh scripts/check-dashes.sh",
     "check:gates": "node skills/job-search/scripts/jobs.mjs gates",
     "check:skills": "sh scripts/check-skills.sh"
   }
