@@ -1,7 +1,7 @@
 import { spawn as nodeSpawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { findTenjin } from './tenjin.mjs';
+import { findTenjin } from '../../../loop-base/lib/tenjin.mjs';
 import { ensureDir, stateDir } from './paths.mjs';
 import { pickSupplier, pickTool } from './suppliers/index.mjs';
 

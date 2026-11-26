@@ -3,6 +3,7 @@ import path from 'node:path';
 import { graph } from '../../../loop-base/lib/graph.mjs';
 import { readJson, stateDir, writeJsonAtomic } from './paths.mjs';
 import { withLock } from './store.mjs';
+import { canonical } from '../../../loop-base/lib/hash.mjs';
 
 const DAY = 86400000;
 export const rulesFile = () => path.join(stateDir(), 'rules.json');
@@ -135,11 +136,7 @@ export function ruleValue(overlay, effect) {
   return r ? r.value : undefined;
 }
 
-export function canonical(v) {
-  if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
-  if (v && typeof v === 'object') return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonical(v[k])}`).join(',')}}`;
-  return JSON.stringify(v);
-}
+export { canonical };
 // The hash an unattended consent is bound to: the person's confirmed settings and rules.
 export function rulesHash(profile, overlay) {
   // Limits and notifications only tighten what a submit may do, so they do not change the hash the consent is bound to.

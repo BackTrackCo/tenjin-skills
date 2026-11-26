@@ -2,7 +2,7 @@ import { graph } from '../../../loop-base/lib/graph.mjs';
 import { updateState, loadState } from './store.mjs';
 import { loadOverlay, activeLessons, ruleValue } from './overlay.mjs';
 import { readJson, stateDir } from './paths.mjs';
-import { frequencyOf, periodStart, searchIsDue } from './schedule.mjs';
+import { frequencyOf, periodStart, searchIsDue } from '../../../loop-base/lib/schedule.mjs';
 import { applyPathOf, consentStatus, periodLimit } from './apply.mjs';
 import { openUrlOf } from './open.mjs';
 import { hintLines, offerItems, outdatedLine, pricesCheckedAt, paceText, searchRoundNote } from './prices.mjs';

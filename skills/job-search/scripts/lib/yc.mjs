@@ -3,7 +3,7 @@ import { guardedFetch } from './net.mjs';
 import { planIngest, persistIngest } from './ingest.mjs';
 import { loadOverlay } from './overlay.mjs';
 import { loadState, updateState } from './store.mjs';
-import { INTERVAL_MS, frequencyOf } from './schedule.mjs';
+import { INTERVAL_MS, frequencyOf } from '../../../loop-base/lib/schedule.mjs';
 
 // The public Y Combinator job pages, read in code for discovery only, logged out, through guardedFetch and nothing else:
 // the role page (and its place page) and the company page. The paths were checked against YC's robots.txt when they were chosen

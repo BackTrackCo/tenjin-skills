@@ -10,7 +10,7 @@ import { applyOp, applyOps, bump, companyTitleKey, loadState, oldStateError, rea
 import { addRule, deriveLessons, loadOverlay, removeRule } from './lib/overlay.mjs';
 import { markShown, roundOpen, refreshClaims, releaseClaims, itemVersion, LEAVE_REASONS, ITEM_LEAVE_REASONS, advanceSearch, askFirst, tenjinHint, itemKind, leaveItem, leaveRecord, park, unpark, workList } from './lib/work.mjs';
 import { applyRoundDrafts, checkJobSheet, prepareInCode, writableFields } from './lib/prepare.mjs';
-import { logRun } from './lib/runlog.mjs';
+import { logRun } from '../../loop-base/lib/runlog.mjs';
 import * as em from './lib/email.mjs';
 import * as rs from './lib/resume.mjs';
 import { buildRoundRequest, parseRoundResult } from './lib/writing.mjs';
@@ -21,7 +21,7 @@ import { applyUpdate, checkRelease, gatesHash, recordRelease } from './lib/relea
 import { applyNext, applyPathOf, inFlight, confirmDryRun, recordConsent, recordDryRun, recordWritingConsent, revokeConsent } from './lib/apply.mjs';
 import { addAnswer, approveWriting, loadAnswers } from './lib/answers.mjs';
 import * as batch from './lib/batch.mjs';
-import { hintState, defaultRun, findTenjin } from './lib/tenjin.mjs';
+import { hintState, defaultRun, findTenjin } from '../../loop-base/lib/tenjin.mjs';
 import { partsProblems } from './lib/parts.mjs';
 import { buildSheet, checkReadBack, checkSheet, completeFromLive, parseGreenhouseQuestions } from './lib/sheet.mjs';
 import { normLabel as normLabelFn } from './lib/store.mjs';
@@ -29,10 +29,10 @@ import { buildContactMessageRequest, buildIntroRequest, buildLeadIntroRequest, b
 import { firstApplicationHosts, renderReport } from './lib/report.mjs';
 import { CHROME_STEPS, maySubmit, stateLine } from './lib/approval.mjs';
 import { openPage, checkOpenUrl, openUrlOf } from './lib/open.mjs';
-import { pushSettings } from './lib/pushsettings.mjs';
+import { pushSettings } from '../../loop-base/lib/pushsettings.mjs';
 import { copyToUploads, removeStage, stageUpload, workingFolder } from './lib/uploads.mjs';
 import * as qs from './lib/questions.mjs';
-import { FREQUENCIES, frequencyOf, periodStart } from './lib/schedule.mjs';
+import { FREQUENCIES, frequencyOf, periodStart } from '../../loop-base/lib/schedule.mjs';
 import { ingest, joinLeads, leadKey } from './lib/ingest.mjs';
 import { addWatch, removeWatch } from './lib/watchlist.mjs';
 import { candidateEvents, confirmedEvents, filterEvents, dedupeEvents, matchTargets, planTargets, runEvents, saveEvents, windowDays } from './lib/events.mjs';

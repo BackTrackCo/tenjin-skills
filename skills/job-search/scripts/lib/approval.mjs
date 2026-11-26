@@ -1,6 +1,6 @@
 import { isFillOnly } from './fillonly.mjs';
 import { AUTO_MODES, companyExcluded, consentStatus, dryRunDone, periodLimit, writingConsentCurrent } from './apply.mjs';
-import { frequencyOf, periodStart } from './schedule.mjs';
+import { frequencyOf, periodStart } from '../../../loop-base/lib/schedule.mjs';
 import { referralHold, referralListAnswered } from './referral.mjs';
 
 // What the person is told after every approval, from code and as given: what was and was not submitted. It names companies
