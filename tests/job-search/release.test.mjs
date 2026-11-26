@@ -13,8 +13,11 @@ const NOW = Date.parse('2026-11-23T12:00:00Z');
 const R = (tag, ageDays, extra = {}) => ({ tag_name: tag, published_at: new Date(NOW - ageDays * 864e5).toISOString(), ...extra });
 
 function copySkill() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skillcopy-'));
+  // the skill folder and its sibling loop base, side by side: a gate file may be a sibling's path
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'skillcopy-'));
+  const dir = path.join(root, 'job-search');
   fs.cpSync(SKILL, dir, { recursive: true });
+  fs.cpSync(path.join(SKILL, '..', 'loop-base'), path.join(root, 'loop-base'), { recursive: true });
   return dir;
 }
 const setManifest = (dir, patch) => {
@@ -35,6 +38,9 @@ test('the gates hash covers the gate section, graph.json and the gate code, and 
   const h2 = rel.gatesHash(dir);
   fs.appendFileSync(path.join(dir, 'scripts', 'lib', 'apply.mjs'), '\n// changed\n');
   assert.notEqual(rel.gatesHash(dir), h2);
+  const h3 = rel.gatesHash(dir);
+  fs.appendFileSync(path.join(dir, '..', 'loop-base', 'lib', 'netguard.mjs'), '\n// the base guard is a gate file too\n');
+  assert.notEqual(rel.gatesHash(dir), h3);
 });
 
 test('the committed manifest hash matches the gate files', () => {

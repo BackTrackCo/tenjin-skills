@@ -9,7 +9,8 @@
     "scripts/lib/sheet.mjs",
     "scripts/lib/apply.mjs",
     "scripts/lib/batch.mjs",
-    "scripts/lib/net.mjs"
+    "scripts/lib/net.mjs",
+    "../loop-base/lib/netguard.mjs"
   ],
-  "gatesHash": "fb28792c25113eb40bcace1023dd5e3b050d409c86aad12d26ebddb8b3dcfdc2"
+  "gatesHash": "506121b839fb8a046e5bc109b5291a27e44a68bd681f8da87ff4a5733e94e4cc"
 }
