@@ -8,6 +8,8 @@ import { advanceSearch, inPeriodSet, searchRound, stillLeft, variantFor } from '
 import { companyNames, nameMatches, websiteOf } from './company.mjs';
 import { employerName } from './employer.mjs';
 import { bigEmployerMatch, isSmall } from './warmpath.mjs';
+import { dedupeEvents, filterEvents, matchTargets, planTargets, readPage, saveEvents, windowDays } from './events.mjs';
+import { assertEventRead } from './net.mjs';
 
 // With Tenjin, a search round runs in code, with no model step before review: the needs go to the router one at a time
 // (router.mjs), each result is ingested, and the same rule as the model-run rounds decides whether the next role-word
@@ -262,4 +264,46 @@ export async function routeWarmPaths({ profile, client = new RouterClient(), now
     updateState((s) => { (s.alsoWorked ||= {})[employerName(target.company)] = { company: target.company, hints: found, at: new Date(now).toISOString() }; });
   }
   return log;
+}
+
+// Events through the router: for each target company, the web search by catalog tool id (event domains in the filter) and the X posts that
+// mention a meetup, talk or hackathon by the company. A Luma page a result links is read in code and confirmed on its own page; every
+// other page is left for the model's fetch. The LinkedIn posts needs have no recorded supplier, so they are not run (a hint moment).
+// Post text is data: kept as a short quote, never used as an event or put into a field.
+export async function routeEvents({ profile, overlay, client = new RouterClient(), fetch, sleep, now = Date.now(), state = loadState() }) {
+  const targets = planTargets(state, profile);
+  const lines = [];
+  if (!targets.length) return { added: 0, lines: ['events: no target company yet'] };
+  const place = (profile.search || {}).place || '';
+  const since = new Date(now).toISOString().slice(0, 10);
+  const needs = targets.flatMap((t) => [
+    { kind: 'event_web', tool: 'exa-search', text: null, fields: { company: t.company, place }, query: null, company: t },
+    { kind: 'event_posts_x', text: fill('event_posts_x', { company: t.company }), fields: { company: t.company, place, since }, query: { company: t.company }, company: t },
+  ]);
+  const results = await runRound(needs, { client });
+  const pace = { n: 0 };
+  const items = [];
+  const pages = [];
+  const clean = (s) => String(s || '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+  for (let k = 0; k < results.length; k++) {
+    const r = results[k];
+    const t = needs[k].company;
+    if (!r.ok) { lines.push(`events: ${needs[k].kind} for ${t.company} held (${r.status})`); continue; }
+    const urls = needs[k].kind === 'event_web' ? r.ingest.results.map((x) => ({ url: x.url, title: x.title })) : r.ingest.posts.flatMap((p) => (p.links || []).map((u) => ({ url: u, quote: clean(p.text), author: p.author })));
+    for (const u of urls) {
+      let readable = true;
+      try { assertEventRead(u.url); } catch { readable = false; }
+      if (!readable || !/^https:\/\/luma\.com\//.test(u.url)) { if (/^https:\/\//.test(u.url)) pages.push({ company: t.company, url: u.url, title: clean(u.title) }); continue; }
+      const page = await readPage(u.url, 'luma', { fetch, sleep, state: pace });
+      if (!page.ok) { lines.push(`events: ${u.url} skipped (${page.why})`); continue; }
+      for (const e of filterEvents(page.parsed.events, { now, days: windowDays(overlay), place })) {
+        const matches = matchTargets(e, targets);
+        if (!matches.length && needs[k].kind === 'event_web') matches.push({ company: t.company, how: 'search' });
+        if (!matches.length) continue;
+        items.push({ event: { ...e, pageConfirmed: true, ...(u.quote ? { quote: u.quote } : {}) }, matches, status: matches.some((m) => m.how === 'organizer') ? 'confirmed' : 'candidate' });
+      }
+    }
+  }
+  const added = updateState((s) => { const n = saveEvents(s, dedupeEvents(items.map((i) => i.event)).map((e) => items.find((i) => i.event.id === e.id)), now); (s.events.pages = [...(s.events.pages || []), ...pages].filter((p, i, a) => a.findIndex((x) => x.url === p.url) === i)); return n; });
+  return { added, pages: pages.length, lines };
 }

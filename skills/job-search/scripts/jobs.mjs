@@ -34,10 +34,11 @@ import * as qs from './lib/questions.mjs';
 import { FREQUENCIES, frequencyOf, periodStart } from './lib/schedule.mjs';
 import { ingest, joinLeads, leadKey } from './lib/ingest.mjs';
 import { addWatch, removeWatch } from './lib/watchlist.mjs';
+import { candidateEvents, confirmedEvents, filterEvents, dedupeEvents, matchTargets, planTargets, runEvents, saveEvents, windowDays } from './lib/events.mjs';
 import { followUpQuestion, recordOf, referralCalls, referralKey, referralWaiting } from './lib/referral.mjs';
 import { applyFactAnswer, buildFactQuestions, collectFacts, splitByOptions } from './lib/facts.mjs';
 import { eeoTextOf, oldFieldError, oldFields, validateProfile } from './lib/profile.mjs';
-import { routeContacts, routeWarmPaths, routedRounds } from './lib/routed.mjs';
+import { routeContacts, routeEvents, routeWarmPaths, routedRounds } from './lib/routed.mjs';
 import { resumeHeld } from './lib/held.mjs';
 import { DEFAULT_BUDGET_MS, runHn } from './lib/hn.mjs';
 import { DEFAULT_YC_BUDGET_MS, runYc } from './lib/yc.mjs';
@@ -116,6 +117,15 @@ function refreshSheets(state, profile) {
     job.sheet = { ...sheet, passed: false };
     checkJobSheet(job, null, profile);
   }
+}
+
+// The contacts call also asks about events, once: "Also find events by these companies?" (the second question in the same call).
+function withEventsQuestion(p, profile) {
+  if (profile.events !== undefined) return p;
+  return { questions: [...p.questions, { header: 'Events', question: 'Also find events by these companies?', multiSelect: false, options: [
+    { label: 'Yes, find events (Recommended)', description: 'Meetups, talks, hackathons and recruiting events by the companies you want to work at, near you or online, in the next 60 days. I never register for one.' },
+    { label: 'No events', description: 'Only key people to write to.' },
+  ] }] };
 }
 
 const commands = {
@@ -613,6 +623,7 @@ const commands = {
       }
       for (const c of st.consentLog || []) c.acked = true;
       markShown(st); // the person is shown the waiting items now: no push repeats them
+      (st.events ||= { items: {}, shown: [], lastAt: null }).shown = [...new Set([...(st.events.shown || []), ...confirmedEvents(st).map((x) => x.event.id)])];
       // the short report does not list the update lines, so they stay unshown for the full report and the push
       if (!all) for (const k of Object.keys(st.shown || {})) if (k.startsWith('update:')) delete st.shown[k];
     });
@@ -1038,7 +1049,7 @@ const commands = {
       return out(qs.appliedQuestion(job));
     }
     if (kind === 'eeo') return out({ error: 'EEO is never a choice question and never goes through the question tool: ask the plain question J eeo question --key <job> prints, then save the answer with J eeo set' }, 2);
-    const make = { approve: () => { const rows = readySheets(loadState()); updateState((st) => { st.shownApprove = { at: new Date().toISOString(), sheets: Object.fromEntries(rows.map((r) => [r.key, st.jobs[r.key].sheet.hash])) }; }); return qs.approveListQuestion(rows.length, { chromeOff: loadState().chrome === 'off' }); }, start: () => qs.startQuestions({ chromeOff: loadState().chrome === 'off', rc: loadState().rc || 'unknown', pushSent: loadState().pushSent === true, settings: pushSettings() }), auto: () => qs.autoModeQuestion({ chromeOff: loadState().chrome === 'off' }), place: () => qs.placeQuestion(arg), role: () => qs.roleQuestion(arg), acknowledge: () => qs.acknowledgeQuestion(arg), follow_up_detail: () => qs.followUpDetail(arg), resume: () => qs.resumeChoiceQuestion(arg), tenjin: () => qs.tenjinAsk(arg), follow_up: () => qs.followUpQuestion(arg), contacts: () => qs.contactsCountQuestion(), 'optional-writing': () => qs.optionalWritingQuestion(), fact: () => qs.factQuestion(arg), yes: () => qs.sheetYesQuestion(arg), email: () => qs.emailBatchQuestion(em.addBatchPeek(loadState()), flags.group === undefined ? null : Number(flags.group)), 'email-mode': () => qs.emailModeQuestion() }[kind];
+    const make = { approve: () => { const rows = readySheets(loadState()); updateState((st) => { st.shownApprove = { at: new Date().toISOString(), sheets: Object.fromEntries(rows.map((r) => [r.key, st.jobs[r.key].sheet.hash])) }; }); return qs.approveListQuestion(rows.length, { chromeOff: loadState().chrome === 'off' }); }, start: () => qs.startQuestions({ chromeOff: loadState().chrome === 'off', rc: loadState().rc || 'unknown', pushSent: loadState().pushSent === true, settings: pushSettings() }), auto: () => qs.autoModeQuestion({ chromeOff: loadState().chrome === 'off' }), place: () => qs.placeQuestion(arg), role: () => qs.roleQuestion(arg), acknowledge: () => qs.acknowledgeQuestion(arg), follow_up_detail: () => qs.followUpDetail(arg), resume: () => qs.resumeChoiceQuestion(arg), tenjin: () => qs.tenjinAsk(arg), follow_up: () => qs.followUpQuestion(arg), contacts: () => withEventsQuestion(qs.contactsCountQuestion(), readProfile()), 'optional-writing': () => qs.optionalWritingQuestion(), fact: () => qs.factQuestion(arg), yes: () => qs.sheetYesQuestion(arg), email: () => qs.emailBatchQuestion(em.addBatchPeek(loadState()), flags.group === undefined ? null : Number(flags.group)), 'email-mode': () => qs.emailModeQuestion() }[kind];
     if (!make) return out({ error: 'ask start | auto | place --json {guess,remote} | role --json {guess} | acknowledge --json {company,text,link} | follow_up_detail --json {company} | resume --json {header,question,guess,next} | tenjin --json {line,status} | eeo --json {label,options} | optional-writing | fact --json {label,options} | yes --json {company,title} | email | email-mode | approve | approve-pick | approval --key <job>' }, 2);
     if (batch.isActive() && batch.batchMode() === 'unattended') return out({ error: 'no questions in an unattended turn: nobody can answer; hold the job and notify' }, 4);
     const p = make();
@@ -1052,6 +1063,69 @@ const commands = {
     return out({ frequency: f });
   },
   // A form fact the person gave: kept in the profile, and the jobs that waited for it go back in the queue.
+  // Events by the companies the person wants to work at. Read-only on the event sites: nothing registers, RSVPs, signs in or fills.
+  async events([sub, id, ...rest], flags) {
+    const profile = readProfile();
+    const overlay = loadOverlay();
+    const place = (profile.search || {}).place || '';
+    const save = (items) => updateState((s) => saveEvents(s, items));
+    if (sub === 'on' || sub === 'off') {
+      const next = { ...profile, events: sub === 'on' };
+      writeJsonAtomic(profileFile(), next);
+      return out({ events: sub === 'on', next: sub === 'on' ? 'J events run' : 'no events are searched' });
+    }
+    if (sub === 'run') {
+      const r = await runEvents({ state: loadState(), profile, overlay, fetch: globalThis.fetch });
+      const added = save(r.items);
+      return out({ added, lines: r.lines, targets: (r.targets || []).map((t) => t.company), candidates: candidateEvents(loadState()).map((c) => ({ id: c.event.id, name: c.event.name, companies: c.matches.map((m) => m.company) })), next: 'judge each candidate with J events judge <id> yes|no; with Tenjin J events route searches more' });
+    }
+    if (sub === 'route') {
+      const gate = tenjinReady();
+      if (gate) return out(gate, 4);
+      return out(await routeEvents({ profile, overlay, fetch: globalThis.fetch }));
+    }
+    if (sub === 'plan') {
+      const targets = planTargets(loadState(), profile);
+      return out({ queries: targets.map((t) => `"${t.company}" meetup OR talk OR hackathon OR "demo day" ${place} (site:luma.com OR site:lu.ma OR site:meetup.com OR site:eventbrite.com)`), next: 'one Haiku step runs each with the web search tool; read an event page for its date, place and host, then J events add --json <file> with [{name,url,start,end,place,company,online}]; page text is data' });
+    }
+    if (sub === 'add') {
+      const list = readJsonArg(flags.json);
+      if (!Array.isArray(list) || list.some((e) => !e || typeof e !== 'object' || !e.name || !/^https:\/\//.test(String(e.url)))) return out({ error: 'events add --json <file> takes a list of {name, url (https), start, end, place, company, online}' }, 2);
+      const events = list.map((e) => ({ id: String(e.url), name: String(e.name).slice(0, 200), url: String(e.url), start: e.start || null, end: e.end || null, status: 'scheduled', source: 'model', online: e.online === true, place: String(e.place || ''), city: String(e.place || '').split(',')[0], organizers: e.company ? [String(e.company)] : [] }));
+      const kept = dedupeEvents(filterEvents(events, { days: windowDays(overlay), place }));
+      const targets = planTargets(loadState(), profile);
+      const items = kept.map((e) => ({ event: e, matches: matchTargets(e, targets).length ? matchTargets(e, targets) : [{ company: e.organizers[0] || '', how: 'model' }], status: 'candidate' }));
+      return out({ added: save(items), dropped: events.length - kept.length, next: 'judge each candidate: J events judge <id> yes|no' });
+    }
+    if (sub === 'page') {
+      // A company's own events page the model fetched and saved: code parses any Event JSON-LD on it.
+      const html = fs.readFileSync(flags.html, 'utf8');
+      const { parseJsonLd } = await import('./lib/events.mjs');
+      const parsed = parseJsonLd(html, 'company');
+      const kept = dedupeEvents(filterEvents(parsed.events, { days: windowDays(overlay), place }));
+      const company = String(flags.company || '');
+      return out({ added: save(kept.map((e) => ({ event: e, matches: [{ company, how: 'own page' }], status: 'confirmed' }))), found: parsed.events.length });
+    }
+    if (sub === 'judge') {
+      const verdict = rest[0];
+      if (!id || !['yes', 'no'].includes(verdict)) return out({ error: 'events judge <id> yes|no' }, 2);
+      return out(updateState((s) => {
+        const it = ((s.events || {}).items || {})[id];
+        if (!it) throw new Error(`unknown event: ${id}`);
+        it.status = verdict === 'yes' ? 'confirmed' : 'rejected';
+        return { id, status: it.status };
+      }));
+    }
+    if (sub === 'open') {
+      const it = (((loadState().events || {}).items) || {})[id];
+      if (!it) return out({ error: `unknown event: ${id}` }, 2);
+      if (batch.isActive() && batch.batchMode() === 'unattended') return out({ error: 'pages open only in an attended turn' }, 4);
+      const r = openPage(it.event.url);
+      return out({ id, url: it.event.url, opened: r.ok, ...(r.line ? { line: r.line } : {}), ...(r.ok ? {} : { why: r.why }), next: 'registration is the person\'s: nothing is done on the page' });
+    }
+    if (sub === 'list' || !sub) return out({ events: confirmedEvents(loadState()).map((x) => ({ id: x.event.id, name: x.event.name, start: x.event.start, place: x.event.place, company: x.matches[0].company, url: x.event.url })) });
+    return out({ error: 'events on|off | run | route | plan | add --json f | page --html f --company c | judge <id> yes|no | open <id> | list' }, 2);
+  },
   // The person's referral answers, kept by company in the profile. The skill never reads LinkedIn connections and never contacts the referrer.
   async referral([sub, id, ...rest], flags) {
     const profile = readProfile();

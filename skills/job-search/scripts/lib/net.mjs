@@ -66,6 +66,25 @@ export const YC_PATHS = [
   /^\/companies\/[a-z0-9-]+$/,
   /^\/companies\/[a-z0-9-]+\/jobs\/[A-Za-z0-9-]+$/,
 ];
+// Public event pages, read in code, logged out, for discovery only: a Luma event, calendar or city page (one path segment, none of the
+// people, company, share, session, sign-in, RSVP or API paths), and the one Y Combinator events listing. The YC robots.txt rules were
+// checked when /events was chosen (the recorded copy is in the tests); an event's own YC page is not read until its path is curated.
+const LUMA_REFUSED = new Set(['user', 'in', 'company', 'social-share', 'signin', 'sign-in', 'login', 'log-in', 'signup', 'sign-up', 'rsvp', 'api', 'auth', 'oauth', 'account', 'settings', 'calendar', 'discover', 'home', 'checkout', 'ticket', 'tickets']);
+export const LUMA_PATH = /^\/([A-Za-z0-9][A-Za-z0-9_-]{0,63})$/;
+export const YC_EVENT_PATHS = [/^\/events$/];
+export function assertEventRead(url) {
+  const u = new URL(url);
+  if (u.protocol !== 'https:' || u.search || u.hash || u.username || u.password || u.port) throw new Error(`not a readable event page: ${url}`);
+  const host = u.hostname.toLowerCase();
+  if (host === graph().events.lumaHost) {
+    const m = LUMA_PATH.exec(u.pathname);
+    if (!m || LUMA_REFUSED.has(m[1].toLowerCase()) || /^session-/i.test(m[1])) throw new Error(`not a readable event page: ${u.pathname}`);
+    return;
+  }
+  if (host === graph().ycRead.host && YC_EVENT_PATHS.some((re) => re.test(u.pathname))) return;
+  throw new Error(`not a readable event page: ${host}${u.pathname}`);
+}
+
 export function assertYcRead(url) {
   const u = new URL(url);
   if (u.protocol !== 'https:' || u.hostname.toLowerCase() !== graph().ycRead.host || u.search || u.hash || u.username || u.password || u.port) throw new Error(`not a readable Y Combinator page: ${url}`);
@@ -74,7 +93,8 @@ export function assertYcRead(url) {
 
 // `allowUrl` names one exact URL that may be read once, outside the fixed host list (the resume link the person gave). It
 // never lifts the never-automated list or the local and private addresses, and it is https only.
-export function assertAllowed(url, { allowUrl = null, yc = false } = {}) {
+export function assertAllowed(url, { allowUrl = null, yc = false, events = false } = {}) {
+  if (events) return assertEventRead(url);
   if (yc) return assertYcRead(url);
   const u = new URL(url);
   const rawHost = u.hostname.toLowerCase();
@@ -89,9 +109,9 @@ export function assertAllowed(url, { allowUrl = null, yc = false } = {}) {
   if (rawHost !== host || !ALLOWED_HOSTS.includes(host)) throw new Error(`host not allowed: ${rawHost}`);
 }
 
-export async function guardedFetch(url, opts = {}, fetchImpl = globalThis.fetch, { allowUrl = null, lookup, yc = false } = {}) {
-  assertAllowed(url, { allowUrl, yc });
-  if (yc) {
+export async function guardedFetch(url, opts = {}, fetchImpl = globalThis.fetch, { allowUrl = null, lookup, yc = false, events = false } = {}) {
+  assertAllowed(url, { allowUrl, yc, events });
+  if (yc || events) {
     // Logged out by construction: no cookie, no credentials, and a redirect is never followed.
     return fetchImpl(url, { method: 'GET', redirect: 'manual', credentials: 'omit', signal: AbortSignal.timeout(30_000), headers: { 'user-agent': 'tenjin-skills-job-search', accept: 'text/html' } });
   }

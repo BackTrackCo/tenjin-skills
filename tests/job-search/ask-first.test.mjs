@@ -178,7 +178,7 @@ test('every hint and offer line names its price, no seller name appears, and eve
   assert.doesNotMatch(text, /orthogonal|icypeas|exa\b|agentsearch|brave|companyenrich|x402|apollo|blockrun/i);
   assert.doesNotMatch(text, /Neon|writing/);
   // every routed need has a price in graph.json, so it has a figure in the ask
-  const PRICE_KEY = { job_postings: 'job_postings', x_hiring_posts: 'x_hiring_posts', web_search: 'board_search', careers_page: 'careers_page', people_search: 'people_search', company_lookup: 'company_lookup', linkedin_profile: 'linkedin_profile' };
+  const PRICE_KEY = { event_web: 'board_search', event_posts_x: 'x_hiring_posts', job_postings: 'job_postings', x_hiring_posts: 'x_hiring_posts', web_search: 'board_search', careers_page: 'careers_page', people_search: 'people_search', company_lookup: 'company_lookup', linkedin_profile: 'linkedin_profile' };
   for (const kind of [...Object.keys(graph.needTemplates), 'web_search', 'company_lookup']) assert.ok(graph.prices.needs[PRICE_KEY[kind]], `${kind} has a price`);
   for (const need of Object.keys(graph.prices.needs)) assert.ok(graph.prices.needs[need].estimateCents > 0, need);
   const a = work.askFirst({ tenjin: { status: 'missing' }, lease: null }, 'contacts');

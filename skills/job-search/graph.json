@@ -35,6 +35,14 @@
     "x.com",
     "twitter.com"
   ],
+  "events": {
+    "windowDays": 60,
+    "recheckDays": 7,
+    "paceMs": 5000,
+    "lumaHost": "luma.com",
+    "ycPath": "/events",
+    "domains": ["luma.com", "lu.ma", "eventbrite.com", "meetup.com", "ycombinator.com"]
+  },
   "ycRead": {
     "host": "www.ycombinator.com",
     "paceMs": 5000
@@ -147,7 +155,8 @@
     "need_due",
     "email_due",
     "referral_check",
-    "referral_pending"
+    "referral_pending",
+    "events_due"
   ],
   "heldReasons": [
     "source_empty",
@@ -173,7 +182,8 @@
     "notify_off",
     "note",
     "fill_only",
-    "referral_delay_days"
+    "referral_delay_days",
+    "events_window_days"
   ],
   "lessonEffects": [
     "host_last",
@@ -220,7 +230,9 @@
     "x_hiring_posts": "hiring posts on X for {role} roles in {place} from the last {days} days",
     "careers_page": "find the careers page of {company} from its website {url} and the job board it uses",
     "linkedin_profile": "read the public LinkedIn profile at {url}: return the profile as JSON",
-    "people_search": "people search: engineering leaders at {company} ({url}){where}"
+    "people_search": "people search: engineering leaders at {company} ({url}){where}",
+    "event_web": "coming events by {company} near {place}: meetups, talks, hackathons, office hours, demo days and recruiting events",
+    "event_posts_x": "posts on X that mention a meetup, talk or hackathon by {company} in the coming days"
   },
   "peopleTitles": [
     "Engineering Manager",

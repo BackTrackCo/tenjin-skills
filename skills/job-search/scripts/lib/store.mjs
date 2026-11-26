@@ -28,6 +28,7 @@ export function emptyState() {
     shown: {},
     chrome: null,
     uploadLines: [],
+    events: { items: {}, shown: [], lastAt: null },
     staged: {},
     rc: 'unknown',
     pushSent: false,

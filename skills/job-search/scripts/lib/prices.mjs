@@ -32,6 +32,7 @@ export function hintLines(profile = {}) {
     daily_search: `With Tenjin, each search round can also cover job postings from LinkedIn, Indeed and other job boards, and hiring posts on X, and search company job boards directly, without using your Claude usage. About ${fmt(roundCents(profile))} ${roundWords(profile)}.`,
     employer_posting: `With Tenjin, I can look up this company's careers page to find its own application page, for about ${fmt(price('careers_page'))}.`,
     contacts: `With Tenjin, I can search for a hiring manager or team lead for the jobs where I found nobody: about ${fmt(contactsCents())} a job, or about ${fmt(contactsWithLookupCents())} when I first need to look up the company's website.`,
+    events: `With Tenjin, I can also search the web and public X posts for events by these companies, for about ${fmt(price('board_search') + price('x_hiring_posts'))} a company.`,
     linkedin_resume: `With Tenjin, I can read your LinkedIn profile from this link, once, for about ${fmt(price('linkedin_profile'))}.`,
   };
 }
