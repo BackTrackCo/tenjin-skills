@@ -2,9 +2,10 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getApp } from './app.mjs';
+import { guardedFetch } from './netguard.mjs';
 import { updateState } from './store.mjs';
 
-// Releases and gates. The app declares release: { repo, displayName, skillsCli, guardedFetch, companions: [{ skill, manifestKey,
+// Releases and gates. The app declares release: { repo, displayName, skillsCli, companions: [{ skill, manifestKey,
 // tagField, previousField }] }. The tag prefix comes from the app's name, the gate files from its manifest.json (`gateFiles`, in
 // order), and the loop base installs at the app's own tag beside the app. A change to a gate waits for the person's yes.
 const DAY = 86400000;
@@ -57,7 +58,7 @@ export function pickRelease({ releases, installed, now = Date.now(), name = getA
 }
 
 async function ghJson(url, fetchImpl, accept) {
-  const res = await spec().guardedFetch(url, accept ? { headers: { accept } } : {}, fetchImpl);
+  const res = await guardedFetch(url, accept ? { headers: { accept } } : {}, fetchImpl);
   if (!res.ok) throw new Error(`http ${res.status}`);
   return res;
 }
