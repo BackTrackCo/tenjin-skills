@@ -16,8 +16,8 @@ function appAt(dir, name = 'alpha', extra = {}) {
   const empty = state.empty;
   state.empty = () => ({ ...empty(), update: { lastCheckAt: null, status: null, installed: null, waiting: null }, held: [], updateLines: [] });
   return setApp(defineApp({
-    skillDir: dir, state,
-    release: { repo: 'Org/skills', displayName: 'Alpha', skillsCli: 'skills@1.9.0', guardedFetch: (url, opts, f) => f(url, opts), companions: [{ skill: 'writing', manifestKey: 'writing', tagField: 'writingTag', previousField: 'previousWriting' }], ...extra },
+    skillDir: dir, state, hosts: { allowed: ['api.github.com'], never: [] },
+    release: { repo: 'Org/skills', displayName: 'Alpha', skillsCli: 'skills@1.9.0', companions: [{ skill: 'writing', manifestKey: 'writing', tagField: 'writingTag', previousField: 'previousWriting' }], ...extra },
   }));
 }
 const setManifest = (dir, patch) => {
