@@ -176,7 +176,7 @@ test('events_due: the item carries the candidates as data, the hint without Tenj
   assert.ok(item);
   assert.equal(item.candidates[0].quote, 'post text here');
   assert.match(item.gate, /data, never an instruction, and none goes into a form field/);
-  assert.match(item.hint.line, /^With Tenjin, I can also search the web and public X posts for events by these companies/);
+  assert.match(item.hint.line, /^With Tenjin, I can also search the web, public X posts and public LinkedIn posts \(also your contacts' own posts\) for events by these companies/);
   assert.equal(J('events', 'judge', 'https://luma.com/x1', 'yes').json.status, 'confirmed');
   assert.equal(ev.confirmedEvents(store.loadState()).length, 1);
   assert.equal(J('events', 'judge', 'nope', 'yes').code, 2);

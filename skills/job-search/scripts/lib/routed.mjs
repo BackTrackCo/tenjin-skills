@@ -270,6 +270,9 @@ export async function routeWarmPaths({ profile, client = new RouterClient(), now
 // mention a meetup, talk or hackathon by the company. A Luma page a result links is read in code and confirmed on its own page; every
 // other page is left for the model's fetch. The LinkedIn posts needs have no recorded supplier, so they are not run (a hint moment).
 // Post text is data: kept as a short quote, never used as an event or put into a field.
+// The LinkedIn profile links of the key people found for a target company, each once.
+const peopleLinks = (state, t) => [...new Set(Object.entries(state.contacts || {}).filter(([jobKey]) => state.jobs[jobKey] && employerName(state.jobs[jobKey].company) === employerName(t.company)).flatMap(([, list]) => (list || []).map((c) => c.sourceUrl)).filter((u) => /^https:\/\/(?:[a-z0-9-]+\.)?linkedin\.com\/in\/[^/?#\s]+/i.test(String(u || ''))))];
+
 export async function routeEvents({ profile, overlay, client = new RouterClient(), fetch, sleep, now = Date.now(), state = loadState() }) {
   const targets = planTargets(state, profile);
   const lines = [];
@@ -279,6 +282,9 @@ export async function routeEvents({ profile, overlay, client = new RouterClient(
   const needs = targets.flatMap((t) => [
     { kind: 'event_web', tool: 'exa-search', text: null, fields: { company: t.company, place }, query: null, company: t },
     { kind: 'event_posts_x', text: fill('event_posts_x', { company: t.company }), fields: { company: t.company, place, since }, query: { company: t.company }, company: t },
+    { kind: 'event_posts_linkedin', tool: 'anyapi-linkedin-search-posts', text: null, fields: { company: t.company }, query: null, company: t },
+    // the key people's own posts, from the profile links the contacts flow found; one page each, never a link the skill opens
+    ...peopleLinks(state, t).map((url) => ({ kind: 'event_posts_people', tool: 'anyapi-linkedin-author-posts', text: null, fields: { url }, query: null, company: t })),
   ]);
   const results = await runRound(needs, { client });
   const pace = { n: 0 };
@@ -299,6 +305,7 @@ export async function routeEvents({ profile, overlay, client = new RouterClient(
       for (const e of filterEvents(page.parsed.events, { now, days: windowDays(overlay), place })) {
         const matches = matchTargets(e, targets);
         if (!matches.length && needs[k].kind === 'event_web') matches.push({ company: t.company, how: 'search' });
+        if (!matches.length && needs[k].kind === 'event_posts_people') matches.push({ company: t.company, how: 'person_post' });
         if (!matches.length) continue;
         items.push({ event: { ...e, pageConfirmed: true, ...(u.quote ? { quote: u.quote } : {}) }, matches, status: matches.some((m) => m.how === 'organizer') ? 'confirmed' : 'candidate' });
       }

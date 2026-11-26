@@ -128,9 +128,9 @@ test('each price estimate equals its fixture\'s recorded cost, plus 15% for a ro
   }
 });
 
-test('a call by catalog tool id carries no routing fee: the board search and the company lookup are the only two', () => {
+test('a call by catalog tool id carries no routing fee: the board search, the company lookup and the two LinkedIn post reads are the only ones', () => {
   const toolId = Object.entries(graph.prices.needs).filter(([, v]) => v.via === 'tool_id').map(([k]) => k).sort();
-  assert.deepEqual(toolId, ['board_search', 'company_lookup']);
+  assert.deepEqual(toolId, ['board_search', 'company_lookup', 'event_posts_linkedin', 'event_posts_people']);
   assert.equal(graph.prices.needs.board_search.estimateCents, 0.4, 'the provider price, no fee');
   assert.equal(graph.prices.needs.company_lookup.estimateCents, 1.3, '1.225 rounded up to a tenth');
   assert.equal(graph.prices.needs.people_search.estimateCents, 1.2, 'a routed query keeps the 15%');
@@ -178,7 +178,7 @@ test('every hint and offer line names its price, no seller name appears, and eve
   assert.doesNotMatch(text, /orthogonal|icypeas|exa\b|agentsearch|brave|companyenrich|x402|apollo|blockrun/i);
   assert.doesNotMatch(text, /Neon|writing/);
   // every routed need has a price in graph.json, so it has a figure in the ask
-  const PRICE_KEY = { event_web: 'board_search', event_posts_x: 'x_hiring_posts', job_postings: 'job_postings', x_hiring_posts: 'x_hiring_posts', web_search: 'board_search', careers_page: 'careers_page', people_search: 'people_search', company_lookup: 'company_lookup', linkedin_profile: 'linkedin_profile' };
+  const PRICE_KEY = { event_web: 'board_search', event_posts_x: 'x_hiring_posts', event_posts_linkedin: 'event_posts_linkedin', event_posts_people: 'event_posts_people', job_postings: 'job_postings', x_hiring_posts: 'x_hiring_posts', web_search: 'board_search', careers_page: 'careers_page', people_search: 'people_search', company_lookup: 'company_lookup', linkedin_profile: 'linkedin_profile' };
   for (const kind of [...Object.keys(graph.needTemplates), 'web_search', 'company_lookup']) assert.ok(graph.prices.needs[PRICE_KEY[kind]], `${kind} has a price`);
   for (const need of Object.keys(graph.prices.needs)) assert.ok(graph.prices.needs[need].estimateCents > 0, need);
   const a = work.askFirst({ tenjin: { status: 'missing' }, lease: null }, 'contacts');

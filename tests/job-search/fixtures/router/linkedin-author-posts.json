@@ -1,0 +1,43 @@
+{
+  "output": {
+    "found": true,
+    "data": {
+      "items": [
+        {
+          "id": "urn:li:activity:101",
+          "url": "https://www.linkedin.com/posts/placeholder-person_activity-101",
+          "text": "We are speaking at a demo night: https://luma.com/placeholder-demo",
+          "createdUtc": 1795567571,
+          "author": {
+            "name": "Placeholder Person",
+            "profileUrl": "https://www.linkedin.com/in/placeholder-person/"
+          },
+          "engagement": {
+            "reactions": 9,
+            "comments": 3,
+            "reposts": 1
+          },
+          "repostText": "The original post text.",
+          "repostUrl": "https://www.linkedin.com/posts/other_activity-100"
+        },
+        {
+          "id": "urn:li:activity:99",
+          "url": "https://www.linkedin.com/posts/placeholder-person_activity-99",
+          "text": "A post with an article.",
+          "createdUtc": 1795563971,
+          "author": {
+            "name": "Placeholder Person",
+            "profileUrl": "https://www.linkedin.com/in/placeholder-person/"
+          },
+          "engagement": {
+            "reactions": 5,
+            "comments": 1,
+            "reposts": 0
+          },
+          "articleUrl": "https://example.test/article"
+        }
+      ],
+      "nextCursor": "author-page-2"
+    }
+  }
+}

@@ -232,7 +232,9 @@
     "linkedin_profile": "read the public LinkedIn profile at {url}: return the profile as JSON",
     "people_search": "people search: engineering leaders at {company} ({url}){where}",
     "event_web": "coming events by {company} near {place}: meetups, talks, hackathons, office hours, demo days and recruiting events",
-    "event_posts_x": "posts on X that mention a meetup, talk or hackathon by {company} in the coming days"
+    "event_posts_x": "posts on X that mention a meetup, talk or hackathon by {company} in the coming days",
+    "event_posts_linkedin": "public LinkedIn posts that mention an event by {company}",
+    "event_posts_people": "public LinkedIn posts of one key person at {company}, by their profile link"
   },
   "peopleTitles": [
     "Engineering Manager",
@@ -280,7 +282,9 @@
         "via": "routed_query",
         "providerUsd": 0.02,
         "estimateCents": 2.3
-      }
+      },
+    "event_posts_linkedin": { "via": "tool_id", "providerUsd": 0.0022, "estimateCents": 0.3 },
+    "event_posts_people": { "via": "tool_id", "providerUsd": 0.006, "estimateCents": 0.6 }
     }
   }
 }
