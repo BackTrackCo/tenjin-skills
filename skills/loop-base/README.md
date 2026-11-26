@@ -13,6 +13,7 @@ An app is one `defineApp({...})` object, registered by its own `paths.mjs` with 
 
 - `state`: `{ empty(), schemaVersion, applyOp(state, op), oldFields(raw) }`, the app's state shape and its own ops; an app attaches it with `extendApp` from the module that builds it.
 - `kinds`: `{ [kind]: { collection, statuses, transitions, terminal, onTransition } }`; the base's `transition` moves an item between statuses, refuses an undeclared move or a move out of a final status, and names the kind in the error when the app declares more than one.
+- `release`: `{ repo, displayName, skillsCli, guardedFetch, companions: [{ skill, manifestKey, tagField, previousField }] }`. The tag prefix is `<name>-v`, the gate files are the manifest's `gateFiles` (in order; a sibling path such as `../loop-base/lib/netguard.mjs` is allowed) and the manifest's `gatesHash` covers them and the gate section of SKILL.md. An update installs the app and `loop-base` at the app's tag, then each companion; a gate change waits for the person's yes.
 
 The base modules that follow add their own fields to the object as they land: state, item kinds, watcher steps, work items, consents, rules, batch, email, hosts, suppliers, report sections, commands and release. Each field is something the app already does in its own code.
 

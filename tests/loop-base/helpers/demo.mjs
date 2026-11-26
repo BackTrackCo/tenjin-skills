@@ -32,3 +32,29 @@ export function demoState() {
     oldFields: (raw) => (raw && raw.legacy !== undefined ? [{ field: 'legacy', why: 'it is gone' }] : []),
   };
 }
+
+// A fake fetch: the longest matching URL prefix answers; a number is a status, anything else is the JSON body.
+export function fakeFetch(map) {
+  const calls = [];
+  const f = async (url) => {
+    calls.push(url);
+    const hit = Object.entries(map).filter(([k]) => url.startsWith(k)).sort((a, b) => b[0].length - a[0].length)[0];
+    if (!hit) return { ok: false, status: 404, url, json: async () => ({}) };
+    const v = hit[1];
+    if (typeof v === 'number') return { ok: v < 400, status: v, url, json: async () => ({}) };
+    return { ok: true, status: 200, url, json: async () => v };
+  };
+  f.calls = calls;
+  return f;
+}
+
+// A temporary skill folder for an app that releases: SKILL.md with a gate section, a graph and one gate file, and a manifest that lists them.
+export function releasableSkill(name = 'alpha') {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-'));
+  fs.mkdirSync(path.join(dir, 'scripts'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'SKILL.md'), `---\nname: ${name}\n---\n\n<!-- gates:start -->\n1. Never send without a yes.\n<!-- gates:end -->\n\nOther text.\n`);
+  fs.writeFileSync(path.join(dir, 'graph.json'), '{"statuses":[]}\n');
+  fs.writeFileSync(path.join(dir, 'scripts', 'gate.mjs'), 'export const gate = 1;\n');
+  fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify({ name, version: '0.1.0', writing: 'writing-v0.1.0', gateFiles: ['graph.json', 'scripts/gate.mjs'] }));
+  return dir;
+}
