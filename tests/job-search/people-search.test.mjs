@@ -91,7 +91,7 @@ test('the lookup answer is one company object: the domain is trusted only when i
     return store.loadState().jobs[j.key];
   };
   const real = FX.company.step2.envelope.result;
-  assert.deepEqual(cl.adapter(real, { jobKey: 'k' }), { jobKey: 'k', name: 'Vercel', legalName: 'Vercel Inc', domain: 'vercel.com', linkedinUrl: 'https://www.linkedin.com/company/vercel' });
+  assert.deepEqual(cl.adapter(real, { jobKey: 'k' }), { jobKey: 'k', name: 'Vercel', legalName: 'Vercel Inc', domain: 'vercel.com', linkedinUrl: 'https://www.linkedin.com/company/vercel', employees: '501-1K' });
   assert.equal((await run1({ company: 'Vercel' }, real)).employerWebsite, 'vercel.com');
   assert.equal((await run1({ company: 'Vercel, Inc.' }, real)).employerWebsite, 'vercel.com', 'the legal name counts');
   assert.equal((await run1({ company: 'Acme Robotics' }, real)).employerWebsite, undefined, 'a different company: the domain is not trusted');

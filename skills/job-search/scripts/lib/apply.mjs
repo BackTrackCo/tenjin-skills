@@ -5,6 +5,7 @@ import { isFillOnly } from './fillonly.mjs';
 import { frequencyOf, periodStart } from './schedule.mjs';
 import { hostOf, isNeverAutomated } from './platforms.mjs';
 import { stagedPathFor } from './uploads.mjs';
+import { referralHold } from './referral.mjs';
 import { activeLessons, canonical, maxPay, rulesHash, ruleValue } from './overlay.mjs';
 
 export const WRITING_SCOPE = 'application_free_text';
@@ -247,6 +248,9 @@ export function jobFailure({ job, state, profile, overlay, mode, now, writingOk 
   }
   const rule = unattendedRuleFailure(job, profile, overlay, now);
   if (rule) return rule;
+  // No unattended submit while the company's referral question is open or its referral is pending.
+  const held = referralHold(profile, job);
+  if (held) return held;
   // New writing needs its own consent. Optional writing follows the recorded skip or wait.
   if (profile.applyMode === 'auto_no_new' && (job.sheet.fields || []).some((f) => f.tag === 'new_writing')) return 'new_answer_needs_yes';
   if (!writingOk) {

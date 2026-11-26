@@ -23,7 +23,7 @@ export const BATCH_DENIED = [
 ];
 // Also refused while an unattended batch is open: nobody is there to say yes, so nothing may record one or loosen a stop.
 export const UNATTENDED_DENIED = [
-  ['approve', null], ['ask', 'approval'], ['facts', null], ['fillonly', null], ['unpark', null], ['chrome', 'set'],
+  ['approve', null], ['ask', 'approval'], ['facts', null], ['referral', null], ['fillonly', null], ['unpark', null], ['chrome', 'set'],
   ['sheet', 'build'], ['eeo', 'set'], ['eeo', 'add'], ['eeo', 'skip'], ['eeo', 'answer'], ['agree', null], ['resume', 'set'],
 ];
 export const isBatchDenied = (cmd, sub, mode = null) => BATCH_DENIED.some(([c, s]) => c === cmd && (s === null || s === sub)) || (mode === 'unattended' && UNATTENDED_DENIED.some(([c, s]) => c === cmd && (s === null || s === sub)));

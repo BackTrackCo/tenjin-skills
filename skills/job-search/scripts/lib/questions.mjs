@@ -201,7 +201,7 @@ export function emailModeQuestion() {
 // a fact (`J approve <key> --facts`), the sheet is completed, and the yes covers the completed sheet.
 // `path` is 'ask' when the job is on a job site and on an employer site and the person chose "Ask me each job": the choice joins
 // the approval call, and a job-site pick means the person applies there (the skill opens the page and does nothing on it).
-export function approvalQuestions(job, path = 'employer', { chromeOff = false } = {}) {
+export function approvalQuestions(job, path = 'employer', { chromeOff = false, referral = null } = {}) {
   // A filled form waiting for the person (`fill_ready`): the person may be on the phone, so the notice offers "Submit it now",
   // checked by `J may-submit` on the unchanged sheet hash, next to "I'll submit in Chrome" and "Not this one".
   if (job.fillReady) {
@@ -215,6 +215,7 @@ export function approvalQuestions(job, path = 'employer', { chromeOff = false } 
   const application = [
     ...(sheet.fields || []).map((f) => `${f.label}: ${f.tag === 'upload' ? 'your resume' : f.value} (${f.tag.replace('_', ' ')})`),
     ...(job.warnings || []).map((w) => `warning: ${w}`),
+    ...(referral && referral.status === 'pending' ? [`referral pending at ${job.company}${referral.referrer ? `: ${referral.referrer}` : ''}`] : []),
   ];
   const needs = ['Yes, apply', 'Fill it', 'Employer\'s site'];
   const fill = { label: 'Fill it, I submit', description: 'I fill the form and stop before submit; you check it and press submit.' };
@@ -228,6 +229,7 @@ export function approvalQuestions(job, path = 'employer', { chromeOff = false } 
     : chromeQ('Apply', `Apply to ${job.title} at ${job.company} with the application shown above?`, [
       { label: 'Yes, apply (Recommended)', description: 'Records your yes for this exact application, then fills it and submits it in one pass.' },
       fill,
+      ...(referral && referral.status === 'pending' ? [{ label: 'Wait for the referral', description: `Your referral at ${job.company} is pending${referral.referrer ? ` (${referral.referrer})` : ''}: nothing is applied now, and I ask again when it is due.` }] : []),
       { label: 'Not this one', description: 'Skip this job.' },
     ], { chromeOff, needs })];
   // A fact the form needs: its own options word for word (at most 3, plus Skip) in a choice, else a plain question listing them.
@@ -292,7 +294,7 @@ export function approvePickQuestions(sheets, { chromeOff = false } = {}) {
 // The question tool shows its own free-text option; no question or option text may name it ("type under Other"). A form's own
 // option that happens to start with "Other" (for example "Other job boards") is fine.
 const NAMES_OTHER = /\b(under|through|via|in|use|choose|pick|select|type|write|enter)\s+(?:\w+\s+){0,3}["']?Other["']?\b|\bOther:|\bor\s+["']?Other["']?\s*[.?]|\bOther\s+(?:option|field)\b/i;
-const NO_MARKER = new Set(['Missing fact', 'Terms']);
+const NO_MARKER = new Set(['Missing fact', 'Terms', 'Referral']);
 export function validateAsk(p) {
   const bad = [];
   if (!p || !Array.isArray(p.questions) || p.questions.length < 1 || p.questions.length > 4) return ['1 to 4 questions per call'];

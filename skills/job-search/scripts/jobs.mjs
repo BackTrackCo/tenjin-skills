@@ -34,9 +34,10 @@ import * as qs from './lib/questions.mjs';
 import { FREQUENCIES, frequencyOf, periodStart } from './lib/schedule.mjs';
 import { ingest, joinLeads, leadKey } from './lib/ingest.mjs';
 import { addWatch, removeWatch } from './lib/watchlist.mjs';
+import { followUpQuestion, recordOf, referralCalls, referralKey, referralWaiting } from './lib/referral.mjs';
 import { applyFactAnswer, buildFactQuestions, collectFacts, splitByOptions } from './lib/facts.mjs';
 import { eeoTextOf, oldFieldError, oldFields, validateProfile } from './lib/profile.mjs';
-import { routeContacts, routedRounds } from './lib/routed.mjs';
+import { routeContacts, routeWarmPaths, routedRounds } from './lib/routed.mjs';
 import { resumeHeld } from './lib/held.mjs';
 import { DEFAULT_BUDGET_MS, runHn } from './lib/hn.mjs';
 import { DEFAULT_YC_BUDGET_MS, runYc } from './lib/yc.mjs';
@@ -492,6 +493,13 @@ const commands = {
       if (v !== 'all' && !(Number.isInteger(v) && v > 0)) return out({ error: 'contacts count <number>|all [--words text]' }, 2);
       return out(addRule({ effect: 'contact_count', value: v, words: String(flags.words || `contacts for ${v} jobs`) }));
     }
+    if (sub === 'warm') {
+      // "Also worked at" hints for the companies the skill plans to apply to, through the router; nothing is contacted.
+      const gate = tenjinReady();
+      if (gate) return out(gate, 4);
+      const log = await routeWarmPaths({ profile: readProfile() });
+      return out({ routed: log, hints: Object.values(loadState().alsoWorked || {}).map((x) => ({ company: x.company, hints: x.hints })) });
+    }
     if (sub === 'route') {
       // The router's people search, in code, for the jobs asked (or every requested job). Held, never retried.
       const gate = tenjinReady();
@@ -908,8 +916,23 @@ const commands = {
     return out(updateState((s) => markFillReady(s, key)));
   },
   // The person says they submitted it.
-  async submitted([key]) {
+  async submitted([key], flags) {
     releaseStage(key);
+    if (flags && flags['referral-link'] === true) {
+      // The person applied through a link their referrer sent: recorded on their word, whatever the job's status was.
+      return out(updateState((s) => {
+        const j = s.jobs[key];
+        if (!j) throw new Error(`unknown job: ${key}`);
+        const at = new Date().toISOString();
+        j.status = 'submitted';
+        j.statusAt = at;
+        j.inFlight = null;
+        j.applied = { source: 'person', via: 'referral_link', at };
+        s.applications.push({ key: j.key, companyKey: companyTitleKey(j), at, source: 'person' });
+        bump(j);
+        return { submitted: key, via: 'referral link' };
+      }));
+    }
     return out(updateState((s) => {
       markSubmitted(s, key, applyOp);
       return { submitted: key };
@@ -980,7 +1003,7 @@ const commands = {
       const job = loadState().jobs[flags.key];
       if (!job || !job.sheet) return out({ error: 'ask approval --key <job>: prepare its sheet first' }, 2);
       updateState((st) => { markShown(st, [`yes:${flags.key}`]); st.jobs[flags.key].approvalShown = { hash: job.sheet.hash, at: new Date().toISOString() }; }); // the application is shown with this call: no push repeats it
-      { const ap = qs.approvalQuestions(job, applyPathOf(job, readProfile()), { chromeOff: loadState().chrome === 'off' }); const bad = ap.questions.length ? qs.validateAsk(ap) : []; return bad.length ? out({ error: bad.join('; ') }, 2) : out(ap); }
+      { const ap = qs.approvalQuestions(job, applyPathOf(job, readProfile()), { chromeOff: loadState().chrome === 'off', referral: recordOf(readProfile(), job.company) }); const bad = ap.questions.length ? qs.validateAsk(ap) : []; return bad.length ? out({ error: bad.join('; ') }, 2) : out(ap); }
     }
     if (kind === 'facts') {
       // Every missing fact of every job prepared in this moment, merged by code: one question per fact, naming its jobs. The model asks
@@ -994,6 +1017,19 @@ const commands = {
       updateState((s) => { s.factPlan = built.plan; });
       for (const c of built.calls) { const bad = qs.validateAsk({ questions: c.questions }); if (bad.length) return out({ error: bad.join('; ') }, 2); }
       return out({ count: built.count, calls: built.calls, plain: built.plain, next: built.count ? 'make each call with the question tool, one after another, then send the plain message; record each answer with J facts answer <id> <the chosen option or their words>, or J facts skip <id> for a skip; facts and approvals never share a call' : 'no fact is missing: nothing to ask' });
+    }
+    if (kind === 'referral') {
+      // One question per company, merged across the companies waiting now, and the follow-up for a referral that is due. Nobody is asked in a
+      // turn the watcher woke: the jobs hold and one push says how many questions wait.
+      const profile = readProfile();
+      const rw = referralWaiting(loadState(), profile, loadOverlay());
+      if (flags.unattended === true || (batch.isActive() && batch.batchMode() === 'unattended')) return out({ asked: false, waiting: rw.check.length + rw.due.length, next: 'nobody is asked in this turn: unattended submits at these companies hold, and one push says how many questions wait' });
+      const calls = referralCalls(rw.check);
+      const followUps = [];
+      for (let i = 0; i < rw.due.length; i += 4) followUps.push({ questions: rw.due.slice(i, i + 4).map((g) => followUpQuestion(g.company).questions[0]), ids: rw.due.slice(i, i + 4).map((g) => g.id) });
+      for (const c of [...calls, ...followUps]) { const bad = qs.validateAsk({ questions: c.questions }); if (bad.length) return out({ error: bad.join('; ') }, 2); }
+      updateState((s) => { s.referralPlan = Object.fromEntries([...rw.check, ...rw.due].map((g) => [g.id, { company: g.company, jobs: g.jobs }])); });
+      return out({ count: rw.check.length + rw.due.length, calls, followUps, next: calls.length || followUps.length ? 'make each call with the question tool in order; a fact and an approval never share a call. Record: J referral answer <id> someone|none|skip (then ask the referrer\'s name as a plain question: J referral name <id> <name>), and for a follow-up J referral in|notyet|without <id>' : 'no referral question is waiting' });
     }
     if (kind === 'approve-pick') return out({ groups: qs.approvePickQuestions(readySheets(loadState()), { chromeOff: loadState().chrome === 'off' }) });
     if (kind === 'applied') {
@@ -1016,6 +1052,60 @@ const commands = {
     return out({ frequency: f });
   },
   // A form fact the person gave: kept in the profile, and the jobs that waited for it go back in the queue.
+  // The person's referral answers, kept by company in the profile. The skill never reads LinkedIn connections and never contacts the referrer.
+  async referral([sub, id, ...rest], flags) {
+    const profile = readProfile();
+    const save = (fn) => {
+      const next = { ...profile, referrals: { ...(profile.referrals || {}) } };
+      const r = fn(next.referrals);
+      const bad = validateProfile(next);
+      if (bad.length) throw new Error(bad.join('; '));
+      writeJsonAtomic(profileFile(), next);
+      return r;
+    };
+    const plan = (loadState().referralPlan || {})[id];
+    if (sub === 'wait') {
+      const job = loadState().jobs[id];
+      if (!job) return out({ error: `unknown job: ${id}` }, 2);
+      return out({ key: id, waiting: true, next: 'nothing is applied now; the follow-up asks when the referral is due' });
+    }
+    if (!['answer', 'name', 'in', 'notyet', 'without', 'draft', 'draft-save'].includes(sub) || !id) return out({ error: 'referral answer <id> someone|none|skip | name <id> <name> | in|notyet|without <id> | draft <id> | draft-save <id> --text file | wait <job key>' }, 2);
+    const rec = (profile.referrals || {})[id];
+    const nowIso = new Date().toISOString();
+    if (sub === 'answer') {
+      const choice = rest[0];
+      if (!['someone', 'none', 'skip'].includes(choice)) return out({ error: 'referral answer <id> someone|none|skip' }, 2);
+      if (!plan) return out({ error: `no such question: ${id}; run J ask referral again` }, 2);
+      if (choice === 'skip') {
+        updateState((s) => { for (const k of plan.jobs) { try { applyOp(s, { op: 'transition', key: k, to: 'skipped', reason: 'the person skipped it at the referral question' }); } catch {} } delete s.referralPlan[id]; });
+        return out({ skipped: plan.jobs });
+      }
+      save((r) => { r[id] = choice === 'someone' ? { status: 'pending', pendingAt: nowIso } : { status: 'none' }; });
+      updateState((s) => { delete s.referralPlan[id]; });
+      return out(choice === 'someone' ? { recorded: 'pending', next: `ask one plain question for the referrer's name (a fact the person gives), then J referral name ${id} <name>; J referral draft ${id} drafts a short request they can send` } : { recorded: 'none', next: 'the jobs at this company go on under the apply mode; it is never asked again' });
+    }
+    if (!rec) return out({ error: `no referral answer for ${id}: run J ask referral first` }, 2);
+    if (sub === 'name') {
+      const name = rest.join(' ').trim();
+      if (!name) return out({ error: 'referral name <id> <name>' }, 2);
+      save((r) => { r[id] = { ...r[id], referrer: name }; });
+      return out({ recorded: 'referrer', next: 'a form\'s referral field is filled with this name; J referral draft <id> drafts a request to send' });
+    }
+    if (sub === 'in') { save((r) => { r[id] = { ...r[id], status: 'in', inAt: nowIso }; }); return out({ recorded: 'in', next: 'the jobs at this company go on under the apply mode; if the company uses a link the employee sends, the person applies through it and says so: J submitted <key> --referral-link' }); }
+    if (sub === 'notyet') { save((r) => { r[id] = { ...r[id], pendingAt: nowIso }; }); return out({ recorded: 'not yet' }); }
+    if (sub === 'without') { save((r) => { r[id] = { ...r[id], status: 'without' }; }); return out({ recorded: 'without' }); }
+    if (sub === 'draft') {
+      if (!rec.referrer) return out({ error: 'a draft needs the referrer\'s name first: J referral name <id> <name>' }, 2);
+      const company = (plan && plan.company) || id;
+      return out({ company, referrer: rec.referrer, prompt: `Write a short, warm request (at most 90 words) from the person to ${rec.referrer}, asking whether they would refer them for a role at ${company}. Use only facts from the resume and the profile; no claim about the relationship beyond what the person said; end with thanks. Plain text, no placeholders.`, next: `one writer call, then J referral draft-save ${id} --text <file>; the draft is shown to the person, who sends it themselves. The skill never sends it.` });
+    }
+    // draft-save
+    const text = String(fs.readFileSync(flags.text, 'utf8')).trim();
+    const words = text.split(/\s+/).filter(Boolean).length;
+    if (!text || words > 120 || /\[[^\]]*\]|\bTODO\b|lorem ipsum|\{\{/i.test(text)) return out({ error: 'the draft must be plain text of at most 120 words, with no placeholder' }, 2);
+    save((r) => { r[id] = { ...r[id], draft: { text, at: nowIso } }; });
+    return out({ saved: true, draft: text, next: 'show it as a draft; the person sends it. Nothing is sent by the skill.' });
+  },
   // The answer to one merged fact question, recorded for every job it names (and as the profile fact when it is one).
   async facts([sub, id, ...rest]) {
     const plan = loadState().factPlan || {};

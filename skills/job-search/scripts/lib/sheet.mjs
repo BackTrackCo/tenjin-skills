@@ -1,6 +1,8 @@
 import { canonical } from './overlay.mjs';
 import { eeoTextOf } from './profile.mjs';
 import { sha } from './dedupe.mjs';
+import { employerName } from './employer.mjs';
+import { EMPLOYEE_OPTION, REFERRED_BY } from './referral.mjs';
 import { normLabel } from './store.mjs';
 import { matchAnswer } from './answers.mjs';
 
@@ -159,7 +161,14 @@ export function buildSheet({ job, questions, profile, answers = [], drafts = {} 
     } else {
       const earlier = matchAnswer(q, answers);
       const hit = FACTS.find(([re]) => re.test(nl));
-      if (earlier) {
+      // A referral field gets the referrer's name the person gave, never a guess; it wins over the where-you-heard mapping.
+      const rec = ((profile.referrals || {})[employerName(job.company)]) || {};
+      const referrer = rec.referrer && ['pending', 'in'].includes(rec.status) ? rec.referrer : null;
+      const employeeOption = referrer && HEARD.test(q.label) && Array.isArray(q.options) ? q.options.find((o) => EMPLOYEE_OPTION.test(o)) : null;
+      if (referrer && (REFERRED_BY.test(q.label) || employeeOption)) {
+        value = employeeOption || referrer;
+        tag = 'fact';
+      } else if (earlier) {
         value = earlier.answer;
         tag = 'answer';
       } else if (recordAnswer(job, q)) {

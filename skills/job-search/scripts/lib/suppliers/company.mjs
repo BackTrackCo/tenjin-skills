@@ -20,5 +20,5 @@ const str = (v) => (typeof v === 'string' ? v.trim() : '');
 export function adapter(res, { jobKey }) {
   if (!res || typeof res !== 'object' || Array.isArray(res)) throw new Error('the result is not one company object');
   const domain = str(res.domain).replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0].toLowerCase();
-  return { jobKey, name: str(res.name) || null, legalName: str(res.legalName) || null, domain: domain || null, linkedinUrl: str(res.socials && res.socials.linkedin_url) || null };
+  return { jobKey, name: str(res.name) || null, legalName: str(res.legalName) || null, domain: domain || null, linkedinUrl: str(res.socials && res.socials.linkedin_url) || null, employees: str(res.employees) || null };
 }

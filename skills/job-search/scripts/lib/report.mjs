@@ -96,6 +96,11 @@ function renderShort(state, overlay, { since, now, profile }) {
   if (held.length) { L.push('', '## Needs you'); for (const h of held) L.push(`- ${h.reason.replace(/_/g, ' ')}${h.detail ? `: ${h.detail}` : ''}`); }
   const mail = pendingEmails(state);
   if (mail.length) L.push('', mailLine(state, profile, overlay, mail.length));
+  const warm = Object.values(state.alsoWorked || {}).filter((x) => x.hints && x.hints.length);
+  if (warm.length) {
+    L.push('', '## Also worked at (people you could ask; the skill never contacts them, and none counts as a referral unless you say so)');
+    for (const x of warm) for (const h of x.hints) L.push(`- ${x.company}: ${h.name}, ${h.title || 'no title'}: also worked at ${h.pastCompany} (${h.basis}). ${h.url}`);
+  }
   for (const u of state.uploadLines || []) L.push('', `Upload: ${u}.`);
   const consent = (state.consentLog || []).filter((c) => !c.acked);
   if (consent.length) { L.push('', '## Consent changes (check that each one was yours)'); for (const c of consent) L.push(`- ${c.at.slice(0, 16).replace('T', ' ')}: ${c.what}.`); }
@@ -226,6 +231,11 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
   }
   const mail = pendingEmails(state);
   if (mail.length) L.push('', mailLine(state, profile, overlay, mail.length));
+  const warm = Object.values(state.alsoWorked || {}).filter((x) => x.hints && x.hints.length);
+  if (warm.length) {
+    L.push('', '## Also worked at (people you could ask; the skill never contacts them, and none counts as a referral unless you say so)');
+    for (const x of warm) for (const h of x.hints) L.push(`- ${x.company}: ${h.name}, ${h.title || 'no title'}: also worked at ${h.pastCompany} (${h.basis}). ${h.url}`);
+  }
   for (const u of state.uploadLines || []) L.push('', `Upload: ${u}.`);
   const sentMail = (emailState(state).log || []).filter((m) => now - Date.parse(m.at) < 86400000);
   if (sentMail.length) L.push('', `Emails in the last day: ${sentMail.map((m) => `${m.how} to ${m.to}`).join('; ')}.`);

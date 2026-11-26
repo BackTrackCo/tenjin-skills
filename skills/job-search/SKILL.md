@@ -26,31 +26,32 @@ J means `node ${CLAUDE_SKILL_DIR}/scripts/jobs.mjs`. Always write it out in full
 
 ## Start and recover
 
-Every start, after a compaction or `/resume`: `J tenjin`, `J start status`, `J chrome set on|off`, `J rc set on|unknown`, `J arm`, then `J work --commit`, then `J watch` last (Bash tool, `run_in_background`; it exits when work is due, which wakes you; it refuses while due work is unclaimed; start it again after each round and on `watcher: stopped`; lease elsewhere: work attended).
-First run: say the `next` text of `J start status` as given, then wait for the resume; save it with `J resume set --file|--url|--text`. Read role, role words, place and remote from it into the profile (`J profile set`, `search.sources`: `resume`). If you have a task list tool, make the setup list with it; never write the steps as text. Then one AskUserQuestion call: `J ask start` (mode, how often, positions, where), `J start record`; an auto mode asks `J ask auto`. Say its reminder. Then the free search and report.
+Every start, after a compaction or `/resume`: `J tenjin`, `J start status`, `J chrome set on|off`, `J rc set on|unknown`, `J arm`, then `J work --commit`, then `J watch` last (Bash tool, `run_in_background`; it exits when work is due, which wakes you, and refuses while due work is unclaimed; restart it after each round and on `watcher: stopped`; lease elsewhere: work attended).
+First run: say the `next` text of `J start status` as given, then wait for the resume; save it with `J resume set --file|--url|--text`. Read role, role words, place and remote from it into the profile (`J profile set`, `search.sources`: `resume`). If you have a task list tool, make the setup list with it; never write the steps as text. Then one AskUserQuestion call: `J ask start` (mode, how often, positions, where), `J start record`; auto: `J ask auto`. Say its reminder. Then free search and report.
 Free paths: only from what `J search plan`, `J resume set --url` and `J work` printed; on `ask: tenjin`: `J ask tenjin`, `J tenjin ask-done yes|no`.
-Questions: references/questions.md has every rule (AskUserQuestion in an attended turn through `J ask <kind>`, never in an unattended turn: hold and notify). Missing form facts: `J ask facts` builds every question, merged across the jobs prepared in that moment; make its calls in order, send its one plain message, record each answer with `J facts answer <id> <value>`, and never write a question list yourself.
-Model: unless this is Fable 5.2, say once (attended only) that Job Search works best on Fable 5.2 at high effort (`/model fable`, `/effort high`).
+Questions: references/questions.md has every rule (AskUserQuestion in an attended turn through `J ask <kind>`, never in an unattended turn: hold and notify). Form facts: `J ask facts` builds every question, merged across jobs; make its calls in order, send its plain message, record each answer with `J facts answer <id> <value>`; never write a question list yourself.
+Model: unless this is Fable 5.2, say once (attended only) it works best on Fable 5.2 at high effort (`/model fable`, `/effort high`).
 
 ## The round
 
-When the watcher exits with a line, or the person asks, run `J work --commit` (add `--unattended` in a turn the watcher woke), start `J watch` last, after `J work --commit` claimed everything handed out (`J ops`, `J ingest` work needs another). Rewrite a refused ingest file, never `sed` it. Handle each item by `reason`: start every independent subagent of a wake in one message as parallel Agent `model` calls (browser ones each in its own tab; the one writer call stays single); say a `hint` as its one line, once, an ask as `J` prints it. On `askTenjin` ask as under Free paths; on yes follow the "Install Tenjin from tenjin.sh" flow.
+When the watcher exits with a line, or the person asks, run `J work --commit` (add `--unattended` in a turn the watcher woke), start `J watch` last, after `J work --commit` claimed everything handed out (`J ops`, `J ingest` work needs another). Rewrite a refused ingest file, never `sed`. Handle each item by `reason`: start every independent subagent of a wake in one message as parallel Agent `model` calls (browser ones each in its own tab; the one writer call stays single); say a `hint` as one line, once, an ask as `J` prints it. On `askTenjin` ask as under Free paths; on yes follow the "Install Tenjin from tenjin.sh" flow.
 
-- `search_due`: references/search.md. With Tenjin the watcher runs every search in code (or `J route`), the board search included, with no model web search; without it one Agent `model: "haiku"` step with the `J search plan` queries. `need_due`: `J search done <kind>`. `J search next` ends it.
+- `search_due`: references/search.md. With Tenjin the watcher runs every search in code (or `J route`), board search included, no model web search; without it one Agent `model: "haiku"` step with the `J search plan` queries. `need_due`: `J search done <kind>`; `J search next` ends it.
 - `post_review`: up to 25 hiring posts, Agent `model: "haiku"`, one ingest file (references/search.md); `J leads mark <url> done|not_interested`.
 - `employer_page`: Agent `model: "haiku"` reads the employer's careers page, ingests it with its listings (references/search.md); `reverify` rereads.
 - `new_job`, `review_due`: Agent `model: "haiku"` (review.md).
 - `prepare_due`: only for new writing, or a form that needs the browser first (references/prepare.md). One `model: "opus"` call per round: `J write-prompt --round`, `J write-result --round --result <file>`.
 - `apply_ready`: references/apply.md. Prepared with no question; its first question is the approval (`J ask approval --key <job>`, `J approve <key> [--fill-only|--via employer|site]`; many: `J ask approve`). After the yes browser subagents fill and submit, one job per host at a time (`J apply next --all`); fill-only: `J fill done <key>`, then `J submitted <key>`.
-- `open_ready`: `J open <key...>` in an attended turn, then show each sheet as text; the outcome is the person's word (`J submitted <key>`).
+- `open_ready`: `J open <key...>` in an attended turn, show each sheet as text; the outcome is the person's word (`J submitted <key>`).
+- `referral_check`, `referral_pending`: `J ask referral` (references/questions.md): auto applies there hold.
 - `contacts_requested`: references/contacts.md. First: `J ask contacts` (`J contacts count <n|all>`). With Tenjin `J contacts route` first; Haiku does the free ways; none: `J leave contacts:<key> --reason none_found`.
 - `email_due`: references/contacts.md. Only to an address the poster published; send only what `J email next` handed out, with the Gmail connector (its draft tool, or the mailto link), then `J email sent <id>`. An X DM is the person's.
 - `site_ready`: `J site show <key>` (attended: it opens the job's page in the person's Chrome, no question); show the link and answers (references/apply.md). In a woken turn it opens nothing and the job holds as `open_ready`.
 - `follow_up_due` (never a wake), attended: `J ask follow_up --json '{"company","title"}'`, then `J outcome <key> --status reply|interview|rejected|offer|no_reply`.
 
-Every handled item ends with its J outcome command (`J ops`, `J ingest`, `J leave <key...> --reason <low_score|no_match|no_careers_page|sign_in|other_system|not_a_job|duplicate>`; others: references/setup.md), or the watcher shows it again. Never leave a post batch.
+Every handled item ends with its J outcome (`J ops`, `J ingest`, `J leave <key...> --reason <low_score|no_match|no_careers_page|sign_in|other_system|not_a_job|duplicate>`; others: references/setup.md), or the watcher shows it again. Never leave a post batch.
 
-Shown in a reply: `J shown <key>`. If `notify` is set, send it with PushNotification, one line, as given, then `J notify result sent|not_sent|unknown [--reason off|present|none]` and say its `say` line if any.
+Shown in a reply: `J shown <key>`. If `notify` is set, send it with PushNotification as given, then `J notify result sent|not_sent|unknown [--reason off|present|none]` and say its `say` line if any.
 
 ## Unattended applying (opt-in)
 
@@ -58,6 +59,6 @@ Needs rules and consent (setup.md); the first run is a dry run (`J dryrun confir
 
 ## Report, rules
 
-- `J report` is the short report (`J report --all`: everything), shown as printed; when it ends with a Contacts line, ask `J ask contacts` (5 first); Tenjin line last.
+- `J report` is the short report (`J report --all`: everything), as printed; when it ends with a Contacts line, ask `J ask contacts` (5 first); Tenjin line last
 - `J rules`, `J rules remove <id>`; writing rules: writing skill.
-- Data: resume, profile, rules and records stay on this computer (a LinkedIn link goes to Tenjin's router). Searches send search terms; writing sends the resume, job text and answers to Opus; applications go to the employer; email from your Gmail; Remote Control syncs the transcript.
+- Data: resume, profile, rules and records stay on this computer; the router gets LinkedIn links, past employers and candidates' profiles. Searches send search terms; writing sends the resume, job text and answers to Opus; applications go to employers; email from your Gmail; Remote Control syncs the transcript.

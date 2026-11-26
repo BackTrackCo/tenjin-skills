@@ -36,6 +36,7 @@ export function validateProfile(p) {
   if (has('frequency')) need(['daily', 'twice_daily', 'weekly'].includes(p.frequency), 'frequency must be daily, twice_daily or weekly');
   if (has('applyMode')) need(['attended', 'auto_no_new', 'auto_write', 'fill_only', 'open_only'].includes(p.applyMode), 'applyMode must be attended, auto_no_new, auto_write, fill_only or open_only');
   if (has('apply')) need(p.apply && typeof p.apply === 'object' && ['employer', 'site', 'ask'].includes(p.apply.where) && p.apply.source === 'person', 'apply must be {"where": "employer"|"site"|"ask", "source": "person"}');
+  if (has('referrals')) need(p.referrals && typeof p.referrals === 'object' && !Array.isArray(p.referrals) && Object.values(p.referrals).every((r) => r && ['pending', 'none', 'in', 'without'].includes(r.status)), 'referrals must be an object of {status: pending|none|in|without, referrer} by company');
   if (has('windowDays')) need(num(p.windowDays) && p.windowDays > 0, 'windowDays must be a positive number');
   if (has('sweepHour')) need(Number.isInteger(p.sweepHour) && p.sweepHour >= 0 && p.sweepHour <= 23, 'sweepHour must be a whole number from 0 to 23');
   for (const k of ['resumePath', 'resumeUploadPath', 'resumeText']) if (has(k)) need(isStr(p[k]), `${k} must be text`);

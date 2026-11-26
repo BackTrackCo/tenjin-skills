@@ -5,7 +5,9 @@ import { ingest } from './ingest.mjs';
 import { loadState, updateState } from './store.mjs';
 import { loadOverlay } from './overlay.mjs';
 import { advanceSearch, inPeriodSet, searchRound, stillLeft, variantFor } from './work.mjs';
-import { companyNames, websiteOf } from './company.mjs';
+import { companyNames, nameMatches, websiteOf } from './company.mjs';
+import { employerName } from './employer.mjs';
+import { bigEmployerMatch, isSmall } from './warmpath.mjs';
 
 // With Tenjin, a search round runs in code, with no model step before review: the needs go to the router one at a time
 // (router.mjs), each result is ingested, and the same rule as the model-run rounds decides whether the next role-word
@@ -221,6 +223,43 @@ export async function routeContacts({ keys, profile, fetch, client = new RouterC
     }
   } finally {
     await client.close();
+  }
+  return log;
+}
+
+// "Also worked at" hints for the companies the skill plans to apply to: for each past employer of the person, a company lookup (its
+// employee range), then one people search for people now at the target who also worked there. A small past employer (50 or fewer)
+// gives a hint with no further check; a big one needs one profile read for each candidate, and a hint only when the dates overlap and
+// a team word is shared (code does both). Never read connections; never contact anyone: every hint is a contact marked "also worked at".
+export async function routeWarmPaths({ profile, client = new RouterClient(), now = Date.now(), state = loadState() }) {
+  const history = profile.resumeHistory || profile.history || [];
+  const log = [];
+  if (!history.length) return [{ ok: false, reason: 'no_history: the person\'s own employers are not known' }];
+  const LIVE = ['shortlisted', 'prepared', 'apply_ready'];
+  const targets = new Map();
+  for (const j of Object.values(state.jobs)) if (LIVE.includes(j.status) && j.employerPosting && !targets.has(employerName(j.company))) targets.set(employerName(j.company), j);
+  const pasts = (target) => [...new Map(history.filter((h) => h && h.company && employerName(h.company) !== employerName(target.company)).map((h) => [employerName(h.company), h.company])).values()];
+  const profileReads = new Map();
+  for (const target of targets.values()) {
+    const found = [];
+    for (const past of pasts(target)) {
+      const [lk] = await runRound([{ kind: 'company_lookup', tool: 'companyenrich-properties', text: null, fields: { jobKey: target.key, company: past }, query: null, jobKey: target.key }], { client });
+      const named = lk.ok && lk.ingest.name && nameMatches(lk.ingest.name, past) ? lk.ingest : null;
+      const small = named ? isSmall(named.employees) : false;
+      const [ps] = await runRound([{ kind: 'people_search', text: fill('people_search', { company: target.company, url: target.employerWebsite || '', where: '' }), fields: { jobKey: target.key, website: target.employerWebsite || null, company: target.company, names: companyNames(target), pastCompany: past, city: '', count: 25 }, query: null, jobKey: target.key }], { client });
+      if (!ps.ok) { log.push({ company: target.company, past, ok: false, status: ps.status }); continue; }
+      for (const c of ps.ingest.contacts || []) {
+        if (small) { found.push({ name: c.name, title: c.title, url: c.sourceUrl, pastCompany: past, basis: 'small employer' }); continue; }
+        if (!profileReads.has(c.sourceUrl)) {
+          const [pr] = await runRound([{ kind: 'linkedin_profile', text: fill('linkedin_profile', { url: c.sourceUrl }), fields: { url: c.sourceUrl }, query: { url: c.sourceUrl } }], { client });
+          profileReads.set(c.sourceUrl, pr.ok ? pr.ingest.history || [] : []);
+        }
+        const m = bigEmployerMatch(history, profileReads.get(c.sourceUrl), past, now);
+        if (m) found.push({ name: c.name, title: c.title, url: c.sourceUrl, pastCompany: past, basis: `same team (${m.team}) and overlapping dates` });
+      }
+      log.push({ company: target.company, past, ok: true, small, hints: found.length });
+    }
+    updateState((s) => { (s.alsoWorked ||= {})[employerName(target.company)] = { company: target.company, hints: found, at: new Date(now).toISOString() }; });
   }
   return log;
 }

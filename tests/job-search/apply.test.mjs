@@ -11,7 +11,7 @@ const GUARD = { ok: true };
 const DS_OFF = { enabled: false };
 const empty = () => ({ rules: [], lessons: [] });
 const U = { roles: ['engineer'], places: ['Berlin'], remote: false, minPay: 100000, excludeCompanies: ['Evilcorp'], excludeLevels: ['intern', 'junior'], minScore: 70, hosts: ['greenhouse', 'lever'] };
-const profile = () => ({ eeoText: 'Decline every voluntary demographic question (test placeholder).', unattended: { ...U } });
+const profile = () => ({ eeoText: 'Decline every voluntary demographic question (test placeholder).', unattended: { ...U }, referrals: { acme: { status: 'none' }, initech: { status: 'none' } } });
 const ready = (over = {}) => mkJob({ status: 'apply_ready', fit: 80, sheet: { hash: 'sh1', passed: true, eeoMissing: false, fields: [] }, verifiedAt: new Date(NOW - 3600000).toISOString(), ...over });
 const stateWith = (...jobs) => { const s = store.emptyState(); for (const j of jobs) s.jobs[j.key] = j; return s; };
 const run = (state, o = {}) => ap.applyNext({ state, profile: profile(), overlay: empty(), mode: 'attended', now: NOW, batchOpen: true, ...o });

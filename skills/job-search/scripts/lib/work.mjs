@@ -15,12 +15,15 @@ import { postFacts } from './postinfo.mjs';
 import { tenjinAsk as tenjinAskQuestion } from './questions.mjs';
 import { emailConsentCurrent, due as pendingEmails } from './email.mjs';
 import { collectFacts, splitByOptions } from './facts.mjs';
+import { referralWaiting } from './referral.mjs';
 import path from 'node:path';
 
 export const POST_BATCH = 25;
 const HOUR = 3600000;
 const DAY = 24 * HOUR;
 const GATES = {
+  referral_check: 'A company the person may get a referral at has not been asked about: `J ask referral` builds one question per company, merged across the companies waiting; record each answer with `J referral answer <company> someone|none|skip`, then ask for the referrer\'s name as a plain question and save it with `J referral name <company> <name>`. Unattended submits at that company hold until it is answered.',
+  referral_pending: 'A referral the person waits for is due for its follow-up: ask "Is your referral at <company> in?" (`J ask referral` builds it), then record `J referral in <company>`, `J referral notyet <company>` or `J referral without <company>`. Until it is in, unattended submits at that company hold.',
   need_due_answered: 'The router already answered this need and code has no reader for its answer; the routing fee is paid. Do not send the need to the router again. Run it as free web searches (`J search plan` prints the queries) and ingest them (references/search.md, section 2), or leave it: `J leave need:<kind> --reason no_web_search`.',
   need_due: 'A routed need that code cannot run (no adapter for its supplier). One Haiku step: state it in plain words through `request` if the tool is there, write the ingest file for it (references/search.md, section 2), `J ingest`, then `J search done <kind>`. No Tenjin tool: `J leave need:<kind> --reason no_web_search`.',
   email_due: 'Intro emails to addresses the poster published. Attended: `J email batch`, `J ask email`, `J email approve <ids> --skip-rest`. Then `J email next` (add --unattended under the email consent) and send only what it hands out; `J email sent <id>` after each.',
@@ -207,6 +210,7 @@ export function itemVersion(job) {
 // What waits for the person never wakes the model: a sheet that needs their yes (unless they gave it, or the mode is auto),
 // a filled form waiting for their submit, a follow-up that asks them. Each keeps its one notification.
 export function waitsForPerson(state, profile, item, overlay = { rules: [] }) {
+  if (item.reason === 'referral_check' || item.reason === 'referral_pending') return true;
   if (item.reason === 'fill_ready' || item.reason === 'follow_up_due' || item.reason === 'site_applied' || item.reason === 'site_ready' || item.reason === 'open_ready') return true;
   if (item.reason === 'email_due') return !emailConsentCurrent(state, profile, overlay);
   if (item.reason === 'apply_ready') {
@@ -363,6 +367,9 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
     else if (j.status === 'apply_ready') add(j, 'apply_ready');
     else if (j.status === 'submitted' && !j.followUpAsked && now - Date.parse(j.statusAt) > graph().followUpDays * DAY) add(j, 'follow_up_due');
   }
+  { const rw = referralWaiting(state, profile, overlay, now);
+    for (const g of rw.check) items.push({ key: `referral:${g.id}`, reason: 'referral_check', title: `Referral at ${g.company}`, company: g.company, gate: GATES.referral_check, rv: `check:${g.jobs.length}` });
+    for (const g of rw.due) items.push({ key: `referral:${g.id}`, reason: 'referral_pending', title: `Referral at ${g.company}`, company: g.company, gate: GATES.referral_pending, rv: `due:${(profile.referrals[g.id] || {}).pendingAt || ''}` }); }
   const mail = pendingEmails(state);
   if (mail.length && !itemStillLeft(state, 'email', profile, now)) items.push({ key: 'email', reason: 'email_due', title: `${mail.length} intro email${mail.length > 1 ? 's' : ''} to published addresses`, company: '', gate: GATES.email_due, count: mail.length });
   for (const key of state.contactsRequested || []) {
@@ -372,7 +379,7 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
   }
   for (const i of items) {
     const job = state.jobs[i.key];
-    i.v = i.reason === 'email_due' ? sha(canonical(pendingEmails(state).map((c) => c.id))).slice(0, 10) : i.reason === 'need_due' ? (() => { const n = state.search.needPending.find((x) => `need:${x.kind}` === i.key); return `${n.round}:${n.at}`; })() : job ? itemVersion(job) : i.reason === 'search_due' ? `${(state.search.session || {}).round ?? 'new'}:${state.routed.lastSearchAt}` : String(i.posts ? i.posts.length : 0);
+    i.v = i.rv ? i.rv : i.reason === 'email_due' ? sha(canonical(pendingEmails(state).map((c) => c.id))).slice(0, 10) : i.reason === 'need_due' ? (() => { const n = state.search.needPending.find((x) => `need:${x.kind}` === i.key); return `${n.round}:${n.at}`; })() : job ? itemVersion(job) : i.reason === 'search_due' ? `${(state.search.session || {}).round ?? 'new'}:${state.routed.lastSearchAt}` : String(i.posts ? i.posts.length : 0);
     { const ep = (state.claimEpochs || {})[ckey(i)]; if (ep) i.v = `${i.v}~${ep}`; } // a timed-out claim on a still-open item: one more wake
     i.waitsForPerson = waitsForPerson(state, profile, i, overlay);
   }
@@ -440,6 +447,7 @@ export function waitingSetRaw(state) {
     else if (j.parked && !(j.parked.reasons.length === 1 && j.parked.reasons[0] === 'needs_facts' && inFactGroup.has(j.key))) w[`park:${j.key}`] = `${j.parked.key}|${j.parked.reasons.join(',')}|${j.company}`;
     else if (j.status === 'apply_ready' && !state.approvals[j.key] && j.employerPosting && !j.fillOnly && !['fill_only', 'open_only'].includes(mode) && !String(mode || '').startsWith('auto')) w[`yes:${j.key}`] = `${j.hash}|${j.company}`;
   }
+  { const profile = readJson(path.join(stateDir(), 'profile.json'), {}); const rw = referralWaiting(state, profile, loadOverlay(), Date.now()); if (rw.check.length || rw.due.length) w[`referral:${rw.check.length}:${rw.due.length}`] = sha(canonical([...rw.check, ...rw.due].map((g) => g.id))).slice(0, 10); }
   const mail = pendingEmails(state);
   if (mail.length) w[`email:${mail.length}`] = sha(canonical(mail.map((c) => c.id))).slice(0, 10);
   for (const h of state.held) if (PERSON_HELD.includes(h.reason)) w[`held:${h.reason}:${h.detail || ''}`] = h.reason;
@@ -473,6 +481,7 @@ export function notifyLine(state, overlay, now = Date.now(), { unattended = fals
   const stops = fresh.filter((k) => k.startsWith('park:'));
   const held = fresh.filter((k) => k.startsWith('held:')).map((k) => { const [, r, ...d] = k.split(':'); return plainHeld(r, d.join(':')); });
   const questions = fresh.filter((k) => k.startsWith('facts:'));
+  const referrals = fresh.filter((k) => k.startsWith('referral:'));
   const consents = fresh.filter((k) => k.startsWith('consent:'));
   const updates = fresh.filter((k) => k.startsWith('update:'));
   const parts = [];
@@ -484,6 +493,7 @@ export function notifyLine(state, overlay, now = Date.now(), { unattended = fals
     parts.push(`${stops.length} stop${stops.length > 1 ? 's need' : ' needs'} you${stops.length === 1 && j ? ` at ${j.company}` : ''} (${j && j.parked ? [...new Set(j.parked.reasons.map(plainReason))].join(', ') : 'a stop'})`);
   }
   if (questions.length) { const n = Number(questions[0].slice(6)); parts.push(`${n} question${n > 1 ? 's wait' : ' waits'} for your answers`); }
+  if (referrals.length) { const [, c, d] = referrals[0].split(':').map(Number); parts.push([c ? `${c} referral question${c > 1 ? 's wait' : ' waits'} for your answer` : '', d ? `${d} referral follow-up${d > 1 ? 's are' : ' is'} due` : ''].filter(Boolean).join(', ')); }
   if (updates.length) parts.push(`${updates.length} update${updates.length > 1 ? 's' : ''} for the report`);
   if (consents.length) parts.push(`consent changed: ${[...new Set(consents.map((k) => w[k]))].join('; ')}`);
   if (held.length) parts.push(`needs you: ${[...new Set(held)].join('; ')}`);

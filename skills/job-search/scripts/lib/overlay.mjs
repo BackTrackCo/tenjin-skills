@@ -143,6 +143,6 @@ export function canonical(v) {
 // The hash an unattended consent is bound to: the person's confirmed settings and rules.
 export function rulesHash(profile, overlay) {
   // Limits and notifications only tighten what a submit may do, so they do not change the hash the consent is bound to.
-  const rules = (overlay.rules || []).filter((r) => !['note', 'period_max', 'notify_quiet_hours', 'notify_off', 'contact_count', 'fill_only'].includes(r.effect)).map((r) => [r.effect, r.value]).sort();
+  const rules = (overlay.rules || []).filter((r) => !['note', 'period_max', 'notify_quiet_hours', 'notify_off', 'contact_count', 'fill_only', 'referral_delay_days'].includes(r.effect)).map((r) => [r.effect, r.value]).sort();
   return crypto.createHash('sha256').update(canonical({ unattended: profile.unattended || null, rules })).digest('hex');
 }

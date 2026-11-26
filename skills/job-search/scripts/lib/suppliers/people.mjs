@@ -6,10 +6,10 @@ export const HOST = 'x402.orthogonal.com';
 export const KIND = 'people_search';
 
 // With no website known, the search runs by company name and city (RECORDED 2026-11-25: the name filter works); its results are weak unless their company matches a known domain or the board's company name (see `adapter`).
-export function mapper({ website, company, titles, city, count }) {
+export function mapper({ website, company, titles, city, count, pastCompany }) {
   const domain = String(website || '').replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0];
   if (!domain && !company) throw new Error('no employer website or company name for the people search');
-  const query = { ...(domain ? { currentCompanyWebsite: { include: [domain] } } : { currentCompanyName: { include: [company] } }), currentJobTitle: { include: titles } };
+  const query = { ...(domain ? { currentCompanyWebsite: { include: [domain] } } : { currentCompanyName: { include: [company] } }), ...(Array.isArray(titles) && titles.length ? { currentJobTitle: { include: titles } } : {}), ...(pastCompany ? { pastCompanyName: { include: [pastCompany] } } : {}) };
   if (city) query.location = { include: [city] };
   return { query, pagination: { size: Number.isInteger(count) && count > 0 ? Math.min(count, 25) : 5 } };
 }
