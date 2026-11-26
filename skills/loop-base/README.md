@@ -11,6 +11,9 @@ An app is one `defineApp({...})` object, registered by its own `paths.mjs` with 
 - `name` (from `manifest.json`): the app's data folder `~/.tenjin-skills/<name>`, its tag prefix, its skill name and its env prefix. `job-search` gives `JOB_SEARCH_TICK_MS` and `JOB_SEARCH_OPEN_BIN`.
 - `skillDir`: where its `manifest.json` and `graph.json` live.
 
+- `state`: `{ empty(), schemaVersion, applyOp(state, op), oldFields(raw) }`, the app's state shape and its own ops; an app attaches it with `extendApp` from the module that builds it.
+- `kinds`: `{ [kind]: { collection, statuses, transitions, terminal, onTransition } }`; the base's `transition` moves an item between statuses, refuses an undeclared move or a move out of a final status, and names the kind in the error when the app declares more than one.
+
 The base modules that follow add their own fields to the object as they land: state, item kinds, watcher steps, work items, consents, rules, batch, email, hosts, suppliers, report sections, commands and release. Each field is something the app already does in its own code.
 
 ## Rules for base code
