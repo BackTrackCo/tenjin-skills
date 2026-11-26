@@ -131,7 +131,7 @@ export async function setFromLink({ url, state, client, fetchImpl = globalThis.f
     }
     const r = await readLinkedIn({ url, client });
     if (!r.ok) return { read: false, linkedin: true, status: r.status, ask: 'a PDF export of the profile or the text' };
-    return { read: true, ...setText(r.text, { source: 'link' }), url, thin: true };
+    return { read: true, ...setText(r.text, { source: 'link' }), url, thin: r.thin, history: r.history, roleHint: r.titles && r.titles.length ? { current: r.current, titles: r.titles, headline: r.headline } : null };
   }
   const r = await fetchResume(url, fetchImpl, { lookup });
   if (r.signIn) return { read: false, signIn: true, ask: 'a connector can read this only if the person connected one; otherwise a public link, the file or the text' };

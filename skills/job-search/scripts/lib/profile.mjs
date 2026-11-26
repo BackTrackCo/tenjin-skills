@@ -49,7 +49,7 @@ export function validateProfile(p) {
       if (s.place !== undefined) need(isStr(s.place), 'search.place must be text');
       if (s.remote !== undefined) need(typeof s.remote === 'boolean', 'search.remote must be true or false');
       if (s.roleWords !== undefined) need(strList(s.roleWords), 'search.roleWords must be a list of strings');
-      if (s.sources !== undefined) need(s.sources && typeof s.sources === 'object' && Object.values(s.sources).every(isStr), 'search.sources must say where each value came from (resume or person)');
+      if (s.sources !== undefined) need(s.sources && typeof s.sources === 'object' && Object.values(s.sources).every(isStr), 'search.sources must say where each value came from (resume, linkedin or person)');
       if (s.variants !== undefined) need(strList(s.variants), 'search.variants must be a list of strings (role-word variants: a synonym or a level)');
     }
   }

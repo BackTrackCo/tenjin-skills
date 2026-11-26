@@ -1204,6 +1204,9 @@ const commands = {
     if (r.ask || r.read === false) return out({ read: false, ...r });
     ensureDir(stateDir());
     const next = { ...profile, resumeSource: r.source, resumeText: r.resumeText !== undefined ? r.resumeText : r.keepFile ? profile.resumeText : undefined, resumeNeedsText: Boolean(r.needsText), resumeThin: r.thin === true };
+    // The person's own titles and dates, when the profile read gave them: the warm-path overlap check uses them.
+    if (r.history && r.history.length) next.resumeHistory = r.history;
+    else if (!r.keepFile) delete next.resumeHistory;
     if (r.resumePath) next.resumePath = r.resumePath;
     else if (!r.keepFile) delete next.resumePath;
     // The file a form takes: a copy in the uploads folder (a link's PDF is saved there directly); the original is not touched.
@@ -1213,7 +1216,7 @@ const commands = {
     if (r.url) next.resumeUrl = r.url;
     else if (!r.keepFile) delete next.resumeUrl;
     writeJsonAtomic(profileFile(), next);
-    return out({ read: true, source: next.resumeSource, saved: r.resumeTextFile || r.resumePath || null, needsText: next.resumeNeedsText, next: next.resumeNeedsText ? 'read the file with your file reader, then save its text: J resume set --text' : next.resumeThin ? 'a LinkedIn profile has employers but no job titles: confirm the target role with a choice question, your guess first (J ask resume --json {header,question,guess,next,source:"LinkedIn"}); a form that needs more asks for a file or the text' : 'read role, role words, place and remote from the resume' });
+    return out({ read: true, ...(r.roleHint ? { roleHint: r.roleHint } : {}), source: next.resumeSource, saved: r.resumeTextFile || r.resumePath || null, needsText: next.resumeNeedsText, next: next.resumeNeedsText ? 'read the file with your file reader, then save its text: J resume set --text' : r.roleHint ? 'the profile has job titles: take the role and role words from roleHint (the current position first), save them with J profile set (search.sources: linkedin), and confirm the role with a choice question, your guess first (J ask resume)' : next.resumeThin ? 'a LinkedIn profile has employers but no job titles: confirm the target role with a choice question, your guess first (J ask resume --json {header,question,guess,next,source:"LinkedIn"}); a form that needs more asks for a file or the text' : 'read role, role words, place and remote from the resume' });
   },
 
   // Items shown to the person in a reply: they leave the notify set until their version changes.

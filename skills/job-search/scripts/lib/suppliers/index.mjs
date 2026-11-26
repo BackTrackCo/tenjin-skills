@@ -3,13 +3,14 @@ import * as x from './x.mjs';
 import * as careers from './careers.mjs';
 import * as people from './people.mjs';
 import * as linkedin from './linkedin.mjs';
+import * as linkedinHistory from './linkedin-history.mjs';
 import * as web from './websearch.mjs';
 import * as company from './company.mjs';
 
 // One mapper and one adapter per supplier, picked by the host the spec text names. Until the router gives each task fixed
 // inputs and output shapes, this table is the only place a supplier host appears; it never appears in text people see.
 // A need with no mapper here is held for the round. A mapper marked unrecorded was built from the router's spec, not a recorded answer.
-export const SUPPLIERS = [jobs, x, careers, people, linkedin, web.exa, company].map((m) => ({ any: m.ANY_HOST === true, host: m.HOST, tool: m.TOOL || null, kind: m.KIND, mapper: m.mapper, adapter: m.adapter || web.adapter, recorded: m.RECORDED !== false, noCache: m.NO_CACHE === true }));
+export const SUPPLIERS = [jobs, x, careers, people, linkedin, linkedinHistory, web.exa, company].map((m) => ({ any: m.ANY_HOST === true, host: m.HOST, tool: m.TOOL || null, kind: m.KIND, mapper: m.mapper, adapter: m.adapter || web.adapter, recorded: m.RECORDED !== false, noCache: m.NO_CACHE === true }));
 
 // A need that names a catalog tool by id (the board search) takes that tool's supplier; the spec text decides nothing.
 export function pickTool(tool, kind) {

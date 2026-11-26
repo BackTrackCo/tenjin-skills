@@ -157,7 +157,7 @@ export async function readLinkedIn({ url, client = new RouterClient() }) {
   const need = { kind: 'linkedin_profile', text: fill('linkedin_profile', { url }), fields: { url }, query: { url } };
   const [r] = await runRound([need], { client });
   if (!r.ok) return { ok: false, status: r.status, reason: r.reason };
-  return { ok: true, text: r.ingest.text, cost: r.cost };
+  return { ok: true, text: r.ingest.text, cost: r.cost, thin: r.ingest.thin !== false, history: r.ingest.history || null, schools: r.ingest.schools || null, titles: r.ingest.titles || [], current: (r.ingest.current || []).map((c) => c.title), headline: r.ingest.headline || null };
 }
 
 // The router's people search for the jobs asked, in code. First the company: from what code has (a link field, the posting's website,

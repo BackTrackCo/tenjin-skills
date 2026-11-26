@@ -1,0 +1,23 @@
+{
+  "output": {
+    "found": true,
+    "data": {
+      "firstName": "Pat",
+      "lastName": "Example",
+      "headline": "Software Engineer at Example Co",
+      "location": "Example City",
+      "about": "Placeholder about text for a test profile.",
+      "currentPosition": [{ "position": "Software Engineer", "companyName": "Example Co", "location": "Example City", "duration": "placeholder" }],
+      "experience": [
+        { "position": "Software Engineer", "companyName": "Example Co", "startDate": "Mar 2021", "endDate": "", "location": "Example City", "description": "placeholder" },
+        { "position": "Backend Developer", "companyName": "Placeholder Labs", "startDate": "2018-06", "endDate": "2021-02", "location": "Example City", "description": "placeholder" },
+        { "position": "Intern", "companyName": "Sample Systems", "startDate": "2017", "endDate": "2017", "location": "", "description": "" }
+      ],
+      "education": [{ "school": "Example University", "degree": "BSc", "fieldOfStudy": "Placeholder", "startDate": "2014", "endDate": "2018" }],
+      "skills": [],
+      "followerCount": 120,
+      "connectionsCount": 500,
+      "openToWork": false
+    }
+  }
+}
