@@ -47,7 +47,7 @@ const serve = (table) => { const calls = []; const f = async (url) => { calls.pu
 test('J start status asks for the resume itself, in any form, never "the path"', () => {
   reset();
   const r = J('start', 'status').json;
-  assert.equal(r.next, "Job Search is set up and watching, and this is the first run, so I need one thing to start: can you share your resume? Drop the file here, paste a link, or paste the text. I'll take your role, location and remote preference from it, then ask four quick choices and run the first search.");
+  assert.equal(r.next, "Job Search is set up and watching, and this is the first run, so I need one thing to start: can you share your resume? Drop the file here, paste a link, or paste the text. I'll take your role, location and remote preference from it, then ask four quick choices and one question about referrals, and run the first search.");
   assert.doesNotMatch(JSON.stringify(r), /path|waiting for your resume|step 1/i);
 });
 

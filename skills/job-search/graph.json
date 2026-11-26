@@ -154,7 +154,7 @@
     "follow_up_due",
     "need_due",
     "email_due",
-    "referral_check",
+    "referral_list",
     "referral_pending",
     "events_due"
   ],

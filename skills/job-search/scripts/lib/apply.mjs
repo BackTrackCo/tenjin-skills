@@ -5,7 +5,7 @@ import { isFillOnly } from './fillonly.mjs';
 import { frequencyOf, periodStart } from './schedule.mjs';
 import { hostOf, isNeverAutomated } from './platforms.mjs';
 import { stagedPathFor } from './uploads.mjs';
-import { referralHold } from './referral.mjs';
+import { referralHold, referralListAnswered } from './referral.mjs';
 import { activeLessons, canonical, maxPay, rulesHash, ruleValue } from './overlay.mjs';
 
 export const WRITING_SCOPE = 'application_free_text';
@@ -160,6 +160,8 @@ export function applyNext(ctx) {
     // Only an auto mode hands out for an unattended submit; a person who went back to an attended mode keeps their consent on file
     // but nothing is submitted without a yes until they pick an auto mode again.
     if (profile.applyMode && !AUTO_MODES.includes(profile.applyMode)) return out({ refused: 'not_auto_mode' });
+    // An auto mode waits, with no time limit, for the person's answer to the one referral question at the start (a list or none).
+    if (!referralListAnswered(profile)) return out({ refused: 'referral_list_unanswered' });
     const cs = consentStatus(state, profile, overlay);
     if (!cs.ok) return out({ refused: cs.reason });
     dry = !dryRunDone(state, profile, overlay);
@@ -248,7 +250,7 @@ export function jobFailure({ job, state, profile, overlay, mode, now, writingOk 
   }
   const rule = unattendedRuleFailure(job, profile, overlay, now);
   if (rule) return rule;
-  // No unattended submit while the company's referral question is open or its referral is pending.
+  // No unattended submit while the company's referral is pending.
   const held = referralHold(profile, job);
   if (held) return held;
   // New writing needs its own consent. Optional writing follows the recorded skip or wait.

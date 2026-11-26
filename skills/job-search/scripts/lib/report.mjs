@@ -2,7 +2,7 @@ import { notifyLine, plannedJobs, stillLeft, tenjinHint } from './work.mjs';
 import { dmLink, emailConsentCurrent, handleIn, mailto, due as pendingEmails, emailState } from './email.mjs';
 import { graph } from './graph.mjs';
 import { confirmedEvents, eventKind } from './events.mjs';
-import { referralNote } from './referral.mjs';
+import { REFERRAL_LIST_LINE, referralListWaiting, referralNote } from './referral.mjs';
 
 export const REASONS = {
   no_apply_link: 'no apply link in the posting',
@@ -94,6 +94,7 @@ function renderShort(state, overlay, { since, now, profile }) {
       if (j.parked.reasons.includes('writing_needs_yes')) for (const f of ((j.sheet && j.sheet.fields) || []).filter((x) => x.tag === 'new_writing')) L.push(`  - draft for "${f.label}": ${String(f.value).replace(/\n/g, ' ')}`);
     }
   }
+  if (referralListWaiting(profile)) L.push('', REFERRAL_LIST_LINE);
   const held = state.held.filter((h) => PERSON_HELD.includes(h.reason));
   if (held.length) { L.push('', '## Needs you'); for (const h of held) L.push(`- ${h.reason.replace(/_/g, ' ')}${h.detail ? `: ${h.detail}` : ''}`); }
   const mail = pendingEmails(state);
@@ -231,6 +232,7 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
       if (j.parked && j.parked.reasons.includes('writing_needs_yes')) for (const f of ((j.sheet && j.sheet.fields) || []).filter((x) => x.tag === 'new_writing')) L.push(`  - draft for "${f.label}": ${String(f.value).replace(/\n/g, ' ')}`);
     }
   }
+  if (referralListWaiting(profile)) L.push('', REFERRAL_LIST_LINE);
   const leads = (state.leads || []).filter((l) => l.status === 'new' && !l.joinedJob);
   if (leads.length) {
     L.push('', `## People hiring (${leads.length})`);

@@ -1,7 +1,7 @@
 import { isFillOnly } from './fillonly.mjs';
 import { AUTO_MODES, companyExcluded, consentStatus, dryRunDone, periodLimit, writingConsentCurrent } from './apply.mjs';
 import { frequencyOf, periodStart } from './schedule.mjs';
-import { referralHold } from './referral.mjs';
+import { referralHold, referralListAnswered } from './referral.mjs';
 
 // What the person is told after every approval, from code and as given: what was and was not submitted. It names companies
 // only, never personal details. The model never says it is "recording your yes" without this line.
@@ -42,6 +42,7 @@ export function maySubmit(state, profile, overlay, key, sheetHash, batchActive, 
   if (mode === 'unattended') {
     if (h.mode !== 'unattended' || h.submit !== true) return { ok: false, why: 'not_handed_out_for_submit' };
     if (profile.applyMode && !AUTO_MODES.includes(profile.applyMode)) return { ok: false, why: 'not_auto_mode' };
+    if (!referralListAnswered(profile)) return { ok: false, why: 'referral_list_unanswered' };
     { const held = referralHold(profile, job); if (held) return { ok: false, why: held }; }
     const cs = consentStatus(state, profile, overlay);
     if (!cs.ok) return { ok: false, why: cs.reason };

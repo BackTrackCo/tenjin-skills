@@ -16,7 +16,7 @@ const g = await import('../../skills/job-search/scripts/lib/batch.mjs');
 const NOW = Date.parse('2026-11-23T12:00:00Z');
 const empty = { rules: [], lessons: [] };
 const U = { roles: ['engineer'], places: ['Berlin'], remote: false, minScore: 70, hosts: ['greenhouse'] };
-const profile = { eeoText: 'Decline every voluntary demographic question (test placeholder).', referrals: Object.fromEntries(['acme', 'initech', 'globex', ...Array.from({ length: 100 }, (_, i) => `co${i}`)].map((k) => [k, { status: 'none' }])), resumePath: '/r.pdf', facts: { first_name: 'Ada', email: 'ada@example.com', authorized_to_work: 'Yes' }, unattended: U };
+const profile = { eeoText: 'Decline every voluntary demographic question (test placeholder).', referralList: { answeredAt: '2026-11-25T00:00:00.000Z', words: 'none' }, resumePath: '/r.pdf', facts: { first_name: 'Ada', email: 'ada@example.com', authorized_to_work: 'Yes' }, unattended: U };
 const Q = [
   { label: 'First Name', required: true, type: 'input_text' },
   { label: 'Resume/CV', required: true, type: 'input_file' },

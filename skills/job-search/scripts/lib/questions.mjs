@@ -6,6 +6,7 @@
 // guess in its text. Never in an unattended turn: nobody can answer there.
 import { graph } from './graph.mjs';
 import { fmt } from './prices.mjs';
+import { REFERRAL_QUESTION } from './referral.mjs';
 const q = (header, question, options, multiSelect = false) => ({ header, question, multiSelect, options });
 
 // Options that need Claude in Chrome get a note when it is off in this session (`J chrome set off`), and the question says so
@@ -18,6 +19,8 @@ export function chromeQ(header, question, options, { chromeOff = false, needs = 
   return q(header, noted ? `${question} ${CHROME_SENTENCE}` : question, options.map((o) => (chromeOff && needing(o.label, needs) ? { ...o, description: `${o.description} ${CHROME_NOTE}` } : o)), multiSelect);
 }
 const plain = (text) => ({ plain: text });
+// The referral question at the start: a plain message in every apply mode, never part of the question call, with no options.
+export const referralQuestion = () => plain(REFERRAL_QUESTION);
 
 // The start, after the resume: one call, four questions. Remote Control is a reminder line, not a question.
 const RC_FIRST = 'Type /rc to get these notifications on your phone and answer from the Claude app while this session keeps running here.';

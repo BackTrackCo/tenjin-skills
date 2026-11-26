@@ -17,8 +17,8 @@ const EEO = 'Decline every voluntary demographic question (test placeholder).';
 const U = { roles: ['engineer'], places: ['Berlin'], remote: false, minScore: 50, hosts: ['*'] };
 const ep = (n) => ({ url: `https://jobs.site${n}.test/acme/jobs/${n}`, system: 'employer_site', token: null, jobId: null, source: 'careers_page', confidence: 'confirmed' });
 const job = (n, over = {}) => mkJob({ key: `https://jobs.site${n}.test/acme/jobs/${n}`, status: 'apply_ready', company: `Co${n}`, title: 'Software Engineer', city: 'Berlin', fit: 90, verifiedAt: new Date().toISOString(), employerPosting: ep(n), sheet: { hash: `h${n}`, passed: true, eeoMissing: false, unanswered: [], forbidden: [], fields: [{ label: 'Email', value: 'a@b.test', tag: 'fact', required: true }] }, ...over });
-const NO_REFERRAL = Object.fromEntries(['acme', ...Array.from({ length: 100 }, (_, i) => `co${i}`)].map((k) => [k, { status: 'none' }]));
-const profileOf = (extra = {}) => ({ eeoText: EEO, applyMode: 'auto_write', unattended: U, referrals: NO_REFERRAL, ...extra });
+const NO_REFERRAL = { referralList: { answeredAt: '2026-11-25T00:00:00.000Z', words: 'none' } };
+const profileOf = (extra = {}) => ({ eeoText: EEO, applyMode: 'auto_write', unattended: U, ...NO_REFERRAL, ...extra });
 const setProfile = (p) => J('profile', 'set', JSON.stringify(p));
 const reset = (jobs = [], profile = { eeoText: EEO }, { approve = false } = {}) => {
   fs.rmSync(path.join(process.env.TENJIN_SKILLS_DIR, 'job-search', 'rules.json'), { force: true });
@@ -288,7 +288,7 @@ test('15: a whole unattended round runs in order and no step is refused', () => 
   const resume = path.join(home, 'resume-round.pdf');
   fs.writeFileSync(resume, 'x');
   const j = mkJob({ key: 'https://boards.greenhouse.io/acme/jobs/777', url: 'https://boards.greenhouse.io/acme/jobs/777', status: 'prepared', fit: 90, title: 'Software Engineer', city: 'Berlin', verifiedAt: new Date().toISOString() });
-  reset([j], { eeoText: EEO, applyMode: 'auto_write', referrals: NO_REFERRAL, resumePath: resume, facts: { first_name: 'Ada' }, unattended: U });
+  reset([j], { eeoText: EEO, applyMode: 'auto_write', ...NO_REFERRAL, resumePath: resume, facts: { first_name: 'Ada' }, unattended: U });
   fs.rmSync(path.join(process.env.TENJIN_SKILLS_DIR, 'job-search', 'answers.json'), { force: true });
   const step = (label, args, want = 0) => { const r = J(...args); assert.equal(r.code, want, `${label}: ${r.stdout}`); return r; };
   const q = path.join(home, 'round-q.json');

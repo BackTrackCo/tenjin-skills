@@ -212,7 +212,7 @@ test('old automatic state is refused with the field named; no tip, no question a
   fs.writeFileSync(file, JSON.stringify(st));
   assert.doesNotMatch(runJobs(home, ['report', '--all']).stdout, /Tip: you can paste/);
   const all = fs.readdirSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'references')).map((f) => fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'references', f), 'utf8')).join('\n');
-  assert.doesNotMatch(all, /which companies|companies (do you|to) watch|watch list question/i);
+  assert.doesNotMatch(all, /which companies (do you|to) (want|watch)|companies (do you|to) watch|watch list question/i);
 });
 
 // ---- intros -------------------------------------------------------------------

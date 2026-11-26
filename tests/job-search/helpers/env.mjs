@@ -3,7 +3,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { employerName } from '../../../skills/job-search/scripts/lib/employer.mjs';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 export const SKILL = path.join(ROOT, 'skills', 'job-search');
@@ -51,14 +50,11 @@ export function mkJob(over = {}) {
   return { key, url: key, employerPosting, openConfirmed: true, ats: 'greenhouse', board: 'greenhouse:acme', title: 'Software Engineer', company: 'Acme', city: 'Berlin', region: '', country: '', remote: false, posted: new Date().toISOString(), type: 'Full-time', salary: null, desc: 'build things', place: 'Berlin|', hash: 'h1', status: 'new', firstSeen: new Date().toISOString(), lastSeen: new Date().toISOString(), verifiedAt: new Date().toISOString(), warnings: [], parked: null, ...over };
 }
 
-// A person who answered every referral question with "no one": the planned jobs of these tests raise no referral item.
+// A person who answered the referral question with "none": an answered, empty list, so no company waits for a referral.
 export function noReferrals() {
   const file = path.join(process.env.TENJIN_SKILLS_DIR, 'job-search', 'profile.json');
   let p = {};
   try { p = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
-  let jobs = {};
-  try { jobs = JSON.parse(fs.readFileSync(path.join(path.dirname(file), 'state.json'), 'utf8')).jobs || {}; } catch {}
-  const keys = Object.values(jobs).map((j) => employerName(j.company));
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify({ ...p, referrals: { ...Object.fromEntries(keys.map((k) => [k, { status: 'none' }])), ...(p.referrals || {}) } }));
+  fs.writeFileSync(file, JSON.stringify({ ...p, referrals: {}, referralList: { answeredAt: '2026-11-25T00:00:00.000Z', words: 'none' } }));
 }

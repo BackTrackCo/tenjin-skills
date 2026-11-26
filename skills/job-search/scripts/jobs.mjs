@@ -35,7 +35,7 @@ import { FREQUENCIES, frequencyOf, periodStart } from './lib/schedule.mjs';
 import { ingest, joinLeads, leadKey } from './lib/ingest.mjs';
 import { addWatch, removeWatch } from './lib/watchlist.mjs';
 import { candidateEvents, confirmedEvents, filterEvents, dedupeEvents, matchTargets, planTargets, runEvents, saveEvents, windowDays } from './lib/events.mjs';
-import { followUpQuestion, recordOf, referralCalls, referralKey, referralNote, referralWaiting } from './lib/referral.mjs';
+import { followUpQuestion, parseReferralList, recordOf, referralKey, referralListAnswered, referralNote, referralWaiting } from './lib/referral.mjs';
 import { applyFactAnswer, buildFactQuestions, collectFacts, splitByOptions } from './lib/facts.mjs';
 import { eeoTextOf, oldFieldError, oldFields, validateProfile } from './lib/profile.mjs';
 import { routeContacts, routeEvents, routeWarmPaths, routedRounds } from './lib/routed.mjs';
@@ -977,7 +977,7 @@ const commands = {
       const missing = [];
       if (!profile.resumeText && !profile.resumePath) missing.push('resume');
       if (!profile.applyMode || !profile.frequency || !(st.start && st.start.positionsAt) || !(profile.apply && profile.apply.where)) missing.push('start_questions');
-      return out({ missing, next: missing[0] === 'resume' ? 'Job Search is set up and watching, and this is the first run, so I need one thing to start: can you share your resume? Drop the file here, paste a link, or paste the text. I\'ll take your role, location and remote preference from it, then ask four quick choices and run the first search.' : missing.length ? 'J ask start, then J start record' : 'run the free search and the report', start: st.start || null });
+      return out({ missing, next: missing[0] === 'resume' ? 'Job Search is set up and watching, and this is the first run, so I need one thing to start: can you share your resume? Drop the file here, paste a link, or paste the text. I\'ll take your role, location and remote preference from it, then ask four quick choices and one question about referrals, and run the first search.' : missing.length ? 'J ask start, then J start record' : 'run the free search and the report', start: st.start || null });
     }
     if (sub !== 'record') return out({ error: 'start status | record --mode m --frequency f --catch-up n --per-day n|none (or --positions n|none|skip, or --no-limit) --where employer|site|ask [--words text]' }, 2);
     if (flags.where !== undefined && !['employer', 'site', 'ask'].includes(flags.where)) return out({ error: 'where must be employer, site or ask' }, 2);
@@ -1002,10 +1002,13 @@ const commands = {
     const where = flags.where || 'employer';
     writeJsonAtomic(profileFile(), { ...profile, applyMode: mode, frequency, frequencySource: 'person', apply: { where, source: 'person' } });
     const now = new Date().toISOString();
+    // The referral question is a plain message, never part of the question call: asked once at the start in every mode, and again only
+    // for an auto mode while the list is still unanswered.
+    const askReferral = !referralListAnswered(profile) && (!(st.start && st.start.referralAskedAt) || mode.startsWith('auto'));
     updateState((s) => {
-      s.start = { ...(s.start || {}), modeAt: now, frequencyAt: now, positionsAt: now, whereAt: now };
+      s.start = { ...(s.start || {}), modeAt: now, frequencyAt: now, positionsAt: now, whereAt: now, ...(askReferral ? { referralAskedAt: now } : {}) };
     });
-    return out({ recorded: { mode, frequency, positions, where }, reminder: qs.rcReminder({ rc: st.rc || 'unknown', pushSent: st.pushSent === true, settings: pushSettings() }), note: ['attended', 'fill_only', 'open_only'].includes(mode) ? 'no consent is needed for this mode' : 'an auto mode also needs the unattended rules shown back, a clear yes, then consent record (and consent record writing for Fully auto apply)' });
+    return out({ recorded: { mode, frequency, positions, where }, ...(askReferral ? { referral: qs.referralQuestion().plain } : {}), reminder: qs.rcReminder({ rc: st.rc || 'unknown', pushSent: st.pushSent === true, settings: pushSettings() }), note: ['attended', 'fill_only', 'open_only'].includes(mode) ? 'no consent is needed for this mode' : 'an auto mode also needs the unattended rules shown back, a clear yes, then consent record (and consent record writing for Fully auto apply)' });
   },
   // The payload for Claude Code's question tool, so the questions are asked as choices, never as a list in prose.
   async ask([kind], flags) {
@@ -1030,17 +1033,15 @@ const commands = {
       return out({ count: built.count, calls: built.calls, plain: built.plain, next: built.count ? 'make each call with the question tool, one after another, then send the plain message; record each answer with J facts answer <id> <the chosen option or their words>, or J facts skip <id> for a skip; facts and approvals never share a call' : 'no fact is missing: nothing to ask' });
     }
     if (kind === 'referral') {
-      // One question per company, merged across the companies waiting now, and the follow-up for a referral that is due. Nobody is asked in a
-      // turn the watcher woke: the jobs hold and one push says how many questions wait.
+      // Only the follow-up for a referral that is due ("Is your referral at <company> in?"): the list itself is a plain question at the start,
+      // never a choice. Nobody is asked in a turn the watcher woke: the jobs hold and one push says how many follow-ups are due.
       const profile = readProfile();
       const rw = referralWaiting(loadState(), profile, loadOverlay());
-      if (flags.unattended === true || (batch.isActive() && batch.batchMode() === 'unattended')) return out({ asked: false, waiting: rw.check.length + rw.due.length, next: 'nobody is asked in this turn: unattended submits at these companies hold, and one push says how many questions wait' });
-      const calls = referralCalls(rw.check);
+      if (flags.unattended === true || (batch.isActive() && batch.batchMode() === 'unattended')) return out({ asked: false, waiting: rw.due.length, next: 'nobody is asked in this turn: unattended submits at these companies hold, and one push says how many follow-ups are due' });
       const followUps = [];
       for (let i = 0; i < rw.due.length; i += 4) followUps.push({ questions: rw.due.slice(i, i + 4).map((g) => followUpQuestion(g.company).questions[0]), ids: rw.due.slice(i, i + 4).map((g) => g.id) });
-      for (const c of [...calls, ...followUps]) { const bad = qs.validateAsk({ questions: c.questions }); if (bad.length) return out({ error: bad.join('; ') }, 2); }
-      updateState((s) => { s.referralPlan = Object.fromEntries([...rw.check, ...rw.due].map((g) => [g.id, { company: g.company, jobs: g.jobs }])); });
-      return out({ count: rw.check.length + rw.due.length, calls, followUps, next: calls.length || followUps.length ? 'make each call with the question tool in order; a fact and an approval never share a call. Record: J referral answer <id> someone|none|skip (then ask the referrer\'s name as a plain question: J referral name <id> <name>), and for a follow-up J referral in|notyet|without <id>' : 'no referral question is waiting' });
+      for (const c of followUps) { const bad = qs.validateAsk({ questions: c.questions }); if (bad.length) return out({ error: bad.join('; ') }, 2); }
+      return out({ count: rw.due.length, followUps, next: followUps.length ? 'make each call with the question tool in order; a fact and an approval never share a call. Record each answer: J referral in|notyet|without <id>' : 'no referral follow-up is due: nothing to ask' });
     }
     if (kind === 'approve-pick') return out({ groups: qs.approvePickQuestions(readySheets(loadState()), { chromeOff: loadState().chrome === 'off' }) });
     if (kind === 'applied') {
@@ -1126,68 +1127,99 @@ const commands = {
     if (sub === 'list' || !sub) return out({ events: confirmedEvents(loadState()).map((x) => ({ id: x.event.id, name: x.event.name, start: x.event.start, place: x.event.place, company: x.matches[0].company, url: x.event.url })) });
     return out({ error: 'events on|off | run | route | plan | add --json f | page --html f --company c | judge <id> yes|no | open <id> | list' }, 2);
   },
-  // The person's referral answers, kept by company in the profile. The skill never reads LinkedIn connections and never contacts the referrer.
+  // The person's referral list, kept in the profile by company: set once from their answer to the plain question at the start, changed only
+  // from their own message. The skill never reads LinkedIn connections and never contacts the referrer.
   async referral([sub, id, ...rest], flags) {
     const profile = readProfile();
+    const nowIso = new Date().toISOString();
     const save = (fn) => {
       const next = { ...profile, referrals: { ...(profile.referrals || {}) } };
-      const r = fn(next.referrals);
+      const r = fn(next);
       const bad = validateProfile(next);
       if (bad.length) throw new Error(bad.join('; '));
       writeJsonAtomic(profileFile(), next);
       return r;
     };
-    const plan = (loadState().referralPlan || {})[id];
+    const words = typeof flags.words === 'string' ? flags.words.trim() : '';
+    if (sub === 'list' && (id === undefined || id === 'show')) {
+      return out({ answered: referralListAnswered(profile), words: (profile.referralList || {}).words || null, companies: Object.values(profile.referrals || {}).map((r) => ({ company: r.company, status: r.status, ...(r.referrer ? { referrer: r.referrer } : {}) })) });
+    }
+    if (sub === 'list' && id === 'set') {
+      if (!words) return out({ error: 'referral list set --words "<their words>": the list comes only from the person\'s own answer; say none for none' }, 2);
+      const parsed = parseReferralList(words);
+      const kept = save((p) => {
+        const old = p.referrals || {};
+        p.referrals = {};
+        for (const it of parsed) {
+          const k = referralKey(it.company);
+          const prev = old[k];
+          p.referrals[k] = prev ? { ...prev, company: it.company, ...(it.referrer ? { referrer: it.referrer } : {}) } : { company: it.company, status: 'pending', ...(it.referrer ? { referrer: it.referrer } : {}), listedAt: nowIso };
+        }
+        p.referralList = { answeredAt: nowIso, words };
+        return Object.keys(p.referrals);
+      });
+      updateState((s) => { s.referralEmails = (s.referralEmails || []).filter((x) => kept.includes(x.id)); });
+      return out({ saved: true, companies: parsed, next: parsed.length ? 'read the list back in one line and say they can add or remove a company any time; ask for each referrer\'s name only if they want a request drafted' : 'say in one line that no company is listed, so nothing waits for a referral' });
+    }
+    if (sub === 'add') {
+      if (!id) return out({ error: 'referral add <company> [--referrer <name>] --words "<their words>"' }, 2);
+      if (!words) return out({ error: 'referral add needs --words with the person\'s own message' }, 2);
+      const k = referralKey(id);
+      const referrer = typeof flags.referrer === 'string' ? flags.referrer.trim() : '';
+      save((p) => {
+        const prev = (p.referrals || {})[k];
+        p.referrals[k] = { ...(prev || {}), company: (prev && prev.company) || id, status: 'pending', ...(referrer ? { referrer } : {}), listedAt: (prev && prev.listedAt) || nowIso };
+        if (!referralListAnswered(p)) p.referralList = { answeredAt: nowIso, words };
+      });
+      return out({ added: id, next: 'unattended submits at this company now hold until the referral is in; say so in one line' });
+    }
+    if (sub === 'remove') {
+      if (!id) return out({ error: 'referral remove <company> --words "<their words>"' }, 2);
+      if (!words) return out({ error: 'referral remove needs --words with the person\'s own message' }, 2);
+      const k = referralKey(id);
+      if (!(profile.referrals || {})[k]) return out({ error: `${id} is not on the referral list` }, 2);
+      save((p) => { delete p.referrals[k]; });
+      updateState((s) => { s.referralEmails = (s.referralEmails || []).filter((x) => x.id !== k); });
+      return out({ removed: id, next: 'the jobs at this company go on under the apply mode' });
+    }
     if (sub === 'wait') {
       const job = loadState().jobs[id];
       if (!job) return out({ error: `unknown job: ${id}` }, 2);
       return out({ key: id, waiting: true, next: 'nothing is applied now; the follow-up asks when the referral is due' });
     }
-    if (!['answer', 'name', 'in', 'notyet', 'without', 'draft', 'draft-save', 'email'].includes(sub) || !id) return out({ error: 'referral answer <id> someone|none|skip | name <id> <name> | in|notyet|without <id> | draft <id> | draft-save <id> --text file | wait <job key>' }, 2);
-    const rec = (profile.referrals || {})[id];
-    const nowIso = new Date().toISOString();
-    if (sub === 'answer') {
-      const choice = rest[0];
-      if (!['someone', 'none', 'skip'].includes(choice)) return out({ error: 'referral answer <id> someone|none|skip' }, 2);
-      if (!plan) return out({ error: `no such question: ${id}; run J ask referral again` }, 2);
-      if (choice === 'skip') {
-        updateState((s) => { for (const k of plan.jobs) { try { applyOp(s, { op: 'transition', key: k, to: 'skipped', reason: 'the person skipped it at the referral question' }); } catch {} } delete s.referralPlan[id]; });
-        return out({ skipped: plan.jobs });
-      }
-      save((r) => { r[id] = choice === 'someone' ? { status: 'pending', pendingAt: nowIso } : { status: 'none' }; });
-      updateState((s) => { delete s.referralPlan[id]; });
-      return out(choice === 'someone' ? { recorded: 'pending', next: `ask one plain question for the referrer's name (a fact the person gives), then J referral name ${id} <name>; J referral draft ${id} drafts a short request they can send` } : { recorded: 'none', next: 'the jobs at this company go on under the apply mode; it is never asked again' });
-    }
-    if (!rec) return out({ error: `no referral answer for ${id}: run J ask referral first` }, 2);
+    if (!['name', 'in', 'notyet', 'without', 'draft', 'draft-save', 'email'].includes(sub) || !id) return out({ error: 'referral list [set --words "<their words>"] | add <company> [--referrer <name>] --words w | remove <company> --words w | name <company> <name> | in|notyet|without <company> | draft <company> | draft-save <company> --text file | email <company> <address> | wait <job key>' }, 2);
+    const key = referralKey(id);
+    const rec = (profile.referrals || {})[key];
+    if (!rec) return out({ error: `${id} is not on the referral list: J referral add <company> --words "<their words>" only from the person's own message` }, 2);
+    const company = rec.company || id;
     if (sub === 'name') {
       const name = rest.join(' ').trim();
-      if (!name) return out({ error: 'referral name <id> <name>' }, 2);
-      save((r) => { r[id] = { ...r[id], referrer: name }; });
-      return out({ recorded: 'referrer', next: 'a form\'s referral field is filled with this name; J referral draft <id> drafts a request to send' });
+      if (!name) return out({ error: 'referral name <company> <name>' }, 2);
+      save((p) => { p.referrals[key] = { ...p.referrals[key], referrer: name }; });
+      return out({ recorded: 'referrer', next: 'a form\'s referral field is filled with this name; J referral draft <company> drafts a request to send' });
     }
-    if (sub === 'in') { save((r) => { r[id] = { ...r[id], status: 'in', inAt: nowIso }; }); return out({ recorded: 'in', next: 'the jobs at this company go on under the apply mode; if the company uses a link the employee sends, the person applies through it and says so: J submitted <key> --referral-link' }); }
-    if (sub === 'notyet') { save((r) => { r[id] = { ...r[id], pendingAt: nowIso }; }); return out({ recorded: 'not yet' }); }
-    if (sub === 'without') { save((r) => { r[id] = { ...r[id], status: 'without' }; }); return out({ recorded: 'without' }); }
+    if (sub === 'in') { save((p) => { p.referrals[key] = { ...p.referrals[key], status: 'in', inAt: nowIso }; }); return out({ recorded: 'in', next: 'the jobs at this company go on under the apply mode; if the company uses a link the employee sends, the person applies through it and says so: J submitted <key> --referral-link' }); }
+    if (sub === 'notyet') { save((p) => { p.referrals[key] = { ...p.referrals[key], pendingAt: nowIso }; }); return out({ recorded: 'not yet' }); }
+    if (sub === 'without') { save((p) => { p.referrals[key] = { ...p.referrals[key], status: 'without' }; }); return out({ recorded: 'without' }); }
     if (sub === 'email') {
       // The referrer's address, only as the person typed it in this session. It makes the draft an email the person approves with their own yes.
       const address = String(rest[0] || '').trim();
-      if (!rec.draft) return out({ error: 'save the draft first: J referral draft-save <id> --text <file>' }, 2);
-      if (!/^[^\s@<>"']+@[^\s@<>"']+\.[A-Za-z]{2,}$/.test(address)) return out({ error: 'referral email <id> <address>: the address the person typed for the referrer' }, 2);
-      save((r) => { r[id] = { ...r[id], referrerEmail: { address, at: nowIso, source: 'person_typed' } }; });
-      updateState((s) => { s.referralEmails = [...(s.referralEmails || []).filter((x) => x.id !== id), { id, to: address, subject: `Referral request: ${(plan && plan.company) || id}`, text: rec.draft.text, company: (plan && plan.company) || id }]; });
+      if (!rec.draft) return out({ error: 'save the draft first: J referral draft-save <company> --text <file>' }, 2);
+      if (!/^[^\s@<>"']+@[^\s@<>"']+\.[A-Za-z]{2,}$/.test(address)) return out({ error: 'referral email <company> <address>: the address the person typed for the referrer' }, 2);
+      save((p) => { p.referrals[key] = { ...p.referrals[key], referrerEmail: { address, at: nowIso, source: 'person_typed' } }; });
+      updateState((s) => { s.referralEmails = [...(s.referralEmails || []).filter((x) => x.id !== key), { id: key, to: address, subject: `Referral request: ${company}`, text: rec.draft.text, company }]; });
       return out({ saved: true, next: 'it is an email draft now: J email batch lists it, and it goes only after the person\'s own yes (J email approve), never under the email consent' });
     }
     if (sub === 'draft') {
-      if (!rec.referrer) return out({ error: 'a draft needs the referrer\'s name first: J referral name <id> <name>' }, 2);
-      const company = (plan && plan.company) || id;
+      if (!rec.referrer) return out({ error: 'a draft needs the referrer\'s name first: J referral name <company> <name>' }, 2);
       return out({ company, referrer: rec.referrer, prompt: `Write a short, warm request (at most 90 words) from the person to ${rec.referrer}, asking whether they would refer them for a role at ${company}. Use only facts from the resume and the profile; no claim about the relationship beyond what the person said; end with thanks. Plain text, no placeholders.`, next: `one writer call, then J referral draft-save ${id} --text <file>; the draft is shown to the person, who sends it themselves. The skill never sends it.` });
     }
     // draft-save
     const text = String(fs.readFileSync(flags.text, 'utf8')).trim();
-    const words = text.split(/\s+/).filter(Boolean).length;
-    if (!text || words > 120 || /\[[^\]]*\]|\bTODO\b|lorem ipsum|\{\{/i.test(text)) return out({ error: 'the draft must be plain text of at most 120 words, with no placeholder' }, 2);
-    save((r) => { r[id] = { ...r[id], draft: { text, at: nowIso } }; });
-    updateState((s) => { s.referralEmails = (s.referralEmails || []).map((x) => (x.id === id ? { ...x, text } : x)); });
+    const wordCount = text.split(/\s+/).filter(Boolean).length;
+    if (!text || wordCount > 120 || /\[[^\]]*\]|\bTODO\b|lorem ipsum|\{\{/i.test(text)) return out({ error: 'the draft must be plain text of at most 120 words, with no placeholder' }, 2);
+    save((p) => { p.referrals[key] = { ...p.referrals[key], draft: { text, at: nowIso } }; });
+    updateState((s) => { s.referralEmails = (s.referralEmails || []).map((x) => (x.id === key ? { ...x, text } : x)); });
     return out({ saved: true, draft: text, next: 'show it as a draft; the person sends it, or gives the referrer\'s address for the email flow: J referral email <company> <address>. Nothing is sent without that yes.' });
   },
   // The answer to one merged fact question, recorded for every job it names (and as the profile fact when it is one).

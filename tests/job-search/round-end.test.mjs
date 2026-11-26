@@ -6,7 +6,7 @@ const home = tmpHome();
 const b = await import('../../skills/job-search/scripts/lib/batch.mjs');
 const store = await import('../../skills/job-search/scripts/lib/store.mjs');
 
-const profile = { eeoText: 'Decline every voluntary demographic question (test placeholder).', referrals: { acme: { status: 'none' }, initech: { status: 'none' } }, resumePath: '/r.pdf', unattended: { roles: ['engineer'], places: ['Berlin'], minScore: 70, hosts: ['greenhouse'] }, search: { role: 'engineer', place: 'Berlin' } };
+const profile = { eeoText: 'Decline every voluntary demographic question (test placeholder).', referralList: { answeredAt: '2026-11-25T00:00:00.000Z', words: 'none' }, resumePath: '/r.pdf', unattended: { roles: ['engineer'], places: ['Berlin'], minScore: 70, hosts: ['greenhouse'] }, search: { role: 'engineer', place: 'Berlin' } };
 const hasSearch = () => runJobs(home, ['work']).json.items.some((i) => i.reason === 'search_due');
 const setup = (jobs = []) => {
   store.updateState((s) => { Object.assign(s, store.emptyState()); for (const j of jobs) s.jobs[j.key] = j; });
