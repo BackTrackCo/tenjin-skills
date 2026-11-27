@@ -4,6 +4,7 @@ import { loadOverlay } from './overlay.mjs';
 import { reviewItems, searchItems, searchStep } from './search.mjs';
 import { approveItems, openItems, writeItems } from './outreach.mjs';
 import { runIdentityReads } from './routed.mjs';
+import { needVariants } from './queryset.mjs';
 import { emailItems } from './email-items.mjs';
 import { followUpItems } from './followup.mjs';
 import { prepUnattended } from './email-prep.mjs';
@@ -23,9 +24,10 @@ registerStep('reads', async ({ routerClient, now }) => {
 });
 registerCollector(emailItems);
 registerCollector(followUpItems);
-registerCollector(({ state }) => {
-  const list = Object.entries(state.queryYield || {}).filter(([, y]) => y.rounds > 0 && y.lastKept === 0);
-  return list.length ? [{ key: 'rewrite', reason: 'rewrite_due', v: list.reduce((n, [k, y]) => n + y.rounds * 7 + k.length, 0), count: list.length, waitsForPerson: true }] : [];
+// After a round, where no query kept a lead, the main model writes variants from the offer, the phrases and the count table, with no yes.
+registerCollector(({ state, profile }) => {
+  const n = needVariants(state, profile);
+  return n.length ? [{ key: 'queries', reason: 'queries_due', v: (state.rounds || []).length * 100 + n.length, count: n.length, detail: n.map((x) => `${x.offerId}:${x.source}`).join(', ') }] : [];
 });
 // With the person's email consent current, emails are prepared and approved on the consent in code; the model only hands out.
 registerStep('email', async ({ routerClient, now }) => {

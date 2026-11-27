@@ -34,8 +34,8 @@ export function liveHeld(held, profile) {
   return (held || []).filter((h) => {
     const m = /^need:([a-z_]+):(.*)$/.exec(h.key || '');
     if (!m || !POST_KINDS.includes(m[1])) return true;
-    const q = /^query:([^:]+):([a-z]+)$/.exec(m[2]);
-    if (q) return Boolean(offersOf(profile).find((o) => o.id === q[1] && o.queries[q[2]]));
+    const q = /^query:(.+)$/.exec(m[2]);
+    if (q) return ids.has(q[1].split(':')[0]);
     return phrases.has(m[2]) || (m[1] === 'reddit_posts' && ids.has(m[2]));
   });
 }

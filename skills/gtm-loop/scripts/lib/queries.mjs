@@ -38,7 +38,7 @@ export function webDescription(offer, phrase) {
   const plain = (t) => String(t || '').replace(/["'`()\[\]{}]/g, ' ').replace(/\b(?:OR|AND)\b/g, ' ').replace(/\s+/g, ' ').trim();
   const ask = plain(phrase).replace(/[?.!]+$/, '');
   const who = plain(offer && offer.who);
-  return `A forum, Q&A or Reddit post where someone asks: ${ask}?${who ? ` The person asking is one of: ${who}, looking for help.` : ' The person asking is looking for help.'}`.slice(0, 400);
+  return `A forum, Q&A or community post where someone asks: ${ask}?${who ? ` The person asking is one of: ${who}, looking for help.` : ' The person asking is looking for help.'}`.slice(0, 400);
 }
 
 // The shape of an ask, checked on the post's own text before review: a question mark, or a first-person request marker. A post with

@@ -52,7 +52,7 @@ export function notifyLine(items) {
   if (!waiting.length) return null;
   const n = {};
   for (const i of waiting) n[i.reason] = (n[i.reason] || 0) + (i.count || 1);
-  const words = { approve_due: 'drafts parked in your drafts file for you to read', open_due: 'approved replies to open: say open them', follow_up_due: 'follow-ups waiting for your yes', update_waiting: 'update waiting for your yes', unknown_due: 'emails waiting for your word on whether they went', rewrite_due: 'queries waiting for your yes on a rewrite' };
+  const words = { approve_due: 'drafts parked in your drafts file for you to read', open_due: 'approved replies to open: say open them', follow_up_due: 'follow-ups waiting for your yes', update_waiting: 'update waiting for your yes', unknown_due: 'emails waiting for your word on whether they went' };
   return Object.entries(n).map(([k, c]) => `${c} ${words[k] || k}`).join(', ');
 }
 

@@ -147,7 +147,10 @@ export async function runNeed(client, need, { save = saveResult } = {}) {
   const offer = spec.id; // the spec answer carries the offer id at the top level; it pays once
   const text = JSON.stringify(spec);
   const sup = need.tool ? pickTool(need.tool, need.kind) : pickSupplier(text, need.kind);
-  if (!offer || !sup) return held(need, 'no_adapter', 'no known supplier in the spec; the next attended turn runs this search as the Haiku step');
+  if (!offer || !sup) {
+    const hosts = [...new Set((text.match(/\b(?:[a-z0-9-]+\.)+(?:com|ai|sh|dev|io|net|org|co|app|xyz)\b/gi) || []).map((h) => h.toLowerCase()))].slice(0, 3);
+    return held(need, 'no_adapter', `no known supplier for ${need.kind} in the spec${hosts.length ? ` (it names ${hosts.join(', ')})` : ''}; the router sent this need to another kind of seller`);
+  }
   let input;
   try {
     input = sup.mapper(need.fields);

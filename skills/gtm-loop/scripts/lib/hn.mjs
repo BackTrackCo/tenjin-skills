@@ -6,7 +6,8 @@ import { loadState, updateState } from './store.mjs';
 import { capOf } from './overlay.mjs';
 import { offersOf } from './offers.mjs';
 import { checkQuery } from './querycheck.mjs';
-import { funnelAdd } from './routed.mjs';
+import { funnelAdd, recordYield } from './routed.mjs';
+import { activeOf, labelOf } from './queryset.mjs';
 import { hnQuery, keywords } from './queries.mjs';
 
 // Hacker News comments and stories, free, through the HN Search API only (never news.ycombinator.com, which is only shown to the
@@ -60,8 +61,10 @@ export async function runHn({ fetch, profile, overlay, now = Date.now(), sleep =
   const since = sinceTsOf(loadState(), now);
   // A stored query (written by the model, checked by code) is one search per offer; without one, one search per phrase.
   const jobs = [];
+  const state0 = loadState();
   for (const offer of offersOf(profile)) {
-    if (offer.queries.hn && !checkQuery('hn', offer.queries.hn, offer).length) jobs.push({ offer, label: `query:${offer.id}:hn`, query: offer.queries.hn, phrase: offer.queries.hn });
+    const set = activeOf(profile, state0).filter((q) => q.offerId === offer.id && q.source === 'hn' && !checkQuery('hn', q.text, offer).length);
+    if (set.length) for (const q of set) jobs.push({ offer, label: labelOf(q.id), query: q.text, phrase: q.text });
     else for (const phrase of offer.phrases.slice(0, capOf(overlay, 'phrases_per_round') || undefined)) jobs.push({ offer, label: phrase, query: null, phrase });
   }
   const found = [];
@@ -79,8 +82,7 @@ export async function runHn({ fetch, profile, overlay, now = Date.now(), sleep =
       out.byPhrase[phrase] = r.added.length;
       const y = (state.phraseYield[label] ||= {});
       y.hn = (y.hn || 0) + r.added.length;
-      const qy = ((state.queryYield ||= {})[label.startsWith('query:') ? label : `${offer.id}:hn:${label}`] ||= { offerId: offer.id, source: 'hn', stored: label.startsWith('query:'), label, rounds: 0, found: 0, kept: 0, lastFound: 0, lastKept: 0, lastAt: null });
-      qy.rounds += 1; qy.found += posts.length; qy.kept += r.added.length; qy.lastFound = posts.length; qy.lastKept = r.added.length; qy.lastAt = new Date(now).toISOString();
+      recordYield(state, { query: label, fields: { offerId: offer.id }, kind: 'hn' }, posts.length, r.added.length, now, { dropped: r.dropped, repeated: r.repeated });
       funnelAdd(state, 'hn', { returned: posts.length, dropped: r.dropped, repeated: r.repeated, toReview: r.added.length });
     }
     state.hn.lastAt = new Date(now).toISOString();

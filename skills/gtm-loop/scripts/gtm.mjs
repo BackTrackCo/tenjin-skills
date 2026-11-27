@@ -39,6 +39,8 @@ import { fileURLToPath } from 'node:url';
 import { dropStaleHolds, staleHoldsLine } from './lib/codeid.mjs';
 import { checkQueries, checkQuery, SOURCES as QUERY_SOURCES } from './lib/querycheck.mjs';
 import { testQuery } from './lib/qtest.mjs';
+import { addQuery, removeQuery, pinQuery, queriesTable } from './lib/queryset.mjs';
+import { searchOptions } from './lib/searchopts.mjs';
 import { writeDrafts, syncDrafts, checkDraftsDir, draftsDir, parked, approvedReplies } from './lib/drafts.mjs';
 
 // G is this file. Every command prints one JSON object. State, rules and profile live in ~/.tenjin-skills/gtm-loop/.
@@ -156,6 +158,13 @@ register('start', ({ sub, flags }) => {
     const patch = {};
     if (flags['email-mode']) patch.emailMode = flags['email-mode'];
     if (flags.frequency) patch.frequency = flags.frequency;
+    if (flags['searches-per-round'] !== undefined) {
+      const v = String(flags['searches-per-round']);
+      if (!(v === 'all' || /^[1-9]\d*$/.test(v))) return fail('searches-per-round is all or a whole number');
+      for (const r of loadOverlay().rules.filter((x) => x.effect === 'searches_per_round')) removeRule(r.id);
+      if (v !== 'all') addRule({ effect: 'searches_per_round', value: Number(v), words: `chosen at the start: at most ${v} searches a round` });
+      if (!Object.keys(patch).length) { updateState((s) => { s.start = { ...(s.start || {}), at: (s.start && s.start.at) || new Date().toISOString(), searchesPerRound: v }; }); return { recorded: loadState().start }; }
+    }
     if (flags.sources) patch.sources = flags.sources === 'all' ? ['x', 'reddit', 'linkedin', 'hn', 'web'] : flags.sources === 'social' ? ['x', 'reddit', 'linkedin'] : flags.sources === 'free' ? ['hn', 'web'] : fail('sources is all, social or free');
     if (!Object.keys(patch).length) return fail('start record needs --email-mode, --frequency or --sources');
     const next = setProfile(patch);
@@ -170,7 +179,7 @@ register('start', ({ sub, flags }) => {
 register('ask', ({ sub, args }) => {
   if (sub === 'start') {
     const st = loadState();
-    const ask = startQuestions({ rc: st.rc, pushSent: st.pushSent, settings: pushSettings() });
+    const ask = startQuestions({ rc: st.rc, pushSent: st.pushSent, settings: pushSettings(), searchOptions: searchOptions(readProfile(), st) });
     const bad = validateAsk(ask);
     if (bad.length) return fail(bad.join('; '));
     return ask;
@@ -398,7 +407,7 @@ register('batch', ({ sub, flags }) => {
 });
 // The queries the model wrote for each offer and source. Written in an attended turn, from the person's words; code checks every one
 // before it is saved and before every run, and refuses one that fails with the reason.
-register('queries', ({ sub, flags }) => {
+register('queries', ({ sub, args, flags }) => {
   const profile = readProfile();
   const offerId = typeof flags.offer === 'string' ? flags.offer : null;
   if (sub === 'set') {
@@ -414,9 +423,17 @@ register('queries', ({ sub, flags }) => {
     setProfile({ offers: profile.offers.map((o) => (o.id === offerId ? { ...o, queriesAsked: true } : o)) });
     return { declined: offerId, note: 'the queries code builds are used for this offer' };
   }
+  if (sub === 'add') {
+    const author = flags.author === 'person' ? 'person' : 'model';
+    if (author === 'person' && isActive(Date.now(), loadState()) && batchMode(loadState()) === 'unattended') return fail('a query of the person\'s own is added only in an attended turn, from their words');
+    if (typeof flags.source !== 'string' || typeof flags.text !== 'string') return fail('queries add --offer <id> --source <source> --text "<query>" [--author person]');
+    return updateState((s) => ({ added: addQuery(s, profile, { offerId, source: flags.source, text: flags.text, author, pinned: Boolean(flags.pin) }) }));
+  }
+  if (sub === 'remove') return updateState((s) => ({ removed: removeQuery(s, flags.id || args[1] || fail('queries remove <id>')).id }));
+  if (sub === 'pin' || sub === 'unpin') return updateState((s) => ({ [sub]: pinQuery(s, flags.id || args[1] || fail(`queries ${sub} <id>`), sub === 'pin').id }));
+  // The table: the query text and the counts, never a post. The model writes variants from this and the offer.
   const st = loadState();
-  return { offers: offersOf(profile).map((o) => ({ id: o.id, queries: o.queries, tests: Object.fromEntries(QUERY_SOURCES.map((s) => [s, (st.queryTests || {})[`query:${o.id}:${s}`] || null]).filter(([, v]) => v)), yield: Object.values(st.queryYield || {}).filter((y) => y.offerId === o.id) })) };
-});
+  return { offers: queriesTable(st, profile), tests: st.queryTests || {} };});
 // One query, run once, in the attended turn: the count, what each filter drops, three sample lines, and the cost.
 register('query', async ({ sub, args, flags }) => {
   if (sub !== 'test') return fail('query test <offer id> <source> [--query "<draft text>"]');

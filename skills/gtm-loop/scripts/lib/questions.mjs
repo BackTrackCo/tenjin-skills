@@ -69,7 +69,7 @@ export const EMAIL_MODE_OF = { 'Ask me for each email (Recommended)': 'ask', 'Ma
 export const SOURCES_OF = { 'Every source (Recommended)': ['x', 'reddit', 'linkedin', 'hn', 'web'], 'X, Reddit and LinkedIn only': ['x', 'reddit', 'linkedin'], 'Hacker News and the web only': ['hn', 'web'] };
 
 // The start, after the person said what they sell and edited the phrases: one call, three questions.
-export function startQuestions({ rc = 'unknown', pushSent = false, settings = {} } = {}) {
+export function startQuestions({ rc = 'unknown', pushSent = false, settings = {}, searchOptions = null } = {}) {
   return {
     questions: [
       q('Email', 'How should emails go out?', [
@@ -87,6 +87,7 @@ export function startQuestions({ rc = 'unknown', pushSent = false, settings = {}
         { label: 'X, Reddit and LinkedIn only', description: 'Social posts only; Hacker News and the web are left out.' },
         { label: 'Hacker News and the web only', description: 'The free sources only: Hacker News search and one web-search step.' },
       ]),
+      ...(searchOptions ? [q('Searches', 'How many searches should each round run?', searchOptions)] : []),
     ],
     reminder: rcReminder({ rc, pushSent, settings }),
   };

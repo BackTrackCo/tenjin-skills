@@ -49,6 +49,7 @@ export function checkQuery(source, text, offer = {}) {
     if (/\b(OR|AND|NOT)\b/.test(text)) bad.push('the web query is a plain description: no OR, AND or NOT');
     if (/(^|\s)-\w/.test(text)) bad.push('the web query is a plain description: no minus operators');
     if (/\b[a-z_]+:\S/i.test(text)) bad.push('the web query is a plain description: no operators');
+    if (/\b(reddit|twitter|linkedin|quora|hacker news)\b/i.test(text)) bad.push('the web query names no other source: the router would send it to that source\'s seller, not the web search (the discussion sites are asked for by code)');
     if (words(text).length < 6) bad.push('describe the post to find in at least six words');
   } else {
     if (quotes) bad.push(`a ${source} query is key words: no quotes`);

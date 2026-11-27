@@ -36,6 +36,8 @@ export function emptyState() {
     queryYield: {},
     funnel: { at: null, sources: {} },
     queryTests: {},
+    queries: {},
+    queryCounter: 0,
     spend: [],
     routed: { lastSearchAt: null, lastCost: null, roundLock: null },
     hn: { lastAt: null },

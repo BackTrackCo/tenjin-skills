@@ -10,6 +10,7 @@ import { offersOf, phrasePairs, liveHeld } from './offers.mjs';
 import { codeId } from './codeid.mjs';
 import { xQuery, redditQuery, linkedinQuery, webDescription } from './queries.mjs';
 import { checkQuery } from './querycheck.mjs';
+import { activeOf, querySetOf, outcomeOf, labelOf, retireStale } from './queryset.mjs';
 
 // Searches and lookups run in code in the watcher, because their inputs are fixed by code, so a model step would cost Claude usage
 // and add no judgment. Each need is sent to the router as plain text and the router picks the seller and applies the person's
@@ -42,33 +43,48 @@ function builtNeed(kind, offer, phrase, base) {
   if (kind === 'linkedin_posts') return fillNeed(kind, { ...base, phrase, query: linkedinQuery(phrase) });
   return fillNeed(kind, { ...base, phrase, query: webDescription(offer, phrase), mode: 'discussion' });
 }
-export function queryRefusals(profile) {
+export function queryRefusals(profile, state = null) {
   const out = [];
-  for (const o of offersOf(profile)) for (const [src, text] of Object.entries(o.queries || {})) {
-    const bad = checkQuery(src, text, o);
-    if (bad.length) out.push({ offerId: o.id, src, bad });
+  for (const q of querySetOf(profile, state)) {
+    if (q.status !== 'active') continue;
+    const o = offersOf(profile).find((x) => x.id === q.offerId);
+    const bad = checkQuery(q.source, q.text, o);
+    if (bad.length) out.push({ offerId: q.offerId, src: q.source, id: q.id, bad });
   }
   return out;
 }
+const rank = (state, n) => (n.priority.pinned ? 1e6 : 0) + (n.priority.kept || 0) * 100 - (n.priority.age || 0);
 export function postNeeds({ profile, overlay, state, now = Date.now() }) {
   const kinds = postNeedKinds(profile.sources);
   const since = sinceOf(state, now);
   const cap = capOf(overlay, 'phrases_per_round');
+  const active = activeOf(profile, state);
   let needs = [];
   for (const offer of offersOf(profile)) {
     for (const kind of kinds) {
       const src = SRC_OF[kind];
       const base = { since, offerId: offer.id };
-      const stored = offer.queries[src];
-      if (stored) {
-        if (checkQuery(src, stored, offer).length) continue; // refused: named in a held line, the model rewrites it
-        const n = kind === 'reddit_posts' ? fillNeed(kind, { ...base, phrase: queryLabel(offer.id, src), query: stored, subreddits: offer.subreddits.join(', ') }) : fillNeed(kind, { ...base, phrase: queryLabel(offer.id, src), query: stored, ...(kind === 'web_research' ? { mode: 'discussion' } : {}) });
-        needs.push(n);
+      const set = active.filter((q) => q.offerId === offer.id && q.source === src);
+      if (set.length) {
+        // Every active query runs, the person's own and pinned ones first, then the ones that kept the most.
+        for (const q of set) {
+          if (checkQuery(src, q.text, offer).length) continue; // refused: named in a held line
+          const f = { ...base, phrase: labelOf(q.id), query: q.text };
+          if (kind === 'reddit_posts') f.subreddits = offer.subreddits.join(', ');
+          if (kind === 'web_research') f.mode = 'discussion';
+          const n = fillNeed(kind, f);
+          n.priority = { pinned: q.pinned, kept: outcomeOf(state, labelOf(q.id)).kept, age: q.addedAt ? Date.parse(q.addedAt) / 1e11 : 0 };
+          needs.push(n);
+        }
       } else {
-        for (const phrase of offer.phrases.slice(0, cap || undefined)) { const n = builtNeed(kind, offer, phrase, base); if (n) needs.push(n); }
+        for (const phrase of offer.phrases.slice(0, cap || undefined)) { const n = builtNeed(kind, offer, phrase, base); if (n) { n.priority = { pinned: false, kept: 0, age: 0 }; needs.push(n); } }
       }
     }
   }
+  needs.sort((a, b) => rank(state, b) - rank(state, a));
+  // The person's own caps: searches per round, then searches per day.
+  const perRound = capOf(overlay, 'searches_per_round');
+  if (perRound !== null) needs = needs.slice(0, perRound);
   const perDay = capOf(overlay, 'searches_per_day');
   if (perDay !== null) {
     const today = (state.spend || []).filter((s) => now - Date.parse(s.at) < DAY && s.search).length;
@@ -112,6 +128,7 @@ const skippedToday = (state, need, now) => (state.held || []).some((h) => h.key 
 export async function runPostRound({ profile, overlay, client = new RouterClient(), now = Date.now(), save, only = null }) {
   const roundsCap = capOf(overlay, 'rounds_per_day');
   if (!only && roundsCap !== null && (loadState().rounds || []).filter((r) => now - Date.parse(r.at) < DAY).length >= roundsCap) return { skipped: 'rounds_per_day', needs: 0, added: 0 };
+  if (!only) updateState((s) => { retireStale(s, profile, now); });
   let needs = postNeeds({ profile, overlay, state: loadState(), now });
   if (only) {
     needs = needs.filter((n) => heldKey(n) === only);
@@ -120,7 +137,7 @@ export async function runPostRound({ profile, overlay, client = new RouterClient
   updateState((s) => {
     s.held = liveHeld(s.held, profile);
     s.held = s.held.filter((h) => h.status !== 'query_refused');
-    for (const r of queryRefusals(profile)) s.held.push({ key: `need:query:${r.offerId}:${r.src}`, reason: 'need_held', status: 'query_refused', codeId: codeId(), detail: `the stored ${r.src} query for ${r.offerId} was refused: ${r.bad.join('; ')}. The model rewrites it with the person, in an attended turn` });
+    for (const r of queryRefusals(profile, s)) s.held.push({ key: `need:query:${r.id}`, reason: 'need_held', status: 'query_refused', codeId: codeId(), detail: `the ${r.src} query ${r.id} was refused: ${r.bad.join('; ')}. Remove it (G queries remove) or add a corrected variant (G queries add)` });
     if (!only) { s.search.roundAdded = 0; s.funnel = { at: new Date(now).toISOString(), sources: (s.funnel && s.funnel.sources && s.funnel.sources.hn) ? { hn: s.funnel.sources.hn } : {} }; }
     for (const o of noSubreddits(profile)) { s.held = s.held.filter((h) => h.key !== `need:reddit_posts:${o.id}`); s.held.push({ key: `need:reddit_posts:${o.id}`, reason: 'need_held', status: 'no_subreddits', codeId: codeId(), detail: `reddit_posts (${o.name || o.id}): no subreddits yet, so Reddit is not searched for this offer` }); }
   });
@@ -142,7 +159,7 @@ export async function runPostRound({ profile, overlay, client = new RouterClient
       const res = addPosts(state, r.ingest.posts, { profile, overlay, phrase: need.query, offerId: need.fields.offerId || null, subreddits: subsOf(profile, need.fields.offerId), now, cap: capOf(overlay, 'leads_per_round') === null ? null : Math.max(0, capOf(overlay, 'leads_per_round') - state.search.roundAdded) });
       state.search.roundAdded += res.added.length;
       added += res.added.length;
-      recordYield(state, need, r.ingest.posts.length, res.added.length, now);
+      recordYield(state, need, r.ingest.posts.length + (r.ingest.droppedOld || 0), res.added.length, now, { dropped: res.dropped, repeated: res.repeated, tooOld: r.ingest.droppedOld || 0 });
       funnelAdd(state, SRC_NAME[need.kind] || need.kind, { returned: r.ingest.posts.length + (r.ingest.droppedOld || 0), dropped: res.dropped, repeated: res.repeated, tooOld: r.ingest.droppedOld || 0, toReview: res.added.length });
       const y = (state.phraseYield[need.query] ||= {});
       for (const k of res.added) y[state.leads[k].source] = (y[state.leads[k].source] || 0) + 1;
@@ -220,8 +237,15 @@ export async function runIdentityReads({ client = new RouterClient(), now = Date
 // How many leads each query found and kept, per round and in total. A query that kept nothing for a round is named in the report and
 // waits for the person's yes on a rewrite: nothing is rewritten by itself.
 export const yieldKey = (need) => (String(need.query).startsWith('query:') ? need.query : `${need.fields.offerId || 'main'}:${SRC_OF[need.kind] || need.kind}:${need.query}`);
-export function recordYield(state, need, found, kept, now) {
-  const y = ((state.queryYield ||= {})[yieldKey(need)] ||= { offerId: need.fields.offerId || null, source: SRC_OF[need.kind] || need.kind, stored: String(need.query).startsWith('query:'), label: need.query, rounds: 0, found: 0, kept: 0, lastFound: 0, lastKept: 0, lastAt: null });
+export function recordYield(state, need, found, kept, now, { dropped = [], repeated = 0, tooOld = 0 } = {}) {
+  const y = ((state.queryYield ||= {})[yieldKey(need)] ||= { offerId: need.fields.offerId || null, source: SRC_OF[need.kind] || need.kind, stored: String(need.query).startsWith('query:'), label: need.query, rounds: 0, found: 0, kept: 0, lastFound: 0, lastKept: 0, lastAt: null, passed: {}, history: [] });
   y.rounds += 1; y.found += found; y.kept += kept; y.lastFound = found; y.lastKept = kept; y.lastAt = new Date(now).toISOString();
-  y.rewriteAskedAt = kept > 0 ? null : y.rewriteAskedAt || null;
+  const drops = {};
+  for (const x of dropped) { const k = x.reason.replace(/:.*$/, ''); drops[k] = (drops[k] || 0) + 1; }
+  if (repeated) drops.duplicate = repeated;
+  if (tooOld) drops.too_old = tooOld;
+  y.passed ||= {};
+  for (const [k, n] of Object.entries(drops)) y.passed[k] = (y.passed[k] || 0) + n; // what each filter dropped, in total
+  (y.history ||= []).push({ at: y.lastAt, results: found, dropped: drops, toReview: kept });
+  if (y.history.length > 20) y.history.splice(0, y.history.length - 20);
 }

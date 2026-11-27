@@ -138,7 +138,8 @@
     "phrases_per_round",
     "rounds_per_day",
     "notify_off",
-    "note"
+    "note",
+    "searches_per_round"
   ],
   "capEffects": [
     "leads_per_round",
@@ -146,7 +147,8 @@
     "searches_per_day",
     "companies_per_search",
     "phrases_per_round",
-    "rounds_per_day"
+    "rounds_per_day",
+    "searches_per_round"
   ],
   "hashExcluded": [
     "note",
@@ -156,7 +158,8 @@
     "searches_per_day",
     "companies_per_search",
     "phrases_per_round",
-    "rounds_per_day"
+    "rounds_per_day",
+    "searches_per_round"
   ],
   "sweep": {
     "defaultHour": 7,
@@ -176,15 +179,14 @@
     "follow_up_due",
     "update_waiting",
     "unknown_due",
-    "rewrite_due",
-    "open_due"
+    "open_due",
+    "queries_due"
   ],
   "waitsForPerson": [
     "approve_due",
     "follow_up_due",
     "update_waiting",
     "unknown_due",
-    "rewrite_due",
     "open_due"
   ],
   "freeMail": [

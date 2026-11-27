@@ -11,10 +11,10 @@ export const STALE_MS = 2 * 60 * 60 * 1000;
 export const BATCH_DENIED = [
   ['rules', 'add'], ['rules', 'remove'], ['consent', 'record'], ['consent', 'revoke'], ['profile', 'set'], ['phrases', 'set'],
   ['dryrun', 'confirm'], ['batch', 'open'], ['email', 'connector'], ['email', 'approve'], ['release', 'apply'],
-  ['suppress', 'remove'], ['reply', 'unknown'], ['queries', 'set'], ['queries', 'decline'], ['query', 'test'],
+  ['suppress', 'remove'], ['reply', 'unknown'], ['queries', 'set'], ['queries', 'decline'], ['queries', 'remove'], ['queries', 'pin'], ['queries', 'unpin'], ['query', 'test'],
 ];
 // Also refused while an unattended batch is open: nobody is there to say yes.
-export const UNATTENDED_DENIED = [['queries', null], ['query', null], ['pick', null], ['approve', null], ['ask', null], ['open', null], ['sent', null], ['follow-up', null], ['replied', null], ['email', 'unknown']];
+export const UNATTENDED_DENIED = [['query', null], ['pick', null], ['approve', null], ['ask', null], ['open', null], ['sent', null], ['follow-up', null], ['replied', null], ['email', 'unknown']];
 export const isBatchDenied = (cmd, sub, mode = null) => BATCH_DENIED.some(([c, s]) => c === cmd && (s === null || s === sub)) || (mode === 'unattended' && UNATTENDED_DENIED.some(([c, s]) => c === cmd && (s === null || s === sub)));
 
 export const batchOf = (state = loadState()) => state.batch || null;

@@ -1,5 +1,6 @@
 import { liveHeld, offersOf } from './offers.mjs';
 import { draftsDir, parked, approvedReplies } from './drafts.mjs';
+import { querySetOf, outcomeOf, labelOf } from './queryset.mjs';
 import { REFUSED_BY_CODE as REFUSED } from './codeid.mjs';
 import { fmt, hintLines, pricesCheckedAt } from './prices.mjs';
 
@@ -39,10 +40,24 @@ export function report(state, profile = {}, now = Date.now()) {
     const dr = ['link_only', 'not_an_ask', 'not_discussion', 'outside_subreddits', 'too_old', 'duplicate'].filter((k) => f[k]).map((k) => `${k.replace(/_/g, ' ')} ${f[k]}`);
     lines.push(`Last round, ${src}: ${f.searches} search${f.searches === 1 ? '' : 'es'}, ${f.returned} returned${dr.length ? `, dropped: ${dr.join(', ')}` : ''}; ${f.toReview} sent to review, ${kept} kept.`);
   }
-  // How many leads each query found and kept; a query that kept nothing last round waits for the person's yes on a rewrite.
-  const yq = Object.values(state.queryYield || {});
-  if (yq.length) lines.push(`Per query (found, kept): ${yq.map((y) => `${y.stored ? `${y.offerId} ${y.source} query` : `${y.offerId} ${y.source} "${String(y.label).slice(0, 30)}"`} ${y.found}, ${y.kept}`).join('; ')}.`);
-  for (const y of yq.filter((x) => x.rounds > 0 && x.lastKept === 0)) lines.push(`Query kept nothing last round: ${y.offerId} ${y.source}${y.stored ? '' : ` "${String(y.label).slice(0, 40)}"`}. The model proposes a rewrite for the person's yes in an attended turn; nothing is rewritten by itself.`);
+  // The Queries section, per source: the best queries by leads kept, the variants added this round and the retired ones. Nothing here waits
+  // for the person: the model adds variants itself where no query kept a lead, and code retires a model query that kept nothing for two rounds.
+  const set = querySetOf(profile, state);
+  const bySource = {};
+  for (const q of set) (bySource[q.source] ||= []).push(q);
+  for (const [src, qs] of Object.entries(bySource)) {
+    const stat = (q) => { const y = (state.queryYield || {})[labelOf(q.id)] || {}; const o = outcomeOf(state, labelOf(q.id)); return { q, results: y.found || 0, kept: o.kept, toReview: o.toReview }; };
+    const best = qs.filter((q) => q.status === 'active').map(stat).sort((a, b) => b.kept - a.kept || b.results - a.results).slice(0, 3);
+    const added = qs.filter((q) => !q.fromProfile && q.author === 'model' && q.addedRound === (state.rounds || []).length && q.status === 'active');
+    const retired = qs.filter((q) => q.status === 'retired');
+    const parts = [];
+    if (best.length) parts.push(`best: ${best.map((b) => `${b.q.id} kept ${b.kept} of ${b.results} results`).join(', ')}`);
+    if (added.length) parts.push(`added this round: ${added.map((q) => q.id).join(', ')}`);
+    if (retired.length) parts.push(`retired: ${retired.map((q) => `${q.id} (${q.retiredWhy || 'retired'})`).join(', ')}`);
+    lines.push(`Queries, ${src}: ${parts.join('; ')}.`);
+  }
+  const yq = Object.values(state.queryYield || {}).filter((y) => !y.stored);
+  if (yq.length) lines.push(`Built queries (found, to review): ${yq.map((y) => `${y.offerId} ${y.source} "${String(y.label).slice(0, 30)}" ${y.found}, ${y.kept}`).join('; ')}.`);
   // The queries code builds when none is stored are loose on purpose and have never been tried live.
   const fallback = [];
   for (const o of offersOf(profile)) for (const src of ['x', 'reddit', 'linkedin', 'web', 'hn']) if (o.phrases.length && !o.queries[src] && (!profile.sources || profile.sources.includes(src))) fallback.push(`${o.id} ${src}`);
