@@ -43,6 +43,9 @@ export function emptyState() {
     claims: {},
     left: {},
     handouts: [],
+    outreach: [],
+    reviewHand: [],
+    writeHand: [],
     consentLog: [],
   };
 }
@@ -152,9 +155,13 @@ export function applyOp(state, op) {
       if (op.to === 'skipped') lead.skipReason = String(op.reason || 'no reason given').slice(0, 160);
       break;
     }
-    case 'draft':
-      lead.draft = { channel: op.channel, subject: op.subject || null, text: String(op.text), whyNow: String(op.whyNow || ''), sourceUrl: op.sourceUrl || lead.url, writtenAt: op.at || new Date().toISOString() };
+    case 'draft': {
+      // One draft per channel the person may pick; `draft` is the one for the proposed channel.
+      const d = { channel: op.channel, subject: op.subject || null, text: String(op.text), whyNow: String(op.whyNow || ''), sourceUrl: op.sourceUrl || lead.url, writtenAt: op.at || new Date().toISOString() };
+      lead.drafts = { ...(lead.drafts || {}), [op.channel]: d };
+      if (!lead.draft || op.channel === lead.channelProposed) lead.draft = d;
       break;
+    }
     case 'signal': {
       const k = op.kind + (op.reason ? `:${op.reason}` : '');
       state.signals.counts[k] = (state.signals.counts[k] || 0) + 1;

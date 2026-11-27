@@ -20,6 +20,9 @@ import { report } from './lib/report.mjs';
 import { startQuestions, validateAsk, EMAIL_MODE_OF, SOURCES_OF } from './lib/questions.mjs';
 import { pushSettings } from './lib/pushsettings.mjs';
 import { hintLines, outdatedLine } from './lib/prices.mjs';
+import { buildRoundRequest, parseRoundResult, applyWriteResult } from './lib/writing.mjs';
+import { pickQuestions, pickLead, openPlan, markSentSocial } from './lib/outreach.mjs';
+import { openPage, copyToClipboard } from './lib/open.mjs';
 
 // G is this file. Every command prints one JSON object. State, rules and profile live in ~/.tenjin-skills/gtm-loop/.
 export function parseArgs(argv) {
@@ -82,7 +85,7 @@ register('work', ({ flags }) => {
   updateState((s) => logRun(s, 'work', wl.items.length));
   return { items: wl.items, handed: wl.handed.map((i) => i.key), notify: wl.notify };
 });
-register('leave', ({ rest, flags }) => leave(rest[0], flags.reason));
+register('leave', ({ args, flags }) => leave(args[0], flags.reason));
 
 register('phrases', ({ sub, rest, flags }) => {
   if (sub !== 'set') return { phrases: readProfile().phrases || [] };
@@ -117,7 +120,44 @@ register('ask', ({ sub }) => {
     if (bad.length) return fail(bad.join('; '));
     return ask;
   }
+  if (sub === 'pick') {
+    const groups = pickQuestions(loadState());
+    if (!groups.length) return { groups: [], note: 'no drafts wait for a pick' };
+    for (const g of groups) { const bad = validateAsk(g); if (bad.length) return fail(bad.join('; ')); }
+    return { groups, note: 'Make one AskUserQuestion call per group, in order. Record each answer with G pick <key> <channel|skip>: the channel is labels[key][<the label without (Recommended)>].' };
+  }
   return fail(`unknown ask: ${sub}`);
+});
+
+register('write-prompt', () => {
+  const { request, keys, dropped } = buildRoundRequest({ state: loadState(), profile: readProfile(), overlay: loadOverlay() });
+  if (!request) return { request: null, dropped, note: 'nothing to write this round' };
+  updateState((s) => { s.writeHand = keys; for (const d of dropped) if (s.leads[d.key] && d.reason.startsWith('suppressed')) s.leads[d.key].status = 'suppressed'; logRun(s, 'writer', keys.length); });
+  return { ...request, keys, dropped, note: 'Run this as one Agent call with the model and prompt given, save its reply text to a file, then run G write-result --file <file>.' };
+});
+register('write-result', ({ flags }) => {
+  if (!flags.file) return fail('write-result needs --file');
+  const parsed = parseRoundResult(fs.readFileSync(flags.file, 'utf8'));
+  if (!parsed.ok) return fail(`the result was refused: ${parsed.problem}`);
+  return updateState((s) => applyWriteResult(s, parsed, { keys: s.writeHand || [], profile: readProfile() }));
+});
+register('pick', ({ args }) => {
+  const [key, channel] = args;
+  if (!key || !channel) return fail('pick <key> <channel|skip>');
+  return updateState((s) => pickLead(s, key, channel));
+});
+register('open', ({ args }) => {
+  const key = args[0];
+  if (!key) return fail('open <key>');
+  const plan = openPlan(loadState(), key);
+  const clip = copyToClipboard(plan.text);
+  const r = openPage(plan.url);
+  if (!r.ok) return { opened: false, why: r.why, text: plan.text, clipboard: clip, say: 'The page did not open. Show the person the text and the link.', link: plan.url };
+  return { opened: true, browser: r.browser, line: r.line || null, clipboard: clip, link: plan.url, text: plan.text, say: `The page is open in your Chrome${clip ? ' and the text is on your clipboard' : ''}. Press send yourself, then tell me: G sent ${key}.` };
+});
+register('sent', ({ args }) => {
+  if (!args[0]) return fail('sent <key>');
+  return updateState((s) => markSentSocial(s, args[0]));
 });
 
 register('search', async ({ sub, flags }) => {
