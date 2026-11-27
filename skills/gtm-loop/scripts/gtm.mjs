@@ -36,6 +36,7 @@ import { checkRelease, applyUpdate, recordRelease } from './lib/release.mjs';
 import { openBatch, closeBatch } from './lib/batch.mjs';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { dropStaleHolds, staleHoldsLine } from './lib/codeid.mjs';
 
 // G is this file. Every command prints one JSON object. State, rules and profile live in ~/.tenjin-skills/gtm-loop/.
 export function parseArgs(argv) {
@@ -98,9 +99,10 @@ register('work', ({ flags }) => {
   if (flags.unattended) openBatch({ mode: 'unattended' });
   // Old finished leads go; the suppression lists and the contacted ledger never do.
   updateState((s) => compact(s));
+  const staleHolds = updateState((s) => dropStaleHolds(s));
   const wl = workList({ commit: Boolean(flags.commit) });
   updateState((s) => logRun(s, 'work', wl.items.length));
-  return { items: wl.items, handed: wl.handed.map((i) => i.key), notify: wl.notify };
+  return { items: wl.items, handed: wl.handed.map((i) => i.key), notify: wl.notify, ...(staleHolds ? { note: staleHoldsLine(staleHolds) } : {}) };
 });
 register('leave', ({ args, flags }) => leave(args[0], flags.reason));
 
@@ -152,7 +154,8 @@ register('start', ({ sub, flags }) => {
     updateState((s) => { s.start = { at: new Date().toISOString(), emailMode: next.emailMode || null, frequency: next.frequency || null, sources: next.sources || null }; });
     return { recorded: loadState().start };
   }
-  return startStatus(profile, loadState());
+  const stale = updateState((s) => dropStaleHolds(s));
+  return { ...startStatus(profile, loadState()), ...(stale ? { note: staleHoldsLine(stale) } : {}) };
 });
 register('ask', ({ sub, args }) => {
   if (sub === 'start') {

@@ -7,6 +7,7 @@ import { addPosts, linkIdentity } from './dedupe.mjs';
 import { countryFrom } from './geo.mjs';
 import { linkedinSlugOf } from './platforms.mjs';
 import { offersOf, phrasePairs, liveHeld } from './offers.mjs';
+import { codeId } from './codeid.mjs';
 import { xQuery, redditQuery, linkedinQuery, webQuery } from './queries.mjs';
 
 // Searches and lookups run in code in the watcher, because their inputs are fixed by code, so a model step would cost Claude usage
@@ -62,7 +63,7 @@ const heldKey = (need) => `need:${need.kind}:${need.query || ''}`;
 export function recordHeld(state, need, r) {
   const key = heldKey(need);
   state.held = state.held.filter((h) => h.key !== key);
-  state.held.push({ key, reason: 'need_held', status: r.status, detail: `${need.kind}${need.query ? ` (${need.query})` : ''}: ${r.reason}` });
+  state.held.push({ key, reason: 'need_held', status: r.status, codeId: codeId(), detail: `${need.kind}${need.query ? ` (${need.query})` : ''}: ${r.reason}` });
 }
 export const clearHeld = (state, need) => { state.held = state.held.filter((h) => h.key !== heldKey(need)); };
 
@@ -74,7 +75,7 @@ export async function runPostRound({ profile, overlay, client = new RouterClient
   updateState((s) => {
     s.held = liveHeld(s.held, profile);
     s.search.roundAdded = 0;
-    for (const o of noSubreddits(profile)) { s.held = s.held.filter((h) => h.key !== `need:reddit_posts:${o.id}`); s.held.push({ key: `need:reddit_posts:${o.id}`, reason: 'need_held', status: 'no_subreddits', detail: `reddit_posts (${o.name || o.id}): no subreddits yet, so Reddit is not searched for this offer` }); }
+    for (const o of noSubreddits(profile)) { s.held = s.held.filter((h) => h.key !== `need:reddit_posts:${o.id}`); s.held.push({ key: `need:reddit_posts:${o.id}`, reason: 'need_held', status: 'no_subreddits', codeId: codeId(), detail: `reddit_posts (${o.name || o.id}): no subreddits yet, so Reddit is not searched for this offer` }); }
   });
   let added = 0;
   const out = await runRound(needs, {
