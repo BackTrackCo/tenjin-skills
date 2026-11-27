@@ -64,6 +64,7 @@ export function validateProfile(p) {
   if (has('buyer')) checkBuyer(p.buyer, 'buyer');
   if (has('phrases')) need(strList(p.phrases) && p.phrases.every((s) => s.trim()), 'phrases must be a list of text');
   if (has('subreddits')) need(strList(p.subreddits), 'subreddits must be a list of subreddit names');
+  if (has('drafts')) need(p.drafts && typeof p.drafts === 'object' && (p.drafts.dir === undefined || isStr(p.drafts.dir)), 'drafts must be {dir: text}');
   if (has('sources')) need(strList(p.sources) && p.sources.every((s) => SOURCES.includes(s)), `sources must be a list from ${SOURCES.join(', ')}`);
   if (has('frequency')) need(['daily', 'twice_daily', 'weekly'].includes(p.frequency), 'frequency must be daily, twice_daily or weekly');
   if (has('emailMode')) need(EMAIL_MODES.includes(p.emailMode), `emailMode must be one of ${EMAIL_MODES.join(', ')}`);

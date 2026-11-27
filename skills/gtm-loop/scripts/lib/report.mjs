@@ -1,4 +1,5 @@
 import { liveHeld, offersOf } from './offers.mjs';
+import { draftsDir, parked, approvedReplies } from './drafts.mjs';
 import { REFUSED_BY_CODE as REFUSED } from './codeid.mjs';
 import { fmt, hintLines, pricesCheckedAt } from './prices.mjs';
 
@@ -19,6 +20,8 @@ export function report(state, profile = {}, now = Date.now()) {
     `Drafts waiting for your pick: ${count(state, 'drafted')}. Picked: ${count(state, 'picked')}. Approved emails: ${count(state, 'approved')}.`,
     `Sent: ${count(state, 'contacted')}. Replies: ${count(state, 'replied')}. Opt-outs and bounces: ${optOuts}. Suppressed: ${Object.keys(state.suppress.ids).length} identities, ${Object.keys(state.suppress.domains).length} domains.`,
   ];
+  if (parked(state).length) lines.push(`${parked(state).length} draft${parked(state).length === 1 ? '' : 's'} in ${draftsDir(profile)}. Nothing waits on them.`);
+  if (approvedReplies(state).length) lines.push(`${approvedReplies(state).length} approved repl${approvedReplies(state).length === 1 ? 'y' : 'ies'} to open: say open them.`);
   if (spend.length) lines.push(`Router spend, last 7 days: ${fmt(Math.round(cents * 10) / 10)}${leadsFound ? `, about ${fmt(Math.round((cents / leadsFound) * 10) / 10)} per new lead` : ''} (prices checked ${pricesCheckedAt()}).`);
   const per = {};
   for (const s of spend.filter((x) => x.search)) { const e = (per[s.kind] ||= { n: 0, cents: 0 }); e.n++; e.cents += s.cents || 0; }

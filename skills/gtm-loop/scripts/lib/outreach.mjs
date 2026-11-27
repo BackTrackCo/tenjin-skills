@@ -17,9 +17,15 @@ export const writeItems = ({ state }) => {
   const list = writeCandidates(state);
   return list.length ? [{ key: 'write', reason: 'write_due', v: hashInt(list.map((l) => `${l.key}:${l.v}`).sort().join('|')), count: list.length }] : [];
 };
+// Drafts are parked in a Markdown file: nothing asks and nothing waits. The item only feeds the one notify line.
 export const approveItems = ({ state }) => {
   const list = Object.values(state.leads).filter((l) => l.status === 'drafted');
   return list.length ? [{ key: 'approve', reason: 'approve_due', v: hashInt(list.map((l) => `${l.key}:${l.v}`).sort().join('|')), count: list.length, waitsForPerson: true }] : [];
+};
+// Replies the person approved in the file: opened only in an attended turn, on their word.
+export const openItems = ({ state }) => {
+  const list = Object.values(state.leads).filter((l) => l.status === 'picked' && l.pick && l.pick.by === 'file' && l.pick.channel !== 'email');
+  return list.length ? [{ key: 'open', reason: 'open_due', v: hashInt(list.map((l) => l.key).sort().join('|')), count: list.length, waitsForPerson: true }] : [];
 };
 
 // ---- the pick question ----------------------------------------------------------------------------------------------

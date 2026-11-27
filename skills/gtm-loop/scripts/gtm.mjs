@@ -39,6 +39,7 @@ import { fileURLToPath } from 'node:url';
 import { dropStaleHolds, staleHoldsLine } from './lib/codeid.mjs';
 import { checkQueries, checkQuery, SOURCES as QUERY_SOURCES } from './lib/querycheck.mjs';
 import { testQuery } from './lib/qtest.mjs';
+import { writeDrafts, syncDrafts, checkDraftsDir, draftsDir, parked, approvedReplies } from './lib/drafts.mjs';
 
 // G is this file. Every command prints one JSON object. State, rules and profile live in ~/.tenjin-skills/gtm-loop/.
 export function parseArgs(argv) {
@@ -77,9 +78,10 @@ register('tenjin', () => {
   updateState((s) => { s.tenjin = { ...s.tenjin, status: h.status, version: h.version || null, checkedAt: new Date().toISOString() }; });
   return h;
 });
-register('profile', ({ sub, flags }) => {
+register('profile', ({ sub, args, flags }) => {
   if (!sub) return { profile: readProfile() };
   if (sub !== 'set') return fail('profile takes no sub-command or set');
+  if (flags.json === undefined && flags.file === undefined && args[1] === 'drafts.dir') return { profile: setProfile({ drafts: { dir: checkDraftsDir(args[2] || fail('profile set drafts.dir <folder>')) } }) };
   const patch = flags.json ? JSON.parse(flags.json) : flags.file ? readJsonFile(flags.file) : fail('profile set needs --json or --file');
   const bad = validateProfile(patch);
   if (bad.length) return fail(bad.join('; '));
@@ -102,9 +104,10 @@ register('work', ({ flags }) => {
   // Old finished leads go; the suppression lists and the contacted ledger never do.
   updateState((s) => compact(s));
   const staleHolds = updateState((s) => dropStaleHolds(s));
+  const synced = updateState((s) => syncDrafts(s, readProfile()));
   const wl = workList({ commit: Boolean(flags.commit) });
   updateState((s) => logRun(s, 'work', wl.items.length));
-  return { items: wl.items, handed: wl.handed.map((i) => i.key), notify: wl.notify, ...(staleHolds ? { note: staleHoldsLine(staleHolds) } : {}) };
+  return { items: wl.items, handed: wl.handed.map((i) => i.key), notify: wl.notify, ...(staleHolds ? { note: staleHoldsLine(staleHolds) } : {}), ...(synced.synced || synced.notes ? { drafts_synced: synced } : {}) };
 });
 register('leave', ({ args, flags }) => leave(args[0], flags.reason));
 
@@ -158,6 +161,7 @@ register('start', ({ sub, flags }) => {
     return { recorded: loadState().start };
   }
   const stale = updateState((s) => dropStaleHolds(s));
+  updateState((s) => syncDrafts(s, profile));
   return { ...startStatus(profile, loadState()), ...(stale ? { note: staleHoldsLine(stale) } : {}) };
 });
 register('ask', ({ sub, args }) => {
@@ -197,21 +201,34 @@ register('write-result', ({ flags }) => {
   if (!flags.file) return fail('write-result needs --file');
   const parsed = parseRoundResult(fs.readFileSync(flags.file, 'utf8'));
   if (!parsed.ok) return fail(`the result was refused: ${parsed.problem}`);
-  return updateState((s) => applyWriteResult(s, parsed, { keys: s.writeHand || [], profile: readProfile() }));
+  const profile = readProfile();
+  return updateState((s) => {
+    const r = applyWriteResult(s, parsed, { keys: s.writeHand || [], profile });
+    const d = writeDrafts(s, profile);
+    return { ...r, drafts: d, say: `${parked(s).length} draft${parked(s).length === 1 ? '' : 's'} in ${d.file}. Nothing waits: read and edit them on your own time, tick send or skip, then say you reviewed them.` };
+  });
+});
+register('drafts', ({ sub }) => {
+  const profile = readProfile();
+  if (sub === 'sync') return updateState((s) => syncDrafts(s, profile));
+  if (sub === 'write') return updateState((s) => writeDrafts(s, profile));
+  const st = loadState();
+  return { dir: draftsDir(profile), parked: parked(st).length, approvedReplies: approvedReplies(st).length };
 });
 register('pick', ({ args }) => {
   const [key, channel] = args;
   if (!key || !channel) return fail('pick <key> <channel|skip>');
   return updateState((s) => pickLead(s, key, channel));
 });
-register('open', ({ args }) => {
-  const key = args[0];
-  if (!key) return fail('open <key>');
+register('open', ({ args, flags }) => {
+  // --approved: the next reply the person ticked in the drafts file. Attended turns only; the person presses send.
+  const key = flags.approved ? ((approvedReplies(loadState())[0] || {}).key || fail('no approved replies to open')) : args[0];
+  if (!key) return fail('open <key> or open --approved');
   const plan = openPlan(loadState(), key);
   const clip = copyToClipboard(plan.text);
   const r = openPage(plan.url, { web: plan.channel === 'web_reply' }); // a discussion page found by search: the person opens it and answers there
   if (!r.ok) return { opened: false, why: r.why, text: plan.text, clipboard: clip, say: 'The page did not open. Show the person the text and the link.', link: plan.url };
-  return { opened: true, browser: r.browser, line: r.line || null, clipboard: clip, link: plan.url, text: plan.text, say: `The page is open in your Chrome${clip ? ' and the text is on your clipboard' : ''}. Press send yourself, then tell me: G sent ${key}.` };
+  return { opened: true, browser: r.browser, line: r.line || null, clipboard: clip, link: plan.url, text: plan.text, say: `The page is open in your Chrome${clip ? ' and the text is on your clipboard' : ''}. Press send yourself, then tell me: G sent ${key}.`, remaining: approvedReplies(loadState()).length - 1 };
 });
 register('sent', ({ args }) => {
   if (!args[0]) return fail('sent <key>');

@@ -88,7 +88,7 @@ A release tag installs the same way, for example `BackTrackCo/tenjin-skills#gtm-
 2. Code finds leads. Posts that ask for what you sell come from X, Reddit, LinkedIn, Hacker News and the web. People who fit your buyer come from company and people search, when you describe your buyer. With Tenjin, the searches run in code at the router's price; without it, one web-search step runs and Hacker News is free.
 3. Code removes duplicates and drops anyone you already contacted or who opted out. A review scores fit, intent and timing, with one line that quotes the post.
 4. One writer call drafts a first message per lead, from the signal, your offer and your writing rules.
-5. You pick the leads and the channel in one question. A reply on X, Reddit, LinkedIn or Hacker News opens in your own Chrome with the text ready, and you press send. An email goes out through your Gmail connector only after your yes on that email.
+5. The drafts are parked in a dated Markdown file (`drafts/YYYY-MM-DD.md` in the state folder, or a folder you set). Nothing waits on them: read and edit them on your own time, tick `send` or `skip` on each, change its channel if you like, and say you reviewed them. A reply on X, Reddit, LinkedIn or Hacker News then opens in your own Chrome, when you say so, with the text ready, and you press send. An email goes out through your Gmail connector only after your `send` on that email, which names its address.
 
 ### Send by email
 

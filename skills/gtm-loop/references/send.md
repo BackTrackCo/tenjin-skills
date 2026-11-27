@@ -1,10 +1,14 @@
 # Send
 
-## Approve and send on a social site
+## Drafts are parked in a Markdown file
 
-`approve_due` waits for the person; it never wakes you. In an attended turn, `G ask pick` builds one question per group of up to four drafted leads, with the channel as the options (reply where they posted, a message, a LinkedIn note, email, skip). Make one AskUserQuestion call per group, in order, and record each answer: `G pick <key> <channel|skip>` (the channel for a label is in `labels[key]`). Code checks suppression and the contacted ledger again at the pick and refuses a person who opted out or was already written to.
+Nothing asks about a draft and nothing waits on one. After `G write-result`, code writes (or adds to) the day's file, `drafts/YYYY-MM-DD.md` in the state folder, or in the folder the person set with `G profile set drafts.dir <folder>` (it must exist and be writable). Say "N drafts in <full path>" and carry on: start the watcher again at once.
 
-For a picked reply on X, Reddit, LinkedIn or Hacker News: `G open <key>` opens the page in the person's own Google Chrome and puts the text on the clipboard. On X the page is the reply page with the text filled in (the clipboard holds it too). Say its `say` line. The person presses send and tells you: then `G sent <key>`. Never click, fill or script on those sites, and never use a Claude in Chrome tool for them. `G open` and `G sent` are refused in an unattended turn.
+Each lead has a section with a stable id: its source link, the author as the platform shows it, the reason, the post as a short blockquote, a `Channel:` line (the person may change it to another channel listed under `Allowed:`), the draft in a fenced block they edit, and one line, `Decision: [ ] send  [ ] skip`. An email section also names the address it goes to and says the footer is added by code.
+
+The person reads and edits on their own time. `G drafts sync` (run at every start and wake by `G work`, and when they say they reviewed the drafts) reads their marks back. Only the `Channel:` line, the `Decision:` line and the text in the fenced blocks count; a quoted post never does, and code escapes control-like lines in it. A section is marked with its outcome and the person's own text is never rewritten or deleted. A new round only adds new sections to that day's file. Code writes a `Note (code):` line when a mark is not ready (too long, no address yet, both boxes ticked), and the person fixes it and ticks again.
+
+A `send` on an email is the person's yes for that exact address and edited text. Code re-checks the footer, the opt-out line and suppression, and `email_due` follows: send exactly what `G email next` hands out. A `send` on a social reply records the yes and becomes `open_due`: the report says "N approved replies to open: say open them". It waits for the person. In an attended turn, when they say so, `G open --approved` opens the next one in their own Google Chrome with the text on the clipboard; they press send and tell you, then `G sent <key>`. A woken turn opens nothing. Never click, fill or script on those sites, and never use a Claude in Chrome tool for them.
 
 ## Email
 

@@ -2,7 +2,7 @@ import { registerCollector } from './work.mjs';
 import { registerStep } from './watcher.mjs';
 import { loadOverlay } from './overlay.mjs';
 import { reviewItems, searchItems, searchStep } from './search.mjs';
-import { approveItems, writeItems } from './outreach.mjs';
+import { approveItems, openItems, writeItems } from './outreach.mjs';
 import { runIdentityReads } from './routed.mjs';
 import { emailItems } from './email-items.mjs';
 import { followUpItems } from './followup.mjs';
@@ -16,6 +16,7 @@ registerCollector(reviewItems);
 registerStep('search', ({ profile, now, fetchImpl, routerClient }) => searchStep({ profile, overlay: loadOverlay(), fetchImpl, now, routerClient }));
 registerCollector(writeItems);
 registerCollector(approveItems);
+registerCollector(openItems);
 // The profile reads of kept leads run in code once a search round is over, with Tenjin ready.
 registerStep('reads', async ({ routerClient, now }) => {
   if (loadState().tenjin.status === 'ready') await runIdentityReads({ client: routerClient, now });

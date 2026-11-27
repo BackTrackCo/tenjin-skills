@@ -137,6 +137,11 @@ export function recipientProblem(state, d, profile, overlay, { now = Date.now() 
   if (!String(s.name || '').trim()) return 'no_sender_name';
   const a = addressFor(state, lead);
   if (a.problem || lower(a.addr) !== lower(d.to)) return `address:${a.problem || 'changed'}`;
+  // The footer and the opt-out line are built by code and re-checked on the text that is about to go, whoever edited the body.
+  try {
+    const c = buildCandidate(state, lead, profile);
+    if (c.text !== d.text || !d.text.includes('Reply stop and I will not write again.')) return 'footer_changed';
+  } catch (e) { return `footer:${e.message}`; }
   const cap = capOf(overlay, 'emails_per_day');
   if (cap !== null && e.log.filter((x) => now - Date.parse(x.at) < DAY).length >= cap) return 'emails_per_day';
   return null;
