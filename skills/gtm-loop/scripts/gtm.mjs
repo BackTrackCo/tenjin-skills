@@ -27,13 +27,14 @@ import { runFitRound, addCompanies, unprocessed } from './lib/fit.mjs';
 import { buildCandidate, approveEmail, nextEmail, markSent, resolveUnknown, repliesDue, recordReply, unknownList, MODES, viaOf, emailState } from './lib/email.mjs';
 import { resolveAddress } from './lib/lookup.mjs';
 import { recordEmailConsent, revokeConsent, confirmDryRun, consentStatus } from './lib/consent.mjs';
-import { suppressPerson, suppressDomain, resolvePerson } from './lib/dedupe.mjs';
+import { suppressPerson, suppressDomain, resolvePerson, compact } from './lib/dedupe.mjs';
 import { emailQuestion, rcAtPush } from './lib/questions.mjs';
 import { followUpCandidates, startFollowUp, skipFollowUp, followUpQuestions, recordSocialReply } from './lib/followup.mjs';
 import { prepUnattended } from './lib/email-prep.mjs';
 import { checkRelease, applyUpdate, recordRelease } from './lib/release.mjs';
 import { openBatch, closeBatch } from './lib/batch.mjs';
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 // G is this file. Every command prints one JSON object. State, rules and profile live in ~/.tenjin-skills/gtm-loop/.
 export function parseArgs(argv) {
@@ -94,6 +95,8 @@ register('work', ({ flags }) => {
   cleanupStale();
   // A turn the watcher woke is unattended: nobody can say yes in it, so code refuses every command that needs a person's yes.
   if (flags.unattended) openBatch({ mode: 'unattended' });
+  // Old finished leads go; the suppression lists and the contacted ledger never do.
+  updateState((s) => compact(s));
   const wl = workList({ commit: Boolean(flags.commit) });
   updateState((s) => logRun(s, 'work', wl.items.length));
   return { items: wl.items, handed: wl.handed.map((i) => i.key), notify: wl.notify };
@@ -405,6 +408,6 @@ register('watch', async () => {
 });
 register('ops', ({ flags }) => applyOps(flags.file ? readJsonFile(flags.file) : fail('ops needs --file')));
 
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname)) {
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
   main().then((code) => { process.exitCode = code; });
 }
