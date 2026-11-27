@@ -1,0 +1,88 @@
+{
+  "name": "gtm-loop",
+  "schemaVersion": 1,
+  "neverHosts": ["x.com", "twitter.com", "linkedin.com", "reddit.com", "redd.it"],
+  "openHosts": ["x.com", "twitter.com", "linkedin.com", "reddit.com", "news.ycombinator.com"],
+  "fetchHosts": ["hn.algolia.com", "api.github.com"],
+  "statuses": ["new", "reviewed", "drafted", "picked", "approved", "contacted", "replied", "skipped", "suppressed", "stopped"],
+  "transitions": {
+    "new": ["reviewed", "skipped", "suppressed", "stopped"],
+    "reviewed": ["drafted", "skipped", "suppressed", "stopped"],
+    "drafted": ["picked", "skipped", "suppressed", "reviewed"],
+    "picked": ["approved", "contacted", "drafted", "skipped", "suppressed"],
+    "approved": ["contacted", "picked", "skipped", "suppressed"],
+    "contacted": ["replied", "suppressed"],
+    "replied": ["suppressed"],
+    "stopped": ["reviewed", "skipped", "suppressed"],
+    "skipped": [],
+    "suppressed": []
+  },
+  "terminal": ["skipped", "suppressed", "replied"],
+  "ops": ["rank", "transition", "draft", "signal", "warn"],
+  "channels": {
+    "x_reply": { "platform": "x", "max": 280 },
+    "x_dm": { "platform": "x", "max": 280 },
+    "reddit_comment": { "platform": "reddit", "max": 600 },
+    "linkedin_comment": { "platform": "linkedin", "max": 600 },
+    "linkedin_note": { "platform": "linkedin", "max": 300 },
+    "hn_reply": { "platform": "hn", "max": 600 },
+    "email": { "platform": "email", "maxWords": 120, "subjectMax": 100 }
+  },
+  "ruleEffects": ["min_score", "follow_up", "exclude_term", "exclude_domain", "exclude_person", "leads_per_round", "emails_per_day", "searches_per_day", "companies_per_search", "phrases_per_round", "rounds_per_day", "notify_off", "note"],
+  "capEffects": ["leads_per_round", "emails_per_day", "searches_per_day", "companies_per_search", "phrases_per_round", "rounds_per_day"],
+  "hashExcluded": ["note", "notify_off", "leads_per_round", "emails_per_day", "searches_per_day", "companies_per_search", "phrases_per_round", "rounds_per_day"],
+  "sweep": { "defaultHour": 7, "maxDaysBack": 14 },
+  "reviewBatch": 25,
+  "followUp": { "defaultDays": 4 },
+  "workReasons": ["search_due", "review_due", "write_due", "approve_due", "email_due", "replies_due", "follow_up_due", "update_waiting"],
+  "waitsForPerson": ["approve_due", "follow_up_due", "update_waiting"],
+  "freeMail": ["gmail.com", "googlemail.com", "yahoo.com", "outlook.com", "hotmail.com", "live.com", "icloud.com", "me.com", "aol.com", "proton.me", "protonmail.com", "gmx.com", "gmx.de", "web.de", "yandex.com", "mail.com", "qq.com", "163.com"],
+  "draftCountries": ["DE", "AT", "CA", "AU"],
+  "noticeCountries": ["AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE", "IS", "LI", "NO", "GB", "UK"],
+  "optOutWords": ["stop", "unsubscribe", "remove me", "do not contact", "don't contact", "not interested", "opt out", "take me off"],
+  "footer": {
+    "lines": [
+      "{senderName}, {senderCompany}",
+      "{postalAddress}",
+      "I found you through {source}. This is a one-time note about {offerName}.",
+      "Reply stop and I will not write again."
+    ],
+    "notice": "Where I got your details: {dataSource}. To object, or to ask me to delete them, reply to this email."
+  },
+  "needs": {
+    "x_posts": { "text": "Search recent public X posts for: {query}. Return each post's URL, text, author handle and date. Posts since {since}.", "fields": ["query", "since"] },
+    "reddit_posts": { "text": "Search recent public Reddit posts and comments for: {query}. Return each one's URL, text, author and date. Posts since {since}.", "fields": ["query", "since"] },
+    "linkedin_posts": { "text": "Search recent public LinkedIn posts for the keywords: {query}. Return each post's URL, text, author and date. Posts since {since}.", "fields": ["query", "since"] },
+    "web_research": { "text": "Search the web for pages where someone asks for what this describes: {query}. Return each page's URL, title, a short text and its date.", "fields": ["query"] },
+    "x_profile": { "text": "Read the public X profile of the handle {handle}. Return the name, bio, location and links.", "fields": ["handle"] },
+    "x_timeline": { "text": "Read the recent public X posts of the handle {handle}. Return each post's URL, text and date.", "fields": ["handle"] },
+    "linkedin_profile": { "text": "Read the public LinkedIn profile at {url}. Return the name, headline, location, about text and current company.", "fields": ["url"] },
+    "linkedin_author_posts": { "text": "Read the recent public LinkedIn posts of the profile at {url}. Return each post's URL, text and date.", "fields": ["url"] },
+    "company_list": { "text": "List companies in the industry {industry}, with size {size}, in {place}. Return each company's name and domain.", "fields": ["industry", "size", "place"] },
+    "company_profile": { "text": "Look up the company profile for the domain {domain}. Return the name, domain, LinkedIn page, size and country.", "fields": ["domain"] },
+    "people_search": { "text": "Find people with the role {role} at the company with the domain {domain}. Return each person's name, title, profile link and country.", "fields": ["role", "domain"] },
+    "person_enrichment": { "text": "Find the work email of {name} at the company with the domain {domain}. Return the address and its status.", "fields": ["name", "domain"] },
+    "email_check": { "text": "Check whether the email address {email} is deliverable. Return its status.", "fields": ["email"] },
+    "page_read": { "text": "Read the page at {url}. Return its text.", "fields": ["url"] }
+  },
+  "prices": {
+    "checkedAt": "2026-11-26",
+    "note": "The catalog's provider price plus the 15% routing fee, upper end, in cents per call.",
+    "needs": {
+      "x_posts": { "estimateCents": 0.6 },
+      "reddit_posts": { "estimateCents": 1.2 },
+      "linkedin_posts": { "estimateCents": 0.3 },
+      "web_research": { "estimateCents": 0.8 },
+      "x_profile": { "estimateCents": 0.1 },
+      "x_timeline": { "estimateCents": 0.5 },
+      "linkedin_profile": { "estimateCents": 2.3 },
+      "linkedin_author_posts": { "estimateCents": 0.7 },
+      "company_list": { "estimateCents": 17 },
+      "company_profile": { "estimateCents": 4.6 },
+      "people_search": { "estimateCents": 1.2 },
+      "person_enrichment": { "estimateCents": 4.6 },
+      "email_check": { "estimateCents": 0.9 },
+      "page_read": { "estimateCents": 1.7 }
+    }
+  }
+}

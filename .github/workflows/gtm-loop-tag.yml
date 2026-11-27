@@ -1,0 +1,22 @@
+name: GTM Loop tag
+
+on:
+  push:
+    tags: ['gtm-loop-v*']
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node --test tests/gtm-loop/*.test.mjs
+      - name: The tag matches the manifest version
+        run: |
+          want="gtm-loop-v$(node -p "require('./skills/gtm-loop/manifest.json').version")"
+          test "$want" = "${GITHUB_REF_NAME}"

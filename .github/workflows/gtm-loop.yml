@@ -1,0 +1,40 @@
+name: GTM Loop
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: node --test tests/gtm-loop/*.test.mjs
+      - name: No em dashes in the GTM Loop and writing files
+        run: |
+          if grep -rn "$(printf '\342\200\224')" skills/gtm-loop skills/writing tests/gtm-loop .github/workflows/gtm-loop.yml .github/workflows/gtm-loop-tag.yml; then exit 1; fi
+      - name: Gates hash matches the manifest
+        run: |
+          want=$(node -p "require('./skills/gtm-loop/manifest.json').gatesHash")
+          got=$(node skills/gtm-loop/scripts/gtm.mjs gates | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).gatesHash")
+          test "$want" = "$got"
+      # the skills installer needs Node 22 or later, so this runs on the Node 24 job only
+      - name: The installer finds gtm-loop and writing and skips nothing
+        if: matrix.node == 24
+        run: |
+          esc=$(printf '\033')
+          out=$(HOME=$(mktemp -d) npx -y skills@1.9.0 add . --list 2>&1 | sed "s/${esc}\[[0-9;?]*[a-zA-Z]//g")
+          echo "$out"
+          if echo "$out" | grep -q 'SKILLS_SKILL_SKIPPED'; then echo "a SKILL.md was skipped" >&2; exit 1; fi
+          echo "$out" | grep -q 'gtm-loop' || { echo "gtm-loop not found" >&2; exit 1; }
+          echo "$out" | grep -q 'writing' || { echo "writing not found" >&2; exit 1; }

@@ -1,0 +1,8 @@
+{
+  "name": "gtm-loop",
+  "version": "0.1.0",
+  "minTenjin": "0.1.0-alpha.35",
+  "writing": "writing-v0.1.0",
+  "change": "First release.",
+  "gatesHash": "47260f5edf561d734465716b1d70fb92dbdc22c605d602dfdcacf8da1ed8f407"
+}
