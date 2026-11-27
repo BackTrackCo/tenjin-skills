@@ -273,3 +273,24 @@ test('G work reads the marks back at every start and wake', () => {
   assert.equal(G('drafts').json.parked, 1);
   assert.equal(G('drafts', 'sync').json.synced, 0);
 });
+
+test('a lead drafted before the file existed gets its section at start, and a second start adds nothing', () => {
+  fs.rmSync(path.join(process.env.TENJIN_SKILLS_DIR, 'gtm-loop', 'drafts'), { recursive: true, force: true });
+  store.updateState((s) => Object.assign(s, store.emptyState()));
+  G('profile', 'set', '--json', JSON.stringify(profile));
+  store.updateState((s) => {
+    const a = d.addPosts(s, [{ url: 'https://x.com/old_one/status/1900000000000000333', author: 'old_one', source: 'x', text: 'Any recommendations for getting my first customers?' }], { offerId: 'gtm' });
+    Object.assign(s.leads[a.added[0]], { status: 'drafted', channelProposed: 'x_reply', line: 'asks', drafts: { x_reply: { channel: 'x_reply', text: 'LoopA could help.' } }, draft: { channel: 'x_reply', text: 'LoopA could help.' } });
+  });
+  const dir = path.join(process.env.TENJIN_SKILLS_DIR, 'gtm-loop', 'drafts');
+  assert.equal(fs.existsSync(dir), false, 'no file yet');
+  assert.equal(G('start', 'status').code, 0);
+  const files = fs.readdirSync(dir);
+  assert.equal(files.length, 1);
+  const first = read(path.join(dir, files[0]));
+  assert.equal((first.match(/^## \d+\. /gm) || []).length, 1);
+  assert.match(first, /^Channel: x_reply$/m);
+  assert.equal(G('start', 'status').code, 0);
+  G('work');
+  assert.equal(read(path.join(dir, files[0])), first, 'a second start and a wake add nothing');
+});
