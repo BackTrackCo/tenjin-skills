@@ -100,6 +100,9 @@ test('the whole email path by the CLI: connector, resolve, the question, the yes
   assert.equal(G('profile', 'set', '--json', JSON.stringify(profile)).code, 0);
   assert.match(G('email', 'connector', 'smtp').json.error, /connector is one of/);
   assert.equal(G('email', 'connector', 'send').json.connector, 'send');
+  store.updateState((st) => { st.leads.L.status = 'drafted'; });
+  assert.match(G('email', 'resolve', 'L').json.error, /pick Email for this lead first/, 'the lookup runs only after the person picks Email');
+  store.updateState((st) => { st.leads.L.status = 'picked'; });
   const res = G('email', 'resolve', 'L');
   assert.equal(res.json.ready, true);
   assert.equal(res.json.via, 'send');

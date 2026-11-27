@@ -6,6 +6,8 @@ import path from 'node:path';
 import { runGtm, tmpHome } from './helpers/env.mjs';
 
 const home = tmpHome();
+const tmpStore = () => storeMod;
+const storeMod = await import('../../skills/gtm-loop/scripts/lib/store.mjs');
 const tmp = (name, obj) => { const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'gtmflow-')), name); fs.writeFileSync(f, JSON.stringify(obj)); return f; };
 const G = (...args) => runGtm(home, args);
 
@@ -66,4 +68,20 @@ test('G search route refuses without Tenjin ready, and no command here runs the 
   const r = G('search', 'route');
   assert.equal(r.code, 1);
   assert.match(r.json.error, /Tenjin is not ready/);
+});
+
+test('G work compacts old finished leads and keeps the suppression list and the contacted ledger', () => {
+  const store = tmpStore();
+  store.updateState((st) => {
+    st.leads.old = { key: 'old', status: 'skipped', statusAt: '2026-01-01T00:00:00Z', lastSeen: '2026-01-01T00:00:00Z', firstSeen: '2026-01-01T00:00:00Z', personKey: 'x:gone' };
+    st.people['x:gone'] = { key: 'x:gone', ids: ['x:gone'], emails: [] };
+    st.ids['x:gone'] = 'x:gone';
+    st.suppress.ids['x:gone'] = { reason: 'opt_out', at: 'x' };
+    st.contacted['x:gone'] = { at: '2026-01-01T00:00:00Z', channel: 'x_reply' };
+  });
+  G('work');
+  const s = store.loadState();
+  assert.equal(s.leads.old, undefined);
+  assert.ok(s.suppress.ids['x:gone']);
+  assert.ok(s.contacted['x:gone']);
 });
