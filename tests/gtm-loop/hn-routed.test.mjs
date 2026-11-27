@@ -12,7 +12,7 @@ const search = await import('../../skills/gtm-loop/scripts/lib/search.mjs');
 const store = await import('../../skills/gtm-loop/scripts/lib/store.mjs');
 const report = await import('../../skills/gtm-loop/scripts/lib/report.mjs');
 
-const profile = { phrases: ['agent pay for APIs'], sources: ['x', 'reddit', 'linkedin', 'hn', 'web'], sender: { handles: { x: 'me_handle' } } };
+const profile = { phrases: ['agent pay for APIs'], subreddits: ['ClaudeAI', 'LocalLLaMA'], sources: ['x', 'reddit', 'linkedin', 'hn', 'web'], sender: { handles: { x: 'me_handle' } } };
 const overlay = { rules: [] };
 const client = (f) => new router.RouterClient({ bin: f.bin, timeouts: { ...router.TIMEOUTS, shutdown: 500, collect: 40, poll: 10 } });
 const NOW = Date.parse('2026-11-26T08:00:00Z');
@@ -21,7 +21,7 @@ test('Hacker News is read free through the search API only: one search per phras
   const ff = fakeFetch({ 'https://hn.algolia.com/api/v1/search_by_date': fixture('hn-search.json') });
   const r = await hn.runHn({ fetch: ff, profile, overlay, now: NOW, gapMs: 0 });
   assert.equal(ff.calls.length, 1);
-  assert.match(ff.calls[0], /query=%22agent%20pay%20for%20APIs%22/);
+  assert.match(ff.calls[0], /query=agent%20pay%20apis&/, 'key words, no quotes');
   assert.match(ff.calls[0], /created_at_i%3E/);
   assert.equal(r.added, 2, 'an item with no text is skipped');
   const s = store.loadState();
@@ -55,7 +55,7 @@ test('a routed post round: one need per phrase per source, each result kept at o
   assert.equal(res.added, 5);
   assert.equal(res.held[0].status, 'needs_approval');
   const calls = f.calls();
-  assert.deepEqual(calls.filter((c) => c.query).map((c) => c.query.split(':')[0]), ['Search recent public X posts for', 'Search recent public Reddit posts and comments for', 'Search recent public LinkedIn posts for the keywords', 'Search the web for pages where someone asks for what this describes']);
+  assert.deepEqual(calls.filter((c) => c.query).map((c) => c.query.split(':')[0]), ['Search recent public X posts for', 'Search public Reddit posts for', 'Search recent public LinkedIn posts for the keywords', 'Search the web for discussion pages (forums, community Q&A, Hacker News, Reddit, Indie Hackers) where someone asks or complains about']);
   const s = store.loadState();
   assert.equal(Object.values(s.leads).filter((l) => l.source === 'x').length, 2);
   assert.ok(s.held.some((h) => h.key === 'need:web_research:agent pay for APIs' && /over the per-call limit/.test(h.detail)));

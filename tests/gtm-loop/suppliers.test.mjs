@@ -9,6 +9,8 @@ const sup = await import('../../skills/gtm-loop/scripts/lib/suppliers/index.mjs'
 const routed = await import('../../skills/gtm-loop/scripts/lib/routed.mjs');
 
 const client = (f) => new router.RouterClient({ bin: f.bin, timeouts: { ...router.TIMEOUTS, shutdown: 500, collect: 40, poll: 10 } });
+const RECENT = new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10);
+const SUBS = 'claudeai, localllama';
 async function run(kind, fx, fields) {
   const need = routed.fillNeed(kind, fields);
   const f = fake({ answers: [specAnswer(fx.host), runAnswer(fx.host, fx.result)] });
@@ -20,8 +22,8 @@ test('every post adapter turns its fixture into posts, and the mapper makes the 
   const cases = [
     ['x_posts', 'router/x-posts.json', { query: 'agent pay for APIs', since: '2026-11-20' }, 2, 'x'],
     ['x_posts', 'router/x-search.json', { query: 'agent pay for APIs', since: '2026-11-20' }, 2, 'x'],
-    ['reddit_posts', 'router/reddit-glim.json', { query: 'agent pay for APIs', since: '2026-11-20' }, 1, 'reddit'],
-    ['reddit_posts', 'router/reddit-anyapi.json', { query: 'agent pay for APIs', since: '2026-11-20' }, 2, 'reddit'],
+    ['reddit_posts', 'router/reddit-glim.json', { query: 'agent pay for APIs', since: RECENT, subreddits: SUBS }, 1, 'reddit'],
+    ['reddit_posts', 'router/reddit-anyapi.json', { query: 'agent pay for APIs', since: RECENT, subreddits: SUBS }, 2, 'reddit'],
     ['linkedin_posts', 'router/linkedin-posts.json', { query: 'agent pay for APIs', since: new Date(Date.now() - 3 * 86400000).toISOString() }, 1, 'linkedin'],
     ['web_research', 'router/web-research.json', { query: 'agent pay for APIs' }, 2, null],
   ];
@@ -42,9 +44,10 @@ test('every post adapter turns its fixture into posts, and the mapper makes the 
 test('post details: X links, Reddit permalinks made absolute, LinkedIn author profile, web results labelled by their own site', async () => {
   let { r } = await run('x_posts', fixture('router/x-posts.json'), { query: 'agent pay for APIs', since: '2026-11-20' });
   assert.deepEqual(r.ingest.posts[1].links, ['https://example.org/notes']);
-  ({ r } = await run('reddit_posts', fixture('router/reddit-anyapi.json'), { query: 'agent pay for APIs', since: '2026-11-20' }));
+  ({ r } = await run('reddit_posts', fixture('router/reddit-anyapi.json'), { query: 'agent pay for APIs', since: RECENT, subreddits: SUBS }));
+  assert.deepEqual(r.ingest.posts.map((x) => x.subreddit), ['claudeai', 'localllama']);
   assert.equal(r.ingest.posts[0].url, 'https://www.reddit.com/r/ClaudeAI/comments/abc123/how_do_i_let_my_agent_pay/');
-  ({ r } = await run('linkedin_posts', fixture('router/linkedin-posts.json'), { query: 'agent pay for APIs', since: '2026-11-20' }));
+  ({ r } = await run('linkedin_posts', fixture('router/linkedin-posts.json'), { query: 'agent pay for APIs', since: RECENT }));
   assert.equal(r.ingest.posts[0].author, 'pat-lee-123');
   ({ r } = await run('web_research', fixture('router/web-research.json'), { query: 'agent pay for APIs' }));
   assert.deepEqual(r.ingest.posts.map((p) => p.source), ['web', 'x']);
@@ -53,7 +56,7 @@ test('post details: X links, Reddit permalinks made absolute, LinkedIn author pr
 test('an answer with no list, or a post with no text, is refused by its adapter', async () => {
   for (const [kind, fxn, bad] of [['reddit_posts', 'router/reddit-glim.json', { nope: 1 }], ['linkedin_posts', 'router/linkedin-posts.json', { output: { found: true, data: {} } }], ['web_research', 'router/web-research.json', { results: [{ url: 'nope' }] }], ['x_posts', 'router/x-search.json', { output: { data: { items: [{ url: 'https://x.com/a/status/1', text: '' }] } } }]]) {
     const fx = { ...fixture(fxn), result: bad };
-    const { r } = await run(kind, fx, { query: 'a', since: '2026-11-20' });
+    const { r } = await run(kind, fx, { query: 'a', since: '2026-11-20', subreddits: SUBS });
     assert.equal(r.status, 'schema_failure', fxn);
   }
 });

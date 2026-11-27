@@ -2,7 +2,7 @@
   "_note": "Synthetic. The shape follows the X search answer recorded on 2026-11-24 (tweets[] with url, text, created_at, author.username, entities.urls[].expanded_url); the posts, handles and links are made up.",
   "kind": "x_posts",
   "host": "glim.sh",
-  "input": { "query": "agent pay for APIs since:2026-11-20 -filter:replies", "sort": "latest" },
+  "input": { "query": "agent pay for APIs since:2026-11-20", "sort": "latest" },
   "result": {
     "count": 2,
     "has_more": false,

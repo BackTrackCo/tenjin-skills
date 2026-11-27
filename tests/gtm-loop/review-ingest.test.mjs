@@ -41,17 +41,27 @@ function seeded() {
 }
 const review = (s, over = {}) => Object.keys(s.leads).map((key) => ({ key, fit: 70, intent: 90, timing: 40, quote: 'a way for an agent to pay for APIs', line: 'Asks for a way for an agent to pay', channel: s.leads[key].source === 'x' ? 'x_reply' : 'email', keep: true, ...over }));
 
-test('review handout gives up to 25 new leads with their allowed channels; a review file must cover every one', () => {
+test('review handout gives every new lead at once, in batches of 25, each with its offer; a file must cover every lead of the batch it touches', () => {
   const s = seeded();
-  const hand = ing.reviewHandout(s);
+  const hand = ing.reviewHandout(s, { offers: [{ id: 'main', name: 'PayRouter', what: 'lets an agent pay', phrases: ['agent pay for APIs'] }] });
   assert.equal(hand.length, 3);
   assert.deepEqual(hand.find((h) => h.source === 'x').channels, ['x_reply', 'x_dm', 'email']);
+  assert.equal(hand[0].offer.name, 'PayRouter');
   assert.deepEqual(ing.checkReview({ reviews: review(s) }, s), []);
   const missing = ing.checkReview({ reviews: review(s).slice(0, 2) }, s);
-  assert.ok(missing.some((m) => /handed out and has no review/.test(m)));
+  assert.ok(missing.some((m) => /same batch and has no review/.test(m)));
+  assert.ok(ing.checkReview({ reviews: [] }, s).some((m) => /reviews must be a list with a review/.test(m)));
   const many = store.emptyState();
   d.addPosts(many, Array.from({ length: 30 }, (_, i) => P(100 + i)), { profile });
-  assert.equal(ing.reviewHandout(many).length, 25, 'the batch is 25');
+  const all = ing.reviewHandout(many, profile);
+  assert.equal(all.length, 30, 'every lead is handed out, none waits for a later call');
+  assert.deepEqual(ing.batchesOf(all).map((b) => b.leads.length), [25, 5]);
+  // the second batch can be reviewed alone, in its own file, and the first stays handed out
+  const second = all.filter((l) => l.batch === 1).map((l) => ({ key: l.key, fit: 70, intent: 70, timing: 70, quote: 'a way for an agent to pay for APIs', line: 'asks', channel: 'email', keep: true }));
+  assert.deepEqual(ing.checkReview({ reviews: second }, many), []);
+  const out = ing.applyReview(many, { reviews: second }, { overlay: { rules: [] } });
+  assert.equal(many.reviewHand.length, 25);
+  assert.deepEqual(ing.summarizeReview(many, out), { kept: 5, left: 0, stopped: 0, dropped_since: 0, left_reasons: {}, still_waiting: 25 });
 });
 
 test('the review checks scores, the channel for the source, and that the quote is the post\'s own words', () => {
@@ -90,6 +100,13 @@ test('applying a review ranks, keeps or skips, honours the person\'s min_score, 
   assert.equal(Object.values(t.leads)[0].status, 'reviewed');
   assert.equal(Object.values(t.leads)[0].scores.avg, 67);
   assert.equal(Object.values(t.leads)[0].channelProposed !== undefined, true);
+  const u = seeded();
+  ing.reviewHandout(u);
+  const mixed = review(u);
+  mixed[0] = { ...mixed[0], keep: false };
+  mixed[1] = { ...mixed[1], fit: 10, intent: 10, timing: 10 };
+  const o2 = ing.applyReview(u, { reviews: mixed }, { overlay: { rules: [{ effect: 'min_score', value: 50 }] } });
+  assert.deepEqual(ing.summarizeReview(u, o2).left_reasons, { not_a_real_ask: 1, below_min_score: 1 });
 });
 
 test('a fit lead with no recent post is reviewed with no quote and "no signal"', () => {

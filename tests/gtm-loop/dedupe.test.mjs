@@ -65,8 +65,8 @@ test('the person\'s own posts drop out, and so do their excluded terms, people a
     post({}),
     post({ url: 'https://x.com/a/status/2000000000001', author: 'a', text: 'a CRYPTO thing for agents' }),
     post({ url: 'https://x.com/spam_guy/status/2000000000002', author: 'Spam_Guy' }),
-    post({ url: 'https://x.com/b/status/2000000000003', author: 'b', text: 'see https://www.badco.com/x', links: ['https://www.badco.com/x'] }),
-    post({ url: 'https://x.com/ok/status/2000000000004', author: 'ok', text: 'a fine post' }),
+    post({ url: 'https://x.com/b/status/2000000000003', author: 'b', text: 'see https://www.badco.com/x for how agents pay', links: ['https://www.badco.com/x'] }),
+    post({ url: 'https://x.com/ok/status/2000000000004', author: 'ok', text: 'a fine post about agents paying' }),
   ], { profile, overlay });
   assert.deepEqual(r.dropped.map((x) => x.reason), ['own_post', 'rule:exclude_term:r1', 'rule:exclude_person:r2', 'rule:exclude_domain:r3']);
   assert.equal(r.added.length, 1);
@@ -85,12 +85,12 @@ test('a suppressed or already contacted person is dropped before review, on any 
   const r = d.addPosts(s, [post({})]);
   const pk = s.leads[r.added[0]].personKey;
   d.markContacted(s, pk, { channel: 'x_reply', leadKey: r.added[0] });
-  const again = d.addPosts(s, [post({ url: 'https://x.com/dev_one/status/1900000000000000044', text: 'new post' })]);
+  const again = d.addPosts(s, [post({ url: 'https://x.com/dev_one/status/1900000000000000044', text: 'a new post about agents paying' })]);
   assert.deepEqual(again.dropped.map((x) => x.reason), ['already_contacted']);
   assert.equal(d.contactProblem(s, pk, { followUp: { days: 4 }, now: Date.now() + 5 * 86400000 }), null, 'a follow-up rule opens it once, after its days');
   d.suppressPerson(s, pk, 'opt_out');
   assert.match(d.contactProblem(s, pk), /suppressed:opt_out/);
-  const third = d.addPosts(s, [post({ url: 'https://x.com/dev_one/status/1900000000000000055', text: 'third' })]);
+  const third = d.addPosts(s, [post({ url: 'https://x.com/dev_one/status/1900000000000000055', text: 'a third post about agents paying' })]);
   assert.match(third.dropped[0].reason, /suppressed/);
 });
 
@@ -108,7 +108,7 @@ test('domain suppression covers every person at that company domain, never a fre
 
 test('compaction drops old finished leads and keeps the suppression lists and the contacted ledger', () => {
   const s = fresh();
-  const r = d.addPosts(s, [post({}), post({ url: 'https://x.com/z/status/2000000000009', author: 'z', text: 'other' })]);
+  const r = d.addPosts(s, [post({}), post({ url: 'https://x.com/z/status/2000000000009', author: 'z', text: 'other post about agents paying' })]);
   const [k1, k2] = r.added;
   const p1 = s.leads[k1].personKey;
   d.markContacted(s, p1, { channel: 'email', leadKey: k1 });

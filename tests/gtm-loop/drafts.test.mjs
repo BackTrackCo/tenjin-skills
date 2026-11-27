@@ -198,7 +198,7 @@ test('G open opens the page and copies the text; G sent marks the person contact
   const st = store.loadState();
   assert.ok(st.contacted['x:dev_one']);
   assert.equal(st.outreach.length, 1);
-  const again = d.addPosts(st, [{ url: 'https://x.com/dev_one/status/1900000000000000777', author: 'dev_one', source: 'x', text: 'another post' }]);
+  const again = d.addPosts(st, [{ url: 'https://x.com/dev_one/status/1900000000000000777', author: 'dev_one', source: 'x', text: 'another post about agents paying for APIs' }]);
   assert.equal(again.dropped[0].reason, 'already_contacted');
 });
 

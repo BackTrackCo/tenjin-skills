@@ -11,12 +11,19 @@ const storeMod = await import('../../skills/gtm-loop/scripts/lib/store.mjs');
 const tmp = (name, obj) => { const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'gtmflow-')), name); fs.writeFileSync(f, JSON.stringify(obj)); return f; };
 const G = (...args) => runGtm(home, args);
 
-test('start: the model is told what is missing, the start question is valid for the question tool, the answers are recorded', () => {
+test('start: handles are saved on their own, the model is told what is missing, the start question is valid, the answers are recorded', () => {
   const s = G('start', 'status');
   assert.equal(s.json.done, false);
-  assert.equal(s.json.missing.length, 3);
-  assert.equal(G('profile', 'set', '--json', JSON.stringify({ offer: { name: 'Thing', what: 'lets an agent pay for APIs', link: 'https://example.org/thing' }, sender: { name: 'Sam', company: 'Co', handles: { x: 'sam_thing' } } })).code, 0);
-  assert.equal(G('phrases', 'set', 'agent pay for APIs|pay per call for Claude').json.profile.phrases.length, 2);
+  assert.ok(s.json.missing[0].startsWith('your name'), 'the sender name is asked in the same first message');
+  assert.equal(G('profile', 'set', '--json', JSON.stringify({ sender: { handles: { x: 'sam_thing', linkedin: 'SamThing' } } })).code, 0, 'a partial answer with no sender name is saved');
+  assert.deepEqual(G('profile').json.profile.sender.handles, { x: 'sam_thing', linkedin: 'SamThing' });
+  const offers = [{ id: 'main', name: 'Thing', what: 'lets an agent pay for APIs', who: 'founders and builders', link: 'https://example.org/thing', phrases: ['agent pay for APIs', 'pay per call for Claude'], subreddits: ['ClaudeAI', 'r/LocalLLaMA'] }];
+  assert.equal(G('offers', 'set', '--json', JSON.stringify(offers)).code, 0);
+  const m = G('start', 'status').json.missing;
+  assert.ok(m.some((x) => x.startsWith('your name')));
+  assert.ok(m.some((x) => x.startsWith('a buyer for "Thing"')), 'a buyer is proposed when only who it helps is given');
+  assert.equal(G('profile', 'set', '--json', JSON.stringify({ sender: { name: 'Sam', company: 'Co', handles: { x: 'sam_thing' } }, offers: [{ ...offers[0], buyerAsked: true }] })).code, 0);
+  assert.equal(G('profile').json.profile.sender.handles.linkedin, 'SamThing', 'handles merge, nothing is lost');
   const ask = G('ask', 'start');
   assert.equal(ask.code, 0);
   assert.equal(ask.json.questions.length, 3);
@@ -26,6 +33,7 @@ test('start: the model is told what is missing, the start question is valid for 
   assert.equal(G('start', 'record', '--email-mode', 'drafts', '--frequency', 'weekly', '--sources', 'free').json.recorded.sources.join(), 'hn,web');
   assert.equal(G('start', 'status').json.done, true);
   assert.match(G('start', 'record', '--sources', 'everything').json.error, /sources is all, social or free/);
+  assert.match(G('phrases', 'set', 'a very long phrase that goes on and on and on like an article title for a reader').json.error, /words at most/);
 });
 
 test('the free path: ingest a post file, refuse a bad one with its problems, review through the file, and read the report', () => {
@@ -41,9 +49,12 @@ test('the free path: ingest a post file, refuse a bad one with its problems, rev
   assert.equal(ok.json.added, 2);
   assert.deepEqual(ok.json.dropped.map((d) => d.reason), ['own_post']);
   const next = G('review', 'next');
-  assert.equal(next.json.leads.length, 2);
+  assert.equal(next.json.count, 2);
+  assert.equal(next.json.batches.length, 1);
+  assert.equal(next.json.batches[0].leads[0].offer.name, 'Thing', 'each lead carries its own offer');
+  next.json.leads = next.json.batches.flatMap((b) => b.leads);
   const refuse = G('review', 'ingest', '--file', tmp('r0.json', { reviews: [] }));
-  assert.match(refuse.json.error, /handed out and has no review/);
+  assert.match(refuse.json.error, /reviews must be|has no review|handed out/);
   const reviews = next.json.leads.map((l) => ({ key: l.key, fit: 80, intent: 90, timing: 50, quote: l.source === 'x' ? 'my agent could pay for APIs' : 'let an agent pay for APIs', line: 'Asks for it', channel: l.source === 'x' ? 'x_reply' : 'email', keep: true }));
   const done = G('review', 'ingest', '--file', tmp('r1.json', { reviews }));
   assert.equal(done.json.kept.length, 2);
