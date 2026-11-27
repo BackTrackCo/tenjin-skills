@@ -39,9 +39,13 @@ When the watcher exits with a line, or the person asks, run `G work --commit` (a
 - `review_due`: references/review.md. Up to 25 leads per Agent `model: "haiku"` call, one review file.
 - `write_due`: references/write.md. One Agent `model: "opus"` call per round: `G write-prompt`, then `G write-result --file`.
 - `approve_due` waits for the person: `G ask pick` builds one question with the drafts and the channel as options.
-- `email_due`, `replies_due`, `follow_up_due`: references/send.md.
+- `email_due`: `G email next` hands out one approved email; send exactly that. `replies_due`: `G replies due`. `unknown_due` and `follow_up_due` wait for the person. All in references/send.md.
 
 Every handled item ends with its G outcome command (`G leave <key> --reason ...` for an item you leave), or the watcher shows it again. If `notify` is set, send it with PushNotification as given, then `G notify result sent|not_sent|unknown`.
+
+## Unattended email (opt-in)
+
+Needs the person's own rules, `G consent record email` on their own words in an attended turn, and a dry run first (`G dryrun confirm`); see references/send.md. In a woken turn (`G work --commit --unattended`) code refuses every command that needs a person's yes. `G email prep` approves drafted email leads on the consent; `G email next --unattended` hands out only what passes every gate again. `G consent revoke email` ends it.
 
 ## Report, rules
 

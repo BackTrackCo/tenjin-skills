@@ -28,7 +28,12 @@ import { buildCandidate, approveEmail, nextEmail, markSent, resolveUnknown, repl
 import { resolveAddress } from './lib/lookup.mjs';
 import { recordEmailConsent, revokeConsent, confirmDryRun, consentStatus } from './lib/consent.mjs';
 import { suppressPerson, suppressDomain, resolvePerson } from './lib/dedupe.mjs';
-import { emailQuestion } from './lib/questions.mjs';
+import { emailQuestion, rcAtPush } from './lib/questions.mjs';
+import { followUpCandidates, startFollowUp, skipFollowUp, followUpQuestions, recordSocialReply } from './lib/followup.mjs';
+import { prepUnattended } from './lib/email-prep.mjs';
+import { checkRelease, applyUpdate, recordRelease } from './lib/release.mjs';
+import { openBatch, closeBatch } from './lib/batch.mjs';
+import { spawn } from 'node:child_process';
 
 // G is this file. Every command prints one JSON object. State, rules and profile live in ~/.tenjin-skills/gtm-loop/.
 export function parseArgs(argv) {
@@ -87,6 +92,8 @@ register('rules', ({ sub, rest, flags }) => {
 register('state', () => view(loadState()));
 register('work', ({ flags }) => {
   cleanupStale();
+  // A turn the watcher woke is unattended: nobody can say yes in it, so code refuses every command that needs a person's yes.
+  if (flags.unattended) openBatch({ mode: 'unattended' });
   const wl = workList({ commit: Boolean(flags.commit) });
   updateState((s) => logRun(s, 'work', wl.items.length));
   return { items: wl.items, handed: wl.handed.map((i) => i.key), notify: wl.notify };
@@ -240,11 +247,12 @@ register('email', async ({ sub, args, flags }) => {
     if (!args[1] || !args[2]) return fail('email unknown <id> sent|not_sent');
     return updateState((s) => resolveUnknown(s, args[1], args[2]));
   }
+  if (sub === 'prep') return prepUnattended({ profile, overlay });
   if (sub === 'status') {
     const e = emailState(loadState());
     return { connector: e.connector, drafts: Object.values(e.drafts).map((d) => ({ id: d.id, to: d.to, status: d.status })), unknown: unknownList(loadState()).map((d) => d.id) };
   }
-  return fail('email connector|resolve|approve|next|sent|unknown|status');
+  return fail('email connector|resolve|approve|next|prep|sent|unknown|status');
 });
 register('replies', ({ sub }) => {
   if (sub !== 'due') return fail('replies due');
@@ -277,6 +285,60 @@ register('suppress', ({ sub, flags }) => {
     const p = resolvePerson(s, [id]);
     return suppressPerson(s, p.key, reason);
   });
+});
+register('follow-up', ({ sub, args }) => {
+  const overlay = loadOverlay();
+  if (sub === 'list' || !sub) return { due: followUpCandidates(loadState(), overlay).map((l) => ({ key: l.key, author: l.author, channel: l.pick && l.pick.channel })) };
+  if (sub === 'ask') {
+    const groups = followUpQuestions(loadState(), overlay);
+    for (const g of groups) { const bad = validateAsk(g); if (bad.length) return fail(bad.join('; ')); }
+    return { groups, note: 'One AskUserQuestion call per group. Yes: G follow-up start <key>. No: G follow-up skip <key>.' };
+  }
+  if (sub === 'start') return updateState((s) => startFollowUp(s, args[1] || fail('follow-up start <key>'), overlay));
+  if (sub === 'skip') return updateState((s) => skipFollowUp(s, args[1] || fail('follow-up skip <key>')));
+  return fail('follow-up list|ask|start <key>|skip <key>');
+});
+register('replied', ({ args, flags }) => {
+  if (!args[0]) return fail('replied <lead key> [--opt-out]');
+  return updateState((s) => {
+    const r = recordSocialReply(s, args[0], { optOut: Boolean(flags['opt-out']) });
+    if (flags['opt-out']) suppressPerson(s, s.leads[args[0]].personKey, 'opt_out');
+    return r;
+  });
+});
+register('notify', ({ sub, args, flags }) => {
+  if (sub !== 'result' || !['sent', 'not_sent', 'unknown'].includes(args[1])) return fail('notify result sent|not_sent|unknown [--reason off|present|none]');
+  const say = args[1] === 'not_sent' ? rcAtPush(flags.reason, pushSettings()) : null;
+  updateState((s) => {
+    s.watcher = { ...(s.watcher || {}), notifyResult: args[1] };
+    if (args[1] === 'sent') s.pushSent = true;
+  });
+  return { recorded: args[1], say };
+});
+register('rc', ({ sub, args }) => {
+  if (sub !== 'set' || !['on', 'unknown'].includes(args[1])) return fail('rc set on|unknown');
+  return updateState((s) => { s.rc = args[1]; return { rc: args[1] }; });
+});
+register('release', async ({ sub, flags }) => {
+  if (sub === 'check') {
+    const r = await checkRelease({ fetchImpl: globalThis.fetch, runner, autoInstall: !flags['no-install'] });
+    recordRelease(r);
+    return r;
+  }
+  if (sub === 'apply') {
+    const w = loadState().update.waiting;
+    if (!w) return fail('no update is waiting');
+    const m = readJsonFile(path.join(SKILL_DIR, 'manifest.json'));
+    const r = await applyUpdate({ tag: w.tag, writingTag: w.writingTag, change: w.change, runner, previousTag: `gtm-loop-v${m.version}`, previousWriting: m.writing, version: w.tag.replace('gtm-loop-v', '') });
+    recordRelease(r);
+    return r;
+  }
+  return fail('release check|apply');
+});
+register('batch', ({ sub, flags }) => {
+  if (sub === 'open') return openBatch({ mode: flags.mode === 'unattended' ? 'unattended' : 'attended' });
+  if (sub === 'close') { closeBatch(); return { closed: true }; }
+  return fail('batch open [--mode unattended]|close');
 });
 register('hn', async () => runHn({ fetch: globalThis.fetch, profile: readProfile(), overlay: loadOverlay() }));
 register('reads', async () => runIdentityReads({}));
@@ -331,9 +393,15 @@ export async function main(argv = process.argv.slice(2)) {
   }
 }
 
+// Runs a command for the release check (npx skills add), never through a shell.
+const runner = (cmd, args) => new Promise((resolve) => {
+  const p = spawn(cmd, args, { stdio: 'ignore' });
+  p.on('exit', (code) => resolve({ code: code === null ? 1 : code }));
+  p.on('error', () => resolve({ code: 1 }));
+});
 register('watch', async () => {
-  const r = await runWatcher({ fetchImpl: globalThis.fetch });
-  return r;
+  closeBatch(); // the round is over; the next woken turn opens its own
+  return runWatcher({ fetchImpl: globalThis.fetch, runner });
 });
 register('ops', ({ flags }) => applyOps(flags.file ? readJsonFile(flags.file) : fail('ops needs --file')));
 

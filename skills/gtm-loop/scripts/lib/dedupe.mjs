@@ -138,10 +138,12 @@ export function contactedInfo(state, personKey) {
   for (const e of p.emails) if (state.contacted[`email:${e.addr}`]) return state.contacted[`email:${e.addr}`];
   return null;
 }
-export function markContacted(state, personKey, { channel, leadKey, now = Date.now() }) {
+export function markContacted(state, personKey, { channel, leadKey, followUp = false, now = Date.now() }) {
   const p = state.people[personKey];
   if (!p) throw new Error(`unknown person: ${personKey}`);
-  const rec = { at: new Date(now).toISOString(), channel, leadKey, followUps: (contactedInfo(state, personKey) || {}).followUps || 0 };
+  const prev = contactedInfo(state, personKey) || {};
+  // A follow-up keeps the first contact's day and counts itself; it never resets the clock.
+  const rec = { at: followUp && prev.at ? prev.at : new Date(now).toISOString(), channel, leadKey, followUps: (prev.followUps || 0) + (followUp ? 1 : 0), ...(prev.replied ? { replied: true } : {}) };
   for (const i of p.ids) state.contacted[i] = rec;
   for (const e of p.emails) state.contacted[`email:${e.addr}`] = rec;
   p.contactedAt = rec.at;

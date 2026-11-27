@@ -55,7 +55,7 @@ export function pickLead(state, key, channel, now = Date.now()) {
     return { key, status: 'skipped' };
   }
   if (!lead.drafts || !lead.drafts[channel]) throw new Error(`no draft for ${channel}; the lead has ${Object.keys(lead.drafts || {}).join(', ')}`);
-  const problem = contactProblem(state, lead.personKey, { now });
+  const problem = contactProblem(state, lead.personKey, { followUp: lead.followUp || null, now });
   if (problem) {
     if (problem.startsWith('suppressed')) applyOp(state, { op: 'transition', key, to: 'suppressed' });
     throw new Error(`refused: ${problem}`);
@@ -87,7 +87,7 @@ export function pageFor(state, lead, channel, text) {
 export function openPlan(state, key, now = Date.now()) {
   const lead = state.leads[key];
   if (!lead) throw new Error(`unknown lead: ${key}`);
-  const problem = contactProblem(state, lead.personKey, { now });
+  const problem = contactProblem(state, lead.personKey, { followUp: lead.followUp || null, now });
   if (problem && ['picked', 'suppressed'].includes(lead.status)) throw new Error(`refused: ${problem}`);
   if (lead.status !== 'picked') throw new Error('the lead is not picked');
   const channel = lead.pick.channel;
@@ -99,13 +99,13 @@ export function openPlan(state, key, now = Date.now()) {
 export function markSentSocial(state, key, now = Date.now()) {
   const lead = state.leads[key];
   if (!lead) throw new Error(`unknown lead: ${key}`);
-  const problem = contactProblem(state, lead.personKey, { now });
+  const problem = contactProblem(state, lead.personKey, { followUp: lead.followUp || null, now });
   if (problem && ['picked', 'suppressed'].includes(lead.status)) throw new Error(`refused: ${problem}`);
   if (lead.status !== 'picked') throw new Error('the lead is not picked');
   const channel = lead.pick.channel;
   if (!SOCIAL.includes(channel)) throw new Error('an email is marked with G email sent');
   applyOp(state, { op: 'transition', key, to: 'contacted', at: new Date(now).toISOString() });
-  markContacted(state, lead.personKey, { channel, leadKey: key, now });
+  markContacted(state, lead.personKey, { channel, leadKey: key, followUp: Boolean(lead.followUp), now });
   state.outreach.push({ at: new Date(now).toISOString(), key, personKey: lead.personKey, channel });
   if (state.outreach.length > 1000) state.outreach.splice(0, state.outreach.length - 1000);
   return { key, status: 'contacted', channel };

@@ -90,7 +90,7 @@ export function buildCandidate(state, lead, profile) {
 export function approveEmail(state, lead, profile, { expectId = null, by = 'person', now = Date.now() } = {}) {
   if (lead.status !== 'picked' && !(by === 'consent' && lead.status === 'drafted')) throw new Error(`the lead is ${lead.status}: pick Email for it first`);
   if (!(lead.pick && lead.pick.channel === 'email') && by !== 'consent') throw new Error('the pick for this lead is not email');
-  const problem = contactProblem(state, lead.personKey, { now });
+  const problem = contactProblem(state, lead.personKey, { followUp: lead.followUp || null, now });
   if (problem) throw new Error(`refused: ${problem}`);
   const c = buildCandidate(state, lead, profile);
   if (expectId && expectId !== c.id) throw new Error('the yes names an email that has changed: ask again');
@@ -98,7 +98,10 @@ export function approveEmail(state, lead, profile, { expectId = null, by = 'pers
   const have = e.drafts[c.id];
   if (have && FINAL.includes(have.status)) throw new Error(`that email is ${have.status}`);
   e.drafts[c.id] = { ...(have || {}), id: c.id, leadKey: c.leadKey, personKey: c.personKey, to: c.to, subject: c.subject, text: c.text, source: c.source, country: c.country, mustDraft: c.mustDraft, status: 'approved', approvedAt: new Date(now).toISOString(), approvedBy: by };
-  if (lead.status === 'drafted') applyOp(state, { op: 'transition', key: lead.key, to: 'picked', at: new Date(now).toISOString() });
+  if (lead.status === 'drafted') {
+    lead.pick = { channel: 'email', at: new Date(now).toISOString(), by };
+    applyOp(state, { op: 'transition', key: lead.key, to: 'picked', at: lead.pick.at });
+  }
   applyOp(state, { op: 'transition', key: lead.key, to: 'approved', at: new Date(now).toISOString() });
   return { id: c.id, to: c.to, via: viaOf(state, c) };
 }
@@ -124,9 +127,10 @@ export function recipientProblem(state, d, profile, overlay, { now = Date.now() 
   const sup = isSuppressed(state, d.personKey);
   if (sup) return `suppressed:${sup}`;
   if (state.suppress.ids[`email:${lower(d.to)}`]) return 'suppressed:address';
-  const c = contactedInfo(state, d.personKey);
-  if (c) return 'already_contacted';
-  if (e.sent[lower(d.to)]) return 'already_contacted';
+  // One contact per person on any channel, unless this email is the person's own follow-up, allowed once by their rule.
+  const cp = contactProblem(state, d.personKey, { followUp: lead.followUp || null, now });
+  if (cp) return cp;
+  if (!lead.followUp && e.sent[lower(d.to)]) return 'already_contacted';
   const s = profile.sender || {};
   if (!String(s.postal || '').trim()) return 'no_postal_address';
   if (!String(s.name || '').trim()) return 'no_sender_name';
@@ -158,7 +162,7 @@ export function nextEmail(state, { profile, overlay, unattended = false, now = D
       if (via === 'none') via = 'drafts';
     }
     if (via === 'dry_run') {
-      recordDryRun(state, { id: d.id, to: d.to, subject: d.subject, at: new Date(now).toISOString() });
+      if (!state.consent.dryRun.records.some((r) => r.id === d.id)) recordDryRun(state, { id: d.id, to: d.to, subject: d.subject, at: new Date(now).toISOString() });
       queue.push({ id: d.id, reason: 'dry_run_recorded' });
       continue;
     }
@@ -190,7 +194,7 @@ function finishSend(state, d, { messageId, threadId, how, now }) {
   if (e.log.length > 500) e.log.splice(0, e.log.length - 500);
   const lead = state.leads[d.leadKey];
   if (lead && lead.status === 'approved') applyOp(state, { op: 'transition', key: lead.key, to: 'contacted', at });
-  markContacted(state, d.personKey, { channel: 'email', leadKey: d.leadKey, now });
+  markContacted(state, d.personKey, { channel: 'email', leadKey: d.leadKey, followUp: Boolean(lead && lead.followUp), now });
   state.outreach.push({ at, key: d.leadKey, personKey: d.personKey, channel: 'email', emailId: d.id });
   return { id: d.id, status: how };
 }
