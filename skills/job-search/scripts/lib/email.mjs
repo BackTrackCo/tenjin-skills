@@ -1,19 +1,16 @@
-import { sha } from './dedupe.mjs';
-import { canonical, rulesHash, ruleValue } from './overlay.mjs';
+import { extendApp } from '../../../loop-base/lib/app.mjs';
+import * as base from '../../../loop-base/lib/email.mjs';
 import { employerName } from './employer.mjs';
+import './paths.mjs';
 
-// Email goes out through the person's Gmail connector, which only the model can call; code decides what may go. An email
-// goes only to an address the poster published in the post itself, kept only when it appeared word for word in that post
-// (`emailFromPost`, set by code when the post was read). An address from people search, a team page or anywhere else is a
-// draft the person sends. One email per address in 90 days, no follow-up email by the skill, no attachment.
-export const REPEAT_DAYS = 90;
-const DAY = 86400000;
-
-const lower = (a) => String(a || '').trim().toLowerCase();
-export const emailState = (s) => (s.emails ||= { drafts: {}, sent: {}, connector: null, modeAsked: null, log: [] });
+// The email core (the drafts, the one-address-in-90-days rule, the hand-out, the consent) is the loop base's. Email goes out through the
+// person's Gmail connector, which only the model can call; code decides what may go. An email goes only to an address the poster
+// published in the post itself, kept only when it appeared word for word in that post (`emailFromPost`, set by code when the post was
+// read). An address from people search, a team page or anywhere else is a draft the person sends. No follow-up email by the skill, no
+// attachment. Job Search declares its candidates and its recipient checks.
 
 // What could be emailed now: an intro whose address the poster published. A lead that already joined a job is its contact.
-export function candidates(state) {
+function jobCandidates(state) {
   const out = [];
   for (const l of state.leads || []) {
     if (l.channel !== 'email' || !l.email || l.emailFromPost !== true || !l.intro || l.joinedJob || ['done', 'not_interested'].includes(l.status)) continue;
@@ -28,43 +25,12 @@ export function candidates(state) {
   }
   // A referral request: the only address allowed is one the person typed in the session for that referrer (`J referral email`); never
   // a found, guessed or looked-up address. It is never sent without its own yes, and never under the email consent.
-  for (const r of state.referralEmails || []) out.push({ ref: `referral:${r.id}`, to: r.to, subject: r.subject, text: r.text, employer: r.company, role: '', job: null, referral: true });
-  return out.map((c) => ({ ...c, id: sha(canonical([lower(c.to), c.subject, c.text])).slice(0, 12) }));
+  for (const r of state.referralEmails || []) out.push({ ref: `referral:${r.id}`, to: r.to, subject: r.subject, text: r.text, employer: r.company, role: '', job: null, ownYesOnly: true });
+  return out;
 }
 
-export const mailto = ({ to, subject, text }) => `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`;
-
-// What is still to decide or to send: a candidate with no final status.
-export const FINAL = ['sent', 'drafted', 'shown', 'skipped'];
-export function pending(state) {
-  const e = emailState(state);
-  return candidates(state).filter((c) => !FINAL.includes((e.drafts[c.id] || {}).status));
-}
-// The drafts that are work or a wait for the person: one to an address already approached within 90 days can never be sent, so it
-// is not an item that comes back (the handout queue still names it).
-export function due(state, now = Date.now()) {
-  const e = emailState(state);
-  return pending(state).filter((c) => !(e.sent[lower(c.to)] && now - Date.parse(e.sent[lower(c.to)]) < REPEAT_DAYS * DAY));
-}
-
-export function addBatch(state, now = Date.now()) {
-  const e = emailState(state);
-  const list = pending(state);
-  for (const c of list) if (!e.drafts[c.id]) e.drafts[c.id] = { id: c.id, ref: c.ref, to: c.to, subject: c.subject, status: 'pending', addedAt: new Date(now).toISOString() };
-  return list;
-}
-
-export const emailConsentCurrent = (state, profile, overlay) => Boolean(state.consent.email && state.consent.email.rulesHash === rulesHash(profile, overlay));
-export function recordEmailConsent(state, profile, overlay, now = Date.now()) {
-  state.consent.email = { rulesHash: rulesHash(profile, overlay), at: new Date(now).toISOString() };
-  return state.consent.email;
-}
-
-// The checks `J email next` runs on every recipient, whatever the mode.
-export function recipientProblem(state, c, overlay, profile, { unattended = false, now = Date.now() } = {}) {
-  const e = emailState(state);
-  const last = e.sent[lower(c.to)];
-  if (last && now - Date.parse(last) < REPEAT_DAYS * DAY) return 'repeat_within_90_days';
+// The checks `J email next` runs on every recipient after the base's one-per-address rule.
+function recipientChecks(state, c, overlay, profile, { unattended = false } = {}) {
   const excluded = (overlay.rules || []).filter((r) => r.effect === 'exclude_company').map((r) => employerName(String(r.value)));
   if (c.employer && excluded.includes(employerName(c.employer))) return 'excluded_company';
   if (unattended && c.job) {
@@ -75,68 +41,11 @@ export function recipientProblem(state, c, overlay, profile, { unattended = fals
   return null;
 }
 
-// One handout at a time, only for an approved draft (or any pending one under the email consent, unattended) that still
-// matches its recorded hash and passes the recipient checks. The model sends exactly what is handed out.
-export function nextEmail(state, { profile, overlay, unattended = false, now = Date.now() }) {
-  const e = emailState(state);
-  const consent = emailConsentCurrent(state, profile, overlay);
-  const queue = [];
-  const via = e.connector === 'send' || e.connector === 'drafts' ? e.connector : 'none';
-  for (const c of candidates(state)) {
-    const d = e.drafts[c.id];
-    if (!d) { queue.push({ id: c.id, reason: 'not_in_batch' }); continue; } // never added by `J email batch`: say so
-    if (FINAL.includes(d.status)) continue;
-    // a draft-only connector sends nothing, so an unattended run may make the drafts; a send needs a yes or the consent
-    const allowed = d.status === 'approved' || (!c.referral && unattended && (consent || via === 'drafts'));
-    if (!allowed) {
-      queue.push({ id: c.id, reason: unattended ? 'no_email_consent' : 'not_approved' });
-      continue;
-    }
-    // handed out and not yet marked sent: the same draft is not handed out again for half an hour
-    if (d.handedAt && now - Date.parse(d.handedAt) < 30 * 60000) { queue.push({ id: c.id, reason: 'handed_out' }); continue; }
-    const problem = recipientProblem(state, c, overlay, profile, { unattended, now });
-    if (problem) {
-      queue.push({ id: c.id, reason: problem });
-      continue;
-    }
-    d.handedAt = new Date(now).toISOString();
-    return { handout: { id: c.id, to: c.to, subject: c.subject, text: c.text, attachments: [], via, mailto: mailto(c), instruction: via === 'send' ? "Send with the connector's send tool, from the person's own Gmail, to this address only." : via === 'drafts' ? "Make a Gmail draft with the connector's draft tool; the person presses Send." : 'Show the text with the mailto link; the person sends it.' }, queue };
-  }
-  return { handout: null, queue };
-}
+extendApp({ email: { candidates: jobCandidates, recipientChecks } });
 
-export function markSent(state, id, { messageId = null, how = 'sent', now = Date.now() } = {}) {
-  const e = emailState(state);
-  const d = e.drafts[id];
-  if (!d) throw new Error(`unknown draft: ${id}`);
-  if (!['sent', 'drafted', 'shown'].includes(how)) throw new Error('how is sent, drafted or shown');
-  d.status = how;
-  d.messageId = messageId;
-  d.at = new Date(now).toISOString();
-  e.sent[lower(d.to)] = d.at; // an address approached by any of the three counts for 90 days
-  e.log.push({ id, to: d.to, how, at: d.at });
-  if (e.log.length > 300) e.log.splice(0, e.log.length - 300);
-  return { id, status: how };
-}
-
-export function approve(state, ids, { skipRest = false, now = Date.now() } = {}) {
-  const e = emailState(state);
-  const list = pending(state);
-  const known = new Set(list.map((c) => c.id));
-  for (const id of ids) if (!known.has(id) || !e.drafts[id]) throw new Error(`no pending draft: ${id}`);
-  for (const c of list) {
-    const d = e.drafts[c.id];
-    if (!d) continue;
-    if (ids.includes(c.id)) Object.assign(d, { status: 'approved', approvedAt: new Date(now).toISOString() });
-    else if (skipRest) d.status = 'skipped';
-  }
-  return { approved: ids.length };
-}
+export const { REPEAT_DAYS, emailState, candidates, mailto, FINAL, pending, due, addBatch, emailConsentCurrent, recordEmailConsent, recipientProblem, nextEmail, markSent, approve, addBatchPeek } = base;
 
 // The DM to an X poster is the person's: code builds the link, the model never opens x.com. A profile link with the text to
 // paste is the fallback; whether X's DM link can carry the text is not verified, so none is built.
 export const handleIn = (how) => (/@([A-Za-z0-9_]{1,15})/.exec(String(how || '')) || [])[1] || null;
 export const dmLink = (handle, text) => ({ profile: `https://x.com/${handle}`, text, prefill: false, how: 'open the profile, press Message, paste the text, press Send yourself' });
-
-// What `J ask email` shows: the pending drafts, read without recording anything.
-export const addBatchPeek = (state) => pending(state);
