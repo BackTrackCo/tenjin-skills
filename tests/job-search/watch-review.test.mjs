@@ -129,7 +129,7 @@ test('41: an update line never wakes the session on its own, and the same line i
   assert.deepEqual(Object.keys(w).filter((k) => k.startsWith('update:')).length, 1);
   store.updateState((s) => { s.updateLines.push('Update check failed: offline'); });
   assert.equal(Object.keys(work.waitingSet(store.loadState())).filter((k) => k.startsWith('update:')).length, 1, 'a repeated line is one key');
-  const src = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'scripts', 'lib', 'watcher.mjs'), 'utf8');
+  const src = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'loop-base', 'lib', 'watcher.mjs'), 'utf8');
   assert.match(src, /!k\.startsWith\('update:'\)/);
 });
 
