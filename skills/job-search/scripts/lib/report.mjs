@@ -1,6 +1,9 @@
 import { notifyLine, plannedJobs, stillLeft, tenjinHint } from './work.mjs';
 import { dmLink, emailConsentCurrent, handleIn, mailto, due as pendingEmails, emailState } from './email.mjs';
 import { graph } from '../../../loop-base/lib/graph.mjs';
+import { extendApp } from '../../../loop-base/lib/app.mjs';
+import * as baseReport from '../../../loop-base/lib/report.mjs';
+import './paths.mjs';
 import { confirmedEvents, eventKind } from './events.mjs';
 import { REFERRAL_LIST_LINE, referralListWaiting, referralNote } from './referral.mjs';
 
@@ -58,7 +61,9 @@ const mailLine = (state, profile, overlay, n) => (emailConsentCurrent(state, pro
 
 function renderShort(state, overlay, { since, now, profile }) {
   const jobs = Object.values(state.jobs);
-  const L = [`# Job Search report, ${new Date(now).toISOString().slice(0, 10)}`, ''];
+  const segs = [];
+  let L = [`# Job Search report, ${new Date(now).toISOString().slice(0, 10)}`, ''];
+  const shared = (name) => { segs.push(L, { shared: name }); L = []; };
   if (profile.search && profile.search.role) {
     const sr = profile.search;
     L.push(`Searched for ${sr.role}${sr.place ? ` in ${sr.place}${sr.remote ? ' and remote' : ''}` : sr.remote ? ', remote' : ''}.`, '');
@@ -110,11 +115,10 @@ function renderShort(state, overlay, { since, now, profile }) {
       for (const x of evs) L.push(`- ${String(x.event.start || '').slice(0, 10)} | ${x.event.online ? 'online' : x.event.place || 'place not stated'} | ${x.matches[0].company} | ${eventKind(x.event)} | ${x.event.url}`);
     } }
   for (const u of state.uploadLines || []) L.push('', `Upload: ${u}.`);
-  const consent = (state.consentLog || []).filter((c) => !c.acked);
-  if (consent.length) { L.push('', '## Consent changes (check that each one was yours)'); for (const c of consent) L.push(`- ${c.at.slice(0, 16).replace('T', ' ')}: ${c.what}.`); }
+  shared('consent');
   if (planned.length) L.push('', CONTACTS_LINE);
   L.push('', ALL_LINE);
-  return L.join('\n');
+  return [...segs, L];
 }
 
 // The first application on a host shows once in the full report, so a maintainer can look at a new site's terms. Never a check
@@ -132,12 +136,13 @@ export function firstApplicationHosts(state) {
 }
 
 // The report is rendered from state and the overlay, never written by the model.
-export function renderReport(state, overlay, { since = null, now = Date.now(), profile = null, short = false } = {}) {
-  if (short) return renderShort(state, overlay, { since, now, profile: profile || {} });
+function renderFull(state, overlay, { since, now, profile }) {
   const jobs = Object.values(state.jobs);
   const fresh = jobs.filter((j) => j.status === 'new' || j.status === 'reviewed').filter((j) => !since || Date.parse(j.firstSeen) >= Date.parse(since));
   fresh.sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1));
-  const L = [];
+  const segs = [];
+  let L = [];
+  const shared = (name) => { segs.push(L, { shared: name }); L = []; };
   L.push(`# Job Search report, ${new Date(now).toISOString().slice(0, 10)}`);
   L.push('');
   // What was searched, and where it came from, so a wrong reading of the resume is seen at once.
@@ -209,20 +214,9 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
   const w = state.watched;
   if ((profile && profile.watch || []).length) L.push('', `## Watched boards checked: ${w ? `${w.ok} of ${w.checked} answered` : 'none yet'}`);
   L.push('', `Cost the router reported: ${(state.routed && state.routed.lastCost) || 'none reported'}`);
-  const newRules = (overlay.rules || []).filter((r) => !since || r.date >= since.slice(0, 10));
-  if (newRules.length) {
-    L.push('', '## Rules (your words)');
-    for (const r of newRules) L.push(`- ${r.date}: "${r.words}" (${ruleText(r)}) id ${r.id}`);
-  }
-  const lessons = (overlay.lessons || []).filter((l) => Date.parse(l.expires) > now);
-  if (lessons.length) {
-    L.push('', '## Lessons the skill learned (they only make it more careful)');
-    for (const l of lessons) L.push(`- ${l.text} Expires ${l.expires.slice(0, 10)}. id ${l.id}`);
-  }
-  if (state.updateLines && state.updateLines.length) {
-    L.push('', '## Updates');
-    for (const u of state.updateLines.slice(-3)) L.push(`- ${u}`);
-  }
+  shared('rules');
+  shared('lessons');
+  shared('updates');
   const stuck = jobs.filter((j) => live(j) && (j.parked || (j.status === 'apply_ready' && yesNeeded(state, profile, j))));
   if (stuck.length) {
     L.push('', '## Waiting on you');
@@ -268,11 +262,7 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
     for (const r of ran) by[r.kind] = (by[r.kind] || 0) + 1;
     L.push('', `Subagent runs in the last day: ${ran.length} (${Object.entries(by).map(([k, n]) => `${n} ${k.replace(/_/g, ' ')}`).join(', ')}).`);
   }
-  const consent = (state.consentLog || []).filter((c) => !c.acked);
-  if (consent.length) {
-    L.push('', '## Consent changes (check that each one was yours)');
-    for (const c of consent) L.push(`- ${c.at.slice(0, 16).replace('T', ' ')}: ${c.what}. Say so if this was not you; \`consent revoke\` undoes it.`);
-  }
+  shared('consent');
   const hints = ['employer_posting'].map((m) => tenjinHint(state, m)).filter(Boolean);
   const stuckNoPosting = jobs.filter((j) => !j.employerPosting && j.unresolved && !['skipped', 'closed'].includes(j.status)).length;
   if (hints.length && stuckNoPosting) L.push('', hints[0].line);
@@ -294,7 +284,12 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
     }
   }
   if (plannedJobs(state, profile || {}, overlay, now).length) L.push('', CONTACTS_LINE);
-  return L.join('\n');
+  return [...segs, L];
 }
+
+extendApp({ report: { sections: (ctx) => (ctx.short ? renderShort(ctx.state, ctx.overlay, ctx) : renderFull(ctx.state, ctx.overlay, ctx)), ruleText } });
+
+// The report frame (the shared rules, lessons, updates and consent sections, and the join) is the loop base's.
+export const renderReport = (state, overlay, opts = {}) => baseReport.renderReport(state, overlay, opts);
 
 export { notifyLine };
