@@ -2,7 +2,7 @@
   "_note": "Synthetic, built from the catalog entry of the second Reddit search seller: {output: {found, data: {items, nextCursor}}}.",
   "kind": "reddit_posts",
   "host": "api.getanyapi.com",
-  "input": { "query": "agent pay for APIs", "subreddit": "claudeai+localllama", "sort": "relevance", "time": "week" },
+  "input": { "query": "(subreddit:claudeai OR subreddit:localllama) agent pay for APIs", "sort": "relevance", "timeframe": "week" },
   "result": { "output": { "found": true, "data": { "items": [
     { "permalink": "/r/ClaudeAI/comments/abc123/how_do_i_let_my_agent_pay/", "title": "How do I let my agent pay for APIs?", "text": "I want my agent to pay per call without me pasting keys. Any ideas?", "authorUsername": "Builder_Two", "createdUtc": 1795596000 },
     { "permalink": "/r/LocalLLaMA/comments/def456/paying_for_tools/", "title": "Paying for tools from an agent", "text": "Looking for a clean way to pay for tool calls.", "authorUsername": "builder_four", "createdUtc": 1795597000 }

@@ -2,7 +2,7 @@
   "_note": "Synthetic, built from the catalog entry of the first Reddit search seller (posts[] with url, title, selftext, author, created_utc).",
   "kind": "reddit_posts",
   "host": "glim.sh",
-  "input": { "query": "agent pay for APIs", "subreddit": "claudeai+localllama", "sort": "relevance", "time": "week" },
+  "input": { "query": "(subreddit:claudeai OR subreddit:localllama) agent pay for APIs", "sort": "relevance", "time": "week" },
   "result": { "posts": [
     { "url": "https://old.reddit.com/r/ClaudeAI/comments/abc123/how_do_i_let_my_agent_pay/", "title": "How do I let my agent pay for APIs?", "selftext": "I want my agent to pay per call without me pasting keys. Any ideas?", "author": "builder_two", "created_utc": 1795596000 }
   ] }

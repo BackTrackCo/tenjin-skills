@@ -285,6 +285,6 @@ test('a reply that asks to stop the company suppresses its domain, and suppressi
   const other = d.resolvePerson(x.s, ['x:colleague']);
   d.addEmail(other, 'colleague@acme.example', 'post');
   assert.match(d.isSuppressed(x.s, other.key), /company_opt_out/);
-  const dropped = d.addPosts(x.s, [{ url: 'https://x.com/colleague/status/1900000000000000333', author: 'colleague', source: 'x', text: 'ask me at colleague@acme.example about agents paying' }]);
+  const dropped = d.addPosts(x.s, [{ url: 'https://x.com/colleague/status/1900000000000000333', author: 'colleague', source: 'x', text: 'ask me at colleague@acme.example about agents paying Any ideas?' }]);
   assert.match(dropped.dropped[0].reason, /suppressed:company_opt_out/);
 });

@@ -23,7 +23,7 @@ function fitLead({ country = 'US' } = {}) {
     Object.assign(s, store.emptyState());
     const p = d.resolvePerson(s, ['linkedin:pat-lee-123'], { name: 'Pat Lee' });
     p.country = country; p.domain = 'acme.example';
-    s.leads.L = { key: 'L', url: 'https://www.linkedin.com/in/pat-lee-123', source: 'people', kind: 'fit', author: 'Pat Lee', text: '', status: 'picked', v: 1, personKey: p.key, links: [], warnings: [], channelProposed: 'email', pick: { channel: 'email', at: 'x' }, drafts: { email: { channel: 'email', subject: 'Paying for APIs', text: 'PayRouter lets an agent pay per call. Worth a look?' } }, firstSeen: 'x' };
+    s.leads.L = { key: 'L', url: 'https://www.linkedin.com/in/pat-lee-123', source: 'people', kind: 'fit', author: 'Pat Lee', text: '', status: 'picked', v: 1, personKey: p.key, links: [], warnings: [], channelProposed: 'email', pick: { channel: 'email', at: 'x' }, drafts: { email: { channel: 'email', subject: 'Paying for APIs', text: 'PayRouter lets an agent pay per call. Worth a look? Any ideas?' } }, firstSeen: 'x' };
     s.tenjin.status = 'ready';
   });
 }

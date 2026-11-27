@@ -52,8 +52,10 @@ test('a phrase becomes key words: first person and filler words go, the order st
 });
 
 test('X: the query is key words plus the operators, in English, no retweets, no replies, no link-only posts; HN has no quotes', () => {
-  assert.equal(q.xQuery('my cold emails get no replies'), 'cold emails replies lang:en -filter:retweets -filter:replies -filter:links');
-  assert.equal(xs.mapper({ query: q.xQuery('how did you get your first users'), since: '2026-11-20' }).query, 'first users lang:en -filter:retweets -filter:replies -filter:links since:2026-11-20');
+  const MARK = '("any recommendations" OR "looking for" OR "how do you" OR "has anyone" OR "struggling to")';
+  assert.equal(q.xQuery('my cold emails get no replies'), `${MARK} cold emails replies lang:en -filter:retweets -filter:replies -filter:links -"DM me" -"link in bio" -giveaway -airdrop`);
+  assert.equal(xs.mapper({ query: q.xQuery('how did you get your first users'), since: '2026-11-20' }).query, `${MARK} first users lang:en -filter:retweets -filter:replies -filter:links -"DM me" -"link in bio" -giveaway -airdrop since:2026-11-20`);
+  assert.equal(xs.mapper({ query: 'a', since: '2026-11-20' }).sort, 'top', 'not plain latest');
   assert.equal(q.hnQuery('my cold emails get no replies'), 'cold emails replies');
   assert.doesNotMatch(q.hnQuery('how did you get your first users'), /"/);
 });
@@ -65,7 +67,7 @@ test('posts that are only links, or a title and a link, are dropped in code befo
   assert.equal(q.linkOnly('my cold emails get no replies, what am I doing wrong? https://example.org/draft'), false);
   const s = store.emptyState();
   const r = d.addPosts(s, [
-    { url: 'https://x.com/a/status/1900000000000000011', author: 'a', source: 'x', text: 'https://example.org/post-1 https://example.org/post-2' },
+    { url: 'https://x.com/a/status/1900000000000000011', author: 'a', source: 'x', text: 'https://example.org/post-1 https://example.org/post-2 Any ideas?' },
     { url: 'https://x.com/b/status/1900000000000000012', author: 'b', source: 'x', text: 'my cold emails get no replies, what am I doing wrong?' },
   ]);
   assert.equal(r.added.length, 1);
@@ -76,8 +78,11 @@ test('posts that are only links, or a title and a link, are dropped in code befo
 test('Reddit: the search is inside the offer\'s subreddits, most relevant first, in the time window; a post from outside the list is dropped', () => {
   const recent = new Date(Date.now() - 3 * 86400000).toISOString();
   const input = reddit.glim.mapper({ query: 'cold emails replies', since: recent, subreddits: 'startups, saas' });
-  assert.deepEqual(input, { query: 'cold emails replies', subreddit: 'startups+saas', sort: 'relevance', time: 'week' });
-  assert.equal(reddit.anyapi.mapper({ query: 'a', since: new Date(Date.now() - 20 * 86400000).toISOString(), subreddits: 'x' }).time, 'month');
+  assert.deepEqual(input, { query: '(subreddit:startups OR subreddit:saas) cold emails replies', sort: 'relevance', time: 'week' }, 'the first seller has no subreddit field: the operator is in the query');
+  const second = reddit.anyapi.mapper({ query: 'a', since: new Date(Date.now() - 20 * 86400000).toISOString(), subreddits: 'x' });
+  assert.equal(second.timeframe, 'month', 'the second seller names it timeframe');
+  assert.equal(second.time, undefined);
+  assert.equal(second.subreddit, undefined, 'the second seller refuses any field it does not know');
   assert.throws(() => reddit.glim.mapper({ query: 'a', since: recent, subreddits: '' }), /no subreddits/);
   const posts = [
     { url: 'https://www.reddit.com/r/startups/comments/aaa/how_did_you_get_users/', source: 'reddit', author: 'u1', text: 'how did you get your first users? I have none yet', subreddit: 'startups' },
@@ -98,7 +103,7 @@ test('Web: a lead from a post asks only for discussion pages, and a page that is
   for (const u of ['https://vendor.example/blog/cold-email-guide', 'https://example.org/pricing', 'https://medium.com/@a/cold-email-tips', 'https://github.com/o/r', 'nope']) assert.equal(q.isDiscussion(u), false, u);
   const s = store.emptyState();
   const r = d.addPosts(s, [
-    { url: 'https://vendor.example/blog/cold-email-guide', source: 'web', text: 'The complete guide to cold email replies for founders' },
+    { url: 'https://vendor.example/blog/cold-email-guide', source: 'web', text: 'The complete guide to cold email replies for founders Any ideas?' },
     { url: 'https://forum.example.org/t/42', source: 'web', text: 'my cold emails get no replies, any advice from people who got some?' },
   ]);
   assert.deepEqual(r.dropped.map((x) => x.reason), ['not_discussion']);
@@ -111,7 +116,9 @@ test('several offers: each has its own queries, subreddits and lead offer; phras
   const needs = routed.postNeeds({ profile, overlay: { rules: [] }, state: s, now: NOW });
   assert.equal(needs.length, 3 * 4, 'three phrases, four sources');
   const byKind = (k, o) => needs.filter((n) => n.kind === k && n.fields.offerId === o);
-  assert.equal(byKind('x_posts', 'gtm')[0].fields.query, 'first users lang:en -filter:retweets -filter:replies -filter:links');
+  assert.equal(byKind('x_posts', 'gtm')[0].fields.query, q.xQuery('how did you get your first users'));
+  assert.match(byKind('x_posts', 'gtm')[0].fields.query, /^\("any recommendations" OR "looking for" OR "how do you" OR "has anyone" OR "struggling to"\) first users/, 'the ask stays in the query');
+  assert.match(byKind('reddit_posts', 'gtm')[0].fields.query, /^\("any recommendations" OR /);
   assert.equal(byKind('reddit_posts', 'jobs')[0].fields.subreddits, 'cscareerquestions');
   assert.match(byKind('reddit_posts', 'gtm')[0].text, /Only in these subreddits: startups, saas/);
   assert.equal(byKind('web_research', 'jobs')[0].fields.mode, 'discussion');
@@ -141,14 +148,15 @@ test('a routed round tags each lead with its offer and keeps only Reddit posts i
   const s = store.loadState();
   assert.deepEqual(Object.values(s.leads).map((l) => [l.source, l.offerId]), [['reddit', 'gtm']]);
   assert.equal(s.dropTally.outside_subreddits, 1);
-  assert.equal(f.calls()[1].input.subreddit, 'claudeai');
+  assert.match(f.calls()[1].input.query, /^\(subreddit:claudeai\) /);
+  assert.equal(f.calls()[1].input.timeframe !== undefined, true);
 });
 
 test('the writer and the review get the offer the lead belongs to, and a draft is checked against that offer only', () => {
   const s = store.emptyState();
   s.tenjin.status = 'missing';
   const mk = (n, offerId) => {
-    const r = d.addPosts(s, [{ url: `https://x.com/u${n}/status/19000000000000002${n}0`, author: `u${n}`, source: 'x', text: `post ${n} about my cold emails getting no replies` }], { offerId });
+    const r = d.addPosts(s, [{ url: `https://x.com/u${n}/status/19000000000000002${n}0`, author: `u${n}`, source: 'x', text: `post ${n} about my cold emails getting no replies, any ideas?` }], { offerId });
     Object.assign(s.leads[r.added[0]], { status: 'reviewed', channelProposed: 'x_reply', quote: 'cold emails', line: 'asks' });
     return r.added[0];
   };

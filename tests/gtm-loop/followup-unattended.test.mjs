@@ -100,7 +100,7 @@ test('an email follow-up passes the same gates once, to the same address, with i
   p.country = 'US'; p.domain = 'acme.example';
   d.addEmail(p, 'pat@acme.example', 'lookup', 'valid');
   s.emails.connector = 'send';
-  s.leads.L = { key: 'L', url: 'https://www.linkedin.com/in/pat-lee-123', source: 'people', kind: 'fit', author: 'Pat Lee', text: '', status: 'contacted', v: 1, personKey: p.key, links: [], warnings: [], channelProposed: 'email', pick: { channel: 'email', at: new Date(T0).toISOString() }, drafts: { email: { channel: 'email', subject: 'Paying for APIs', text: 'PayRouter lets an agent pay per call.' } }, firstSeen: 'x' };
+  s.leads.L = { key: 'L', url: 'https://www.linkedin.com/in/pat-lee-123', source: 'people', kind: 'fit', author: 'Pat Lee', text: '', status: 'contacted', v: 1, personKey: p.key, links: [], warnings: [], channelProposed: 'email', pick: { channel: 'email', at: new Date(T0).toISOString() }, drafts: { email: { channel: 'email', subject: 'Paying for APIs', text: 'PayRouter lets an agent pay per call. Any ideas?' } }, firstSeen: 'x' };
   d.markContacted(s, p.key, { channel: 'email', leadKey: 'L', now: T0 });
   s.emails.sent['pat@acme.example'] = new Date(T0).toISOString();
   const NOW = T0 + 6 * DAY;
@@ -121,7 +121,7 @@ test('an email follow-up passes the same gates once, to the same address, with i
 test('the follow-up questions fit the question tool, four to a call, and the CLI starts and skips them', () => {
   const s = store.emptyState();
   for (let i = 0; i < 5; i++) {
-    const r = d.addPosts(s, [{ url: `https://x.com/u${i}/status/190000000000000${i}00`, author: `u${i}`, source: 'x', text: `post ${i} about agents` }]);
+    const r = d.addPosts(s, [{ url: `https://x.com/u${i}/status/190000000000000${i}00`, author: `u${i}`, source: 'x', text: `post ${i} about agents, any ideas?` }]);
     const l = s.leads[r.added[0]];
     Object.assign(l, { status: 'contacted', pick: { channel: 'x_reply' }, drafts: { x_reply: { text: 'We built PayRouter' } } });
     d.markContacted(s, l.personKey, { channel: 'x_reply', leadKey: l.key, now: T0 });

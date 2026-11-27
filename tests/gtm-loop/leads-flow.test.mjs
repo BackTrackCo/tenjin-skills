@@ -40,7 +40,7 @@ test('the free path: ingest a post file, refuse a bad one with its problems, rev
   const posts = [
     { url: 'https://forum.example.org/t/1', author: 'asker1', source: 'web', text: 'Has anyone found a way to let an agent pay for APIs on its own?', postedAt: '2026-11-25T10:00:00Z' },
     { url: 'https://x.com/asker2/status/1900000000000000100', author: 'asker2', source: 'x', text: 'I wish my agent could pay for APIs by itself.' },
-    { url: 'https://x.com/sam_thing/status/1900000000000000200', author: 'sam_thing', source: 'x', text: 'my own post about agent pay for APIs' },
+    { url: 'https://x.com/sam_thing/status/1900000000000000200', author: 'sam_thing', source: 'x', text: 'my own post about agent pay for APIs Any ideas?' },
   ];
   const bad = G('ingest', '--file', tmp('bad.json', { phrase: 'nope', status: 'fulfilled', posts: [{ url: 'x' }] }));
   assert.equal(bad.code, 1);
@@ -66,7 +66,7 @@ test('the free path: ingest a post file, refuse a bad one with its problems, rev
 });
 
 test('the work list shows review_due for new leads, and the plan of the free step follows the chosen sources', () => {
-  G('ingest', '--file', tmp('more.json', { phrase: 'pay per call for Claude', status: 'fulfilled', posts: [{ url: 'https://forum.example.org/t/9', source: 'web', text: 'Need pay per call for Claude, who has done it?' }] }));
+  G('ingest', '--file', tmp('more.json', { phrase: 'pay per call for Claude', status: 'fulfilled', posts: [{ url: 'https://forum.example.org/t/9', source: 'web', text: 'Need pay per call for Claude, who has done it? Any ideas?' }] }));
   const w = G('work').json;
   assert.deepEqual(w.items.map((i) => i.reason).sort(), ['review_due', 'write_due'], 'two leads reviewed earlier wait for the writer');
   assert.equal(w.items.find((i) => i.reason === 'review_due').count, 1);
