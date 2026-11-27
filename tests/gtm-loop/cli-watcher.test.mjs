@@ -94,7 +94,7 @@ test('every question payload is checked against the question tool\'s limits', ()
   assert.ok(q.validateAsk({ questions: [] }).length);
 });
 
-test('the CLI runs from a folder whose path has a space in it', async () => {
+test('the CLI runs from a folder whose path has a space in it, and through a symlink to the skill folder', async () => {
   const { spawnSync } = await import('node:child_process');
   const os = await import('node:os');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gtm space '));
@@ -102,4 +102,9 @@ test('the CLI runs from a folder whose path has a space in it', async () => {
   const r = spawnSync(process.execPath, [path.join(dir, 'gtm-loop', 'scripts', 'gtm.mjs'), 'state'], { encoding: 'utf8', env: { ...process.env, HOME: home, TENJIN_SKILLS_DIR: path.join(home, '.tenjin-skills') } });
   assert.equal(r.status, 0);
   assert.ok(JSON.parse(r.stdout).counts);
+  const link = path.join(dir, 'linked');
+  fs.symlinkSync(path.join(dir, 'gtm-loop'), link);
+  const viaLink = spawnSync(process.execPath, [path.join(link, 'scripts', 'gtm.mjs'), 'state'], { encoding: 'utf8', env: { ...process.env, HOME: home, TENJIN_SKILLS_DIR: path.join(home, '.tenjin-skills') } });
+  assert.equal(viaLink.status, 0);
+  assert.ok(JSON.parse(viaLink.stdout).counts);
 });
