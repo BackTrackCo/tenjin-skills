@@ -408,6 +408,8 @@ register('watch', async () => {
 });
 register('ops', ({ flags }) => applyOps(flags.file ? readJsonFile(flags.file) : fail('ops needs --file')));
 
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
+// Run only when this file is the entry point. Both paths are resolved through symlinks: the installer links the skill folder.
+const real = (f) => { try { return fs.realpathSync(f); } catch { return path.resolve(f); } };
+if (process.argv[1] && real(process.argv[1]) === real(fileURLToPath(import.meta.url))) {
   main().then((code) => { process.exitCode = code; });
 }
