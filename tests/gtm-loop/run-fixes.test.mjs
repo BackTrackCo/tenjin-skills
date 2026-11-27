@@ -191,7 +191,7 @@ test('Hacker News is searched per phrase of every offer, with key words and no q
   const calls = [];
   const fetchImpl = async (u) => { calls.push(u); return { ok: true, status: 200, json: async () => ({ hits: [] }) }; };
   await hn.runHn({ fetch: fetchImpl, profile, overlay: { rules: [] }, now: NOW, gapMs: 0 });
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 6, 'two searches per phrase');
   assert.ok(calls.every((c) => !c.includes('%22')), 'no quotes');
   assert.ok(calls[0].includes('query=first%20users&'));
 });
@@ -241,4 +241,14 @@ test('SKILL.md: every review batch is started in one message as parallel calls, 
   assert.match(setup, /subreddits/);
   assert.match(setup, /ask once/);
   assert.match(setup, /one message/);
+});
+
+test('Hacker News keeps only people who ask: Ask HN stories, comments under an Ask HN story, comments with the key words together', () => {
+  const k = (h) => hn.keepHit(h, 'how did you get your first users');
+  assert.equal(k({ _tags: ['story', 'ask_hn'], title: 'Ask HN: first users?' }), true);
+  assert.equal(k({ _tags: ['story'], title: 'Show HN: my product' }), false, 'a story that is not Ask HN');
+  assert.equal(k({ _tags: ['comment'], story_title: 'Ask HN: Who is hiring?', comment_text: 'x' }), true);
+  assert.equal(k({ _tags: ['comment'], story_title: 'A kernel release', comment_text: 'the users were first to notice' }), false, 'key words apart');
+  assert.equal(k({ _tags: ['comment'], story_title: 'A blog post', comment_text: 'Our first users came from a forum.' }), true, 'key words together');
+  assert.equal(k({ _tags: ['comment'], story_title: 'Tell HN: something', comment_text: 'unrelated' }), false);
 });

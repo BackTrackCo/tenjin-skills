@@ -20,20 +20,24 @@ const NOW = Date.parse('2026-11-26T08:00:00Z');
 test('Hacker News is read free through the search API only: one search per phrase, items become leads, the HN site is never fetched', async () => {
   const ff = fakeFetch({ 'https://hn.algolia.com/api/v1/search_by_date': fixture('hn-search.json') });
   const r = await hn.runHn({ fetch: ff, profile, overlay, now: NOW, gapMs: 0 });
-  assert.equal(ff.calls.length, 1);
+  assert.equal(ff.calls.length, 2, 'one search for Ask HN stories, one for comments');
+  assert.match(ff.calls[0], /tags=ask_hn/);
+  assert.match(ff.calls[1], /tags=comment/);
   assert.match(ff.calls[0], /query=agent%20pay%20apis&/, 'key words, no quotes');
   assert.match(ff.calls[0], /created_at_i%3E/);
-  assert.equal(r.added, 2, 'an item with no text is skipped');
+  assert.equal(r.added, 3, 'an Ask HN story, a comment under an Ask HN story, a comment with the key words together; not a loose match, a Show HN story or an item with no text');
   const s = store.loadState();
   assert.ok(s.leads['https://news.ycombinator.com/item?id=41000001']);
+  assert.ok(s.leads['https://news.ycombinator.com/item?id=41000004']);
+  for (const id of ['41000003', '41000005', '41000006']) assert.equal(s.leads[`https://news.ycombinator.com/item?id=${id}`], undefined, id);
   assert.match(s.leads['https://news.ycombinator.com/item?id=41000001'].text, /I'm looking for a way/);
   assert.equal(s.leads['https://news.ycombinator.com/item?id=41000002'].source, 'hn');
   assert.ok(s.ids['hn:hn_user_a']);
-  assert.equal(s.phraseYield['agent pay for APIs'].hn, 2);
+  assert.equal(s.phraseYield['agent pay for APIs'].hn, 3);
   assert.ok(ff.calls.every((c) => c.startsWith('https://hn.algolia.com/')));
   // the second read starts after the last one
   await hn.runHn({ fetch: ff, profile, overlay, now: NOW + 3600000, gapMs: 0 });
-  assert.ok(decodeURIComponent(ff.calls[1]).includes(`created_at_i>${Math.floor(NOW / 1000)}`));
+  assert.ok(decodeURIComponent(ff.calls[2]).includes(`created_at_i>${Math.floor(NOW / 1000)}`));
 });
 
 test('a failing HN search throws and records nothing', async () => {
@@ -115,14 +119,14 @@ test('the search step: free sources in code, the routed round only with Tenjin r
   const ff = fakeFetch({ 'https://hn.algolia.com/api/v1/search_by_date': fixture('hn-search.json') });
   assert.equal(search.searchDue(store.loadState(), profile, NOW), true);
   const out = await search.searchStep({ profile, overlay, fetchImpl: ff, now: NOW, sleep: async () => {} });
-  assert.equal(out.hn.added, 2);
+  assert.equal(out.hn.added, 3);
   assert.equal(out.routed, undefined, 'no routed round without Tenjin');
   const s = store.loadState();
   assert.equal(s.search.modelDue, true);
   assert.deepEqual(search.searchItems({ state: s, profile, now: NOW }).map((i) => i.reason), ['search_due']);
   const again = await search.searchStep({ profile, overlay, fetchImpl: ff, now: NOW + 1000 });
   assert.equal(again.ran, false);
-  assert.equal(ff.calls.length, 1);
+  assert.equal(ff.calls.length, 2);
   search.searchDone(NOW + 5000);
   assert.equal(store.loadState().search.modelDue, false);
   assert.equal(search.searchDue(store.loadState(), profile, NOW + 6000), false, 'the next round is a period later');
