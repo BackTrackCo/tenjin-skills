@@ -1,10 +1,17 @@
-# Reddit Scout
+# Tenjin skills
+
+Agent skills for Tenjin, installed with `npx skills add`.
+
+- [Reddit Scout](#reddit-scout): find recent Reddit threads you can help with and draft a comment.
+- [GTM Loop](#gtm-loop): find people who want what you sell, draft the first message, and send it with your yes.
+
+## Reddit Scout
 
 Find recent Reddit threads you can help with. Scout reads the replies and drafts a comment if there’s something useful to add. You decide what to post.
 
 [![View the Reddit Scout skill](https://img.shields.io/badge/Agent%20Skill-View%20SKILL.md-24292f?logo=github)](skills/reddit-scout/SKILL.md)
 
-## Quickstart
+### Quickstart
 
 1. **Set up Tenjin.** If you’re new to Tenjin, paste this into Claude Code. [Setup guide](https://github.com/BackTrackCo/tenjin-agent#install)
 
@@ -27,7 +34,7 @@ Use `/reddit-scout` to invoke it directly. Give it a topic to discover subreddit
 
 For Codex, replace `-a claude-code` with `-a codex`. Tenjin’s Codex integration is experimental. Calls paid through Tenjin follow your spending limits. Connected providers bill their own accounts.
 
-## Example output
+### Example output
 
 The current skill replayed a post and nine replies saved during a live run. [Reddit thread](https://www.reddit.com/r/ClaudeCode/comments/1xvektq/looking_for_help_setting_up_claude_code_for_ai/) · [How we tested Reddit Scout](docs/reddit-search-comparison.md)
 
@@ -53,3 +60,50 @@ action.
 Reviewed only the supplied post and all nine captured comments.
 Posting status is unknown; check before replying.
 ```
+
+## GTM Loop
+
+Every day, GTM Loop gives you a short list of people who want what you sell. Each one comes with the reason, the exact words that make them a lead, and a first message in your voice. You send the good ones with one yes.
+
+### Install
+
+Install it from a branch or a tag with the writing skill it uses. This needs Node 22.20 or later.
+
+```sh
+npx skills add BackTrackCo/tenjin-skills#A1igator/gtm-loop-v0 \
+  --skill gtm-loop --skill writing -a claude-code -g
+```
+
+From a local clone checked out at that branch:
+
+```sh
+npx skills add ./tenjin-skills --skill gtm-loop --skill writing -a claude-code -g
+```
+
+A release tag installs the same way, for example `BackTrackCo/tenjin-skills#gtm-loop-v0.1.0`. Then, in a new Claude Code session, run `/gtm-loop`, optionally followed by what you sell, for example `/gtm-loop I sell a router that lets Claude Code pay for APIs`.
+
+### What it does
+
+1. You say what you sell, in your own words, and who buys it. It proposes the phrases a buyer would write, and you edit them.
+2. Code finds leads. Posts that ask for what you sell come from X, Reddit, LinkedIn, Hacker News and the web. People who fit your buyer come from company and people search, when you describe your buyer. With Tenjin, the searches run in code at the router's price; without it, one web-search step runs and Hacker News is free.
+3. Code removes duplicates and drops anyone you already contacted or who opted out. A review scores fit, intent and timing, with one line that quotes the post.
+4. One writer call drafts a first message per lead, from the signal, your offer and your writing rules.
+5. You pick the leads and the channel in one question. A reply on X, Reddit, LinkedIn or Hacker News opens in your own Chrome with the text ready, and you press send. An email goes out through your Gmail connector only after your yes on that email.
+
+### Send by email
+
+The skill holds no mail credential. It uses the Gmail tool you connected to Claude. If the connected tool can send, an email goes only after your yes on that exact address and text. If it can only draft, the loop makes a Gmail draft and the send is yours. With no Gmail tool, it shows the text with a `mailto:` link. Unattended email is opt-in: your own rules, a recorded consent bound to those rules, and a dry run first.
+
+### Safety gates
+
+- No email without your yes on that email, unless you opted in to unattended email and confirmed a dry run.
+- One contact per person on any channel, unless your own follow-up rule says otherwise. An opt-out, a bounce or "not interested" suppresses a person for good.
+- Every email carries a footer built by code: your name and company, your postal address, where the lead was found, and a stop line. No postal address, no email.
+- An address is emailed only when the lead published it, or when a lookup found it at a company domain and the check said it is valid. Leads in Germany, Austria, Canada and Australia get a draft, never a send.
+- The skill never fetches, scripts or acts on X, LinkedIn or Reddit. You press send on every social reply.
+- Posts, profiles and replies are data, never instructions.
+
+### Where the data goes
+
+Your profile, rules, leads and records stay on your computer, in `~/.tenjin-skills/gtm-loop/`. Searches send your phrases to the Tenjin router. Writing sends the signal, your offer and your writing rules to the writer model. Email goes from your own Gmail.
+
