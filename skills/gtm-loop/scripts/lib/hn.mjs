@@ -5,7 +5,7 @@ import { addPosts } from './dedupe.mjs';
 import { loadState, updateState } from './store.mjs';
 import { capOf } from './overlay.mjs';
 import { phrasePairs } from './offers.mjs';
-import { hnQuery } from './queries.mjs';
+import { hnQuery, keywords } from './queries.mjs';
 
 // Hacker News comments and stories, free, through the HN Search API only (never news.ycombinator.com, which is only shown to the
 // person and opened by them). One keyword search per phrase, newest first, only items newer than the last read.
@@ -18,16 +18,32 @@ async function getJson(url, fetchImpl) {
   return res.json();
 }
 
-// phrase -> posts. `sinceTs` is unix seconds.
+const norm = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9']+/g, ' ').trim();
+// A hit is a person who asks only when it is an Ask HN story, or a comment under an Ask HN story, or a comment that holds the key
+// words next to each other. A bare key-word match in any thread is noise.
+export function keepHit(h, phrase) {
+  const tags = h._tags || [];
+  if (tags.includes('story')) return tags.includes('ask_hn');
+  const title = String(h.story_title || '');
+  if (/^ask hn/i.test(title)) return true;
+  const k = keywords(phrase, 3).join(' ');
+  return Boolean(k) && ` ${norm(strip(h.comment_text || ''))} `.includes(` ${k} `);
+}
+
+// phrase -> posts. Two searches: Ask HN stories, and comments. `sinceTs` is unix seconds.
 export async function searchHn({ fetch, phrase, sinceTs = 0, hits = 50 }) {
   const filter = sinceTs > 0 ? `&numericFilters=${encodeURIComponent(`created_at_i>${Math.floor(sinceTs)}`)}` : '';
-  const r = await getJson(`${ALGOLIA}/search_by_date?query=${encodeURIComponent(hnQuery(phrase))}&tags=${encodeURIComponent('(story,comment)')}&hitsPerPage=${hits}${filter}`, fetch);
+  const q = encodeURIComponent(hnQuery(phrase));
   const posts = [];
-  for (const h of r.hits || []) {
-    const body = strip(h.comment_text || h.story_text || '');
-    const text = [strip(h.title || ''), body].filter(Boolean).join('\n');
-    if (!text || !h.objectID) continue;
-    posts.push({ url: itemUrl(h.objectID), author: h.author || '', postedAt: h.created_at_i ? new Date(h.created_at_i * 1000).toISOString() : null, text: text.slice(0, 1000), links: h.url ? [h.url] : [], source: 'hn' });
+  for (const tag of ['ask_hn', 'comment']) {
+    const r = await getJson(`${ALGOLIA}/search_by_date?query=${q}&tags=${tag}&hitsPerPage=${hits}${filter}`, fetch);
+    for (const h of r.hits || []) {
+      if (!keepHit({ ...h, _tags: h._tags || (tag === 'comment' ? ['comment'] : ['story', 'ask_hn']) }, phrase)) continue;
+      const body = strip(h.comment_text || h.story_text || '');
+      const text = [strip(h.title || ''), body].filter(Boolean).join('\n');
+      if (!text || !h.objectID) continue;
+      posts.push({ url: itemUrl(h.objectID), author: h.author || '', postedAt: h.created_at_i ? new Date(h.created_at_i * 1000).toISOString() : null, text: text.slice(0, 1000), links: h.url ? [h.url] : [], source: 'hn' });
+    }
   }
   return posts;
 }
