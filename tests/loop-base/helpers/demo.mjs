@@ -33,6 +33,19 @@ export function demoState() {
   };
 }
 
+// An app over a given skill folder (a temporary one), with the demo state shape.
+export function defineDemo(skillDir, extra = {}) {
+  const { defineApp } = require_app();
+  return defineApp({ skillDir, state: demoState(), ...extra });
+}
+let appMod = null;
+const require_app = () => appMod;
+export async function loadAppModule() {
+  appMod = await import(path.join(BASE_LIB, 'app.mjs'));
+  return appMod;
+}
+await loadAppModule();
+
 // A fake fetch: the longest matching URL prefix answers; a number is a status, anything else is the JSON body.
 export function fakeFetch(map) {
   const calls = [];
