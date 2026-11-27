@@ -63,3 +63,31 @@ export function validateAsk(p) {
   }
   return bad;
 }
+
+// ---- GTM Loop questions ----------------------------------------------------------------------------------------------
+export const EMAIL_MODE_OF = { 'Ask me for each email (Recommended)': 'ask', 'Make Gmail drafts, I press Send': 'drafts', 'Show me the text': 'show' };
+export const SOURCES_OF = { 'Every source (Recommended)': ['x', 'reddit', 'linkedin', 'hn', 'web'], 'X, Reddit and LinkedIn only': ['x', 'reddit', 'linkedin'], 'Hacker News and the web only': ['hn', 'web'] };
+
+// The start, after the person said what they sell and edited the phrases: one call, three questions.
+export function startQuestions({ rc = 'unknown', pushSent = false, settings = {} } = {}) {
+  return {
+    questions: [
+      q('Email', 'How should emails go out?', [
+        { label: 'Ask me for each email (Recommended)', description: 'I show each email with its address and footer and send it from your Gmail only after your yes.' },
+        { label: 'Make Gmail drafts, I press Send', description: 'I make a draft in your Gmail for each email you approve; you press Send.' },
+        { label: 'Show me the text', description: 'I show each email with a mailto link; you send it from any mail app.' },
+      ]),
+      q('Search', 'How often should I search for leads?', [
+        { label: 'Every day (Recommended)', description: 'One search round a day. With Tenjin it runs in code at the router\'s price; without it, one Haiku web-search run.' },
+        { label: 'Twice a day', description: 'Two search rounds a day, about twice the router price or Haiku usage.' },
+        { label: 'Once a week', description: 'One search round a week, about a seventh of the daily price or usage.' },
+      ]),
+      q('Sources', 'Where should I look for leads?', [
+        { label: 'Every source (Recommended)', description: 'Posts on X, Reddit and LinkedIn, Hacker News and the web.' },
+        { label: 'X, Reddit and LinkedIn only', description: 'Social posts only; Hacker News and the web are left out.' },
+        { label: 'Hacker News and the web only', description: 'The free sources only: Hacker News search and one web-search step.' },
+      ]),
+    ],
+    reminder: rcReminder({ rc, pushSent, settings }),
+  };
+}

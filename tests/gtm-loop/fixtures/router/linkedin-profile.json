@@ -1,0 +1,6 @@
+{
+  "_note": "Synthetic. First seller: {name, location, about, experience[]}; second seller: {output: {found, data: {...}}}.",
+  "kind": "linkedin_profile",
+  "first": { "host": "x402.orthogonal.com", "input": { "url": "https://www.linkedin.com/in/pat-lee-123" }, "result": { "name": "Pat Lee", "location": "Toronto, Canada", "about": "Head of platform.", "experience": [{ "name": "Acme Robotics", "member": { "startDate": "2021-03" } }] } },
+  "second": { "host": "api.getanyapi.com", "input": { "url": "https://www.linkedin.com/in/pat-lee-123" }, "result": { "output": { "found": true, "data": { "firstName": "Pat", "lastName": "Lee", "headline": "Head of platform at Acme Robotics", "location": "Toronto, Ontario, Canada", "about": "Head of platform.", "currentPosition": [{ "companyName": "Acme Robotics", "position": "Head of platform" }] } } } }
+}

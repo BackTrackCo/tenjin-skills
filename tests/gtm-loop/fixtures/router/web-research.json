@@ -1,0 +1,10 @@
+{
+  "_note": "Synthetic. The shape of the web research answer: results[] with url, title, text, publishedDate.",
+  "kind": "web_research",
+  "host": "api.exa.ai",
+  "input": { "query": "agent pay for APIs", "type": "lite", "numResults": 10 },
+  "result": { "results": [
+    { "url": "https://forum.example.org/t/agents-paying-for-apis/42", "title": "Agents paying for APIs?", "text": "Has anyone found a way to let an agent pay for APIs on its own? Contact me at asker@forum.example.org", "publishedDate": "2026-11-24T10:00:00.000Z" },
+    { "url": "https://x.com/dev_five/status/1900000000000000005", "title": "dev five", "text": "Wish my agent could pay for APIs by itself.", "publishedDate": "2026-11-24" }
+  ] }
+}

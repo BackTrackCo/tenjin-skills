@@ -29,7 +29,7 @@ G means `node ${CLAUDE_SKILL_DIR}/scripts/gtm.mjs`. Always write it out in full,
 ## Start and recover
 
 Every start, after a compaction or `/resume`: `G tenjin`, `G start status`, `G work --commit`, then `G watch` last (Bash tool, `run_in_background`; it exits when work is due, which wakes you; it refuses while due work is unclaimed; start it again after each round and on `watcher: stopped`; lease elsewhere: attended work).
-First run: references/setup.md. Questions: one AskUserQuestion call per `G ask <kind>`, never your own list, never in an unattended turn (hold and notify).
+First run: references/setup.md (say what the person sells, the phrases, then `G ask start`). Questions: one AskUserQuestion call per `G ask <kind>`, never your own list, never in an unattended turn (hold and notify).
 
 ## The round
 

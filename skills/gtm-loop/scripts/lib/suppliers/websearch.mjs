@@ -1,0 +1,33 @@
+import { str, linksOf, listOf, isoOf } from './posts-shared.mjs';
+
+// Web research: pages where someone asks for what the offer is (forums, blogs, issues). Results are kept as leads, with the page's
+// own link as the lead's source, never as board links. Input: `query`, `type`, `numResults`; Tenjin sets `contents` on every call.
+// The answer is data and is not saved when its terms allow immediate use only (NO_CACHE). The text of a page is never fetched by
+// code: only what the answer carries.
+export const KIND = 'web_research';
+export const exa = {
+  HOST: 'api.exa.ai',
+  KIND,
+  RECORDED: true,
+  NO_CACHE: true,
+  mapper: ({ query }) => {
+    if (!str(query)) throw new Error('no phrase for the web research');
+    return { query: str(query).slice(0, 400), type: 'lite', numResults: 10 };
+  },
+};
+
+// The page's own site decides the lead's source: a page on a platform site would break the guard if opened by code, so it is
+// kept as web and the person opens it. Hosts of X, LinkedIn and Reddit are re-labelled so they dedupe with the post sources.
+const siteSource = (url) => (/^https?:\/\/([^/]+\.)?(x|twitter)\.com\//i.test(url) ? 'x' : /^https?:\/\/([^/]+\.)?reddit\.com\//i.test(url) ? 'reddit' : /^https?:\/\/([^/]+\.)?linkedin\.com\//i.test(url) ? 'linkedin' : /^https?:\/\/news\.ycombinator\.com\//i.test(url) ? 'hn' : 'web');
+export function adapter(res) {
+  const r = res && typeof res === 'object' ? res : {};
+  const list = listOf(r, 'results', 'data.results', 'web.results', 'data.web.results') || (Array.isArray(r) ? r : null);
+  if (!list) throw new Error('the result has no results list');
+  const posts = list.map((x) => {
+    const url = str(x && (x.url || x.link));
+    if (!/^https?:\/\//i.test(url)) throw new Error('a result has no url');
+    const text = [str(x.title), str(x.text || x.snippet || x.summary || x.description || (Array.isArray(x.highlights) ? x.highlights.join(' ') : ''))].filter(Boolean).join('\n');
+    return { url, author: str(x.author), postedAt: isoOf(x.publishedDate || x.published_date || x.published || x.date), text: text.slice(0, 1000), links: linksOf(text), source: siteSource(url) };
+  }).filter((p) => p.text);
+  return { posts };
+}

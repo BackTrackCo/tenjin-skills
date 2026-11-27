@@ -1,0 +1,7 @@
+{
+  "_note": "Synthetic, built from the catalog entry of the X profile read.",
+  "kind": "x_profile",
+  "host": "glim.sh",
+  "input": { "username": "dev_one" },
+  "result": { "user": { "username": "dev_one", "name": "Dev One", "description": "Building agents. Berlin. https://www.linkedin.com/in/dev-one-77/", "location": "Berlin, Germany", "entities": { "url": { "urls": [{ "expanded_url": "https://devone.example.org" }] } } } }
+}

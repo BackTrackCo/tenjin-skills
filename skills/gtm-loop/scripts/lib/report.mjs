@@ -1,0 +1,28 @@
+import { fmt, hintLines, pricesCheckedAt } from './prices.mjs';
+
+// The short report: what is new, what waits for the person, what went out, what came back, what it cost. Built from state, never
+// from model text.
+const DAY = 86400000;
+const count = (state, status) => Object.values(state.leads).filter((l) => l.status === status).length;
+
+export function report(state, profile = {}, now = Date.now()) {
+  const since = now - DAY;
+  const newLeads = Object.values(state.leads).filter((l) => Date.parse(l.firstSeen) >= since && l.status !== 'suppressed');
+  const spend = (state.spend || []).filter((s) => now - Date.parse(s.at) < 7 * DAY);
+  const cents = spend.reduce((n, s) => n + (s.cents || 0), 0);
+  const leadsFound = spend.reduce((n, s) => n + (s.leads || 0), 0);
+  const optOuts = Object.values(state.suppress.ids).filter((x) => /opt_out|stop/.test(x.reason)).length;
+  const lines = [
+    `New leads in the last day: ${newLeads.length}. Waiting for review: ${count(state, 'new')}. Reviewed: ${count(state, 'reviewed')}.`,
+    `Drafts waiting for your pick: ${count(state, 'drafted')}. Picked: ${count(state, 'picked')}. Approved emails: ${count(state, 'approved')}.`,
+    `Sent: ${count(state, 'contacted')}. Replies: ${count(state, 'replied')}. Opt-outs and bounces: ${optOuts}. Suppressed: ${Object.keys(state.suppress.ids).length} identities, ${Object.keys(state.suppress.domains).length} domains.`,
+  ];
+  if (spend.length) lines.push(`Router spend, last 7 days: ${fmt(Math.round(cents * 10) / 10)}${leadsFound ? `, about ${fmt(Math.round((cents / leadsFound) * 10) / 10)} per new lead` : ''} (prices checked ${pricesCheckedAt()}).`);
+  const yieldLines = Object.entries(state.phraseYield || {}).map(([phrase, by]) => `"${phrase}": ${Object.entries(by).map(([s, n]) => `${n} from ${s}`).join(', ') || 'none yet'}`);
+  if (yieldLines.length) lines.push(`New leads per phrase and source, all time: ${yieldLines.join('; ')}.`);
+  for (const h of state.held || []) lines.push(`Held: ${h.detail || h.reason}.`);
+  for (const l of state.updateLines || []) lines.push(l);
+  const t = state.tenjin || {};
+  if (t.status && t.status !== 'ready') lines.push(hintLines(profile).search);
+  return { lines, text: lines.join('\n') };
+}

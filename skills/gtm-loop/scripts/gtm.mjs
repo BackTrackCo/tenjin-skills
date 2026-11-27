@@ -11,6 +11,15 @@ import { isBatchDenied, batchMode, cleanupStale, isActive, touchBatch } from './
 import { runWatcher } from './lib/watcher.mjs';
 import { workList, leave } from './lib/work.mjs';
 import { logRun } from './lib/runlog.mjs';
+import './lib/steps.mjs';
+import { checkPostFile, ingestPostFile, reviewHandout, checkReview, applyReview } from './lib/ingest.mjs';
+import { searchPlan, searchDone } from './lib/search.mjs';
+import { runHn } from './lib/hn.mjs';
+import { runPostRound, runIdentityReads } from './lib/routed.mjs';
+import { report } from './lib/report.mjs';
+import { startQuestions, validateAsk, EMAIL_MODE_OF, SOURCES_OF } from './lib/questions.mjs';
+import { pushSettings } from './lib/pushsettings.mjs';
+import { hintLines, outdatedLine } from './lib/prices.mjs';
 
 // G is this file. Every command prints one JSON object. State, rules and profile live in ~/.tenjin-skills/gtm-loop/.
 export function parseArgs(argv) {
@@ -74,6 +83,84 @@ register('work', ({ flags }) => {
   return { items: wl.items, handed: wl.handed.map((i) => i.key), notify: wl.notify };
 });
 register('leave', ({ rest, flags }) => leave(rest[0], flags.reason));
+
+register('phrases', ({ sub, rest, flags }) => {
+  if (sub !== 'set') return { phrases: readProfile().phrases || [] };
+  const list = (flags.json ? JSON.parse(flags.json) : rest.join(' ').split('|')).map((x) => String(x).trim()).filter(Boolean);
+  if (!list.length) return fail('phrases set needs phrases: G phrases set "first phrase|second phrase" or --json \'["a","b"]\'');
+  return { profile: setProfile({ phrases: list }) };
+});
+
+register('start', ({ sub, flags }) => {
+  const profile = readProfile();
+  if (sub === 'record') {
+    const patch = {};
+    if (flags['email-mode']) patch.emailMode = flags['email-mode'];
+    if (flags.frequency) patch.frequency = flags.frequency;
+    if (flags.sources) patch.sources = flags.sources === 'all' ? ['x', 'reddit', 'linkedin', 'hn', 'web'] : flags.sources === 'social' ? ['x', 'reddit', 'linkedin'] : flags.sources === 'free' ? ['hn', 'web'] : fail('sources is all, social or free');
+    if (!Object.keys(patch).length) return fail('start record needs --email-mode, --frequency or --sources');
+    const next = setProfile(patch);
+    updateState((s) => { s.start = { at: new Date().toISOString(), emailMode: next.emailMode || null, frequency: next.frequency || null, sources: next.sources || null }; });
+    return { recorded: loadState().start };
+  }
+  const missing = [];
+  if (!profile.offer) missing.push('what you sell (G profile set --json \'{"offer": {"name", "what", "who", "link"}}\')');
+  if (!(profile.phrases || []).length) missing.push('the phrases a buyer would write (G phrases set)');
+  if (!loadState().start) missing.push('the start question (G ask start, then G start record)');
+  return { done: missing.length === 0, missing, next: missing.length ? 'Ask the person, in their own words: what they sell, who it helps, the link, and if they like who buys it (role, company type, place). Propose three to six phrases a buyer would write, let them edit, then save them. Then ask the start question.' : null };
+});
+register('ask', ({ sub }) => {
+  if (sub === 'start') {
+    const st = loadState();
+    const ask = startQuestions({ rc: st.rc, pushSent: st.pushSent, settings: pushSettings() });
+    const bad = validateAsk(ask);
+    if (bad.length) return fail(bad.join('; '));
+    return ask;
+  }
+  return fail(`unknown ask: ${sub}`);
+});
+
+register('search', async ({ sub, flags }) => {
+  const profile = readProfile();
+  if (sub === 'plan') return searchPlan(profile, loadOverlay());
+  if (sub === 'done') return searchDone();
+  if (sub === 'route') {
+    if (loadState().tenjin.status !== 'ready') return fail('Tenjin is not ready: run G tenjin first');
+    const r = await runPostRound({ profile, overlay: loadOverlay() });
+    const reads = flags['no-reads'] ? null : await runIdentityReads({});
+    return { ...r, reads };
+  }
+  return fail('search plan, search route, search done');
+});
+register('hn', async () => runHn({ fetch: globalThis.fetch, profile: readProfile(), overlay: loadOverlay() }));
+register('reads', async () => runIdentityReads({}));
+register('ingest', ({ flags }) => {
+  if (!flags.file) return fail('ingest needs --file');
+  const obj = readJsonFile(flags.file);
+  const profile = readProfile();
+  const bad = checkPostFile(obj, profile);
+  if (bad.length) return fail(`the file was refused, rewrite it: ${bad.slice(0, 8).join('; ')}`);
+  return updateState((s) => {
+    const r = ingestPostFile(s, obj, { profile, overlay: loadOverlay() });
+    return { added: r.added.length, repeated: r.repeated, dropped: r.dropped };
+  });
+});
+register('review', ({ sub, flags }) => {
+  if (sub === 'next') return { leads: updateState((s) => reviewHandout(s)), note: 'Review each lead: fit, intent and timing 0 to 100, a quote that appears in the post, one line, the channel, keep or not. Write {"reviews": [...]} and run G review ingest --file <file>.' };
+  if (sub === 'ingest') {
+    if (!flags.file) return fail('review ingest needs --file');
+    const obj = readJsonFile(flags.file);
+    const bad = checkReview(obj, loadState());
+    if (bad.length) return fail(`the review was refused, rewrite it: ${bad.slice(0, 8).join('; ')}`);
+    return updateState((s) => applyReview(s, obj, { overlay: loadOverlay() }));
+  }
+  return fail('review next, review ingest --file <file>');
+});
+register('report', ({ flags }) => {
+  const r = report(loadState(), readProfile());
+  return flags.all ? { ...r, held: loadState().held } : r;
+});
+register('hints', () => ({ ...hintLines(readProfile()), outdated: outdatedLine(loadState().tenjin.version) }));
 
 export async function main(argv = process.argv.slice(2)) {
   const { _, flags } = parseArgs(argv);

@@ -1,0 +1,69 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { runGtm, tmpHome } from './helpers/env.mjs';
+
+const home = tmpHome();
+const tmp = (name, obj) => { const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'gtmflow-')), name); fs.writeFileSync(f, JSON.stringify(obj)); return f; };
+const G = (...args) => runGtm(home, args);
+
+test('start: the model is told what is missing, the start question is valid for the question tool, the answers are recorded', () => {
+  const s = G('start', 'status');
+  assert.equal(s.json.done, false);
+  assert.equal(s.json.missing.length, 3);
+  assert.equal(G('profile', 'set', '--json', JSON.stringify({ offer: { name: 'Thing', what: 'lets an agent pay for APIs', link: 'https://example.org/thing' }, sender: { name: 'Sam', company: 'Co', handles: { x: 'sam_thing' } } })).code, 0);
+  assert.equal(G('phrases', 'set', 'agent pay for APIs|pay per call for Claude').json.profile.phrases.length, 2);
+  const ask = G('ask', 'start');
+  assert.equal(ask.code, 0);
+  assert.equal(ask.json.questions.length, 3);
+  assert.deepEqual(ask.json.questions.map((q) => q.header), ['Email', 'Search', 'Sources']);
+  assert.ok(ask.json.questions.every((q) => q.options[0].label.endsWith('(Recommended)')));
+  assert.match(G('start', 'record').json.error, /needs --email-mode/);
+  assert.equal(G('start', 'record', '--email-mode', 'drafts', '--frequency', 'weekly', '--sources', 'free').json.recorded.sources.join(), 'hn,web');
+  assert.equal(G('start', 'status').json.done, true);
+  assert.match(G('start', 'record', '--sources', 'everything').json.error, /sources is all, social or free/);
+});
+
+test('the free path: ingest a post file, refuse a bad one with its problems, review through the file, and read the report', () => {
+  const posts = [
+    { url: 'https://forum.example.org/t/1', author: 'asker1', source: 'web', text: 'Has anyone found a way to let an agent pay for APIs on its own?', postedAt: '2026-11-25T10:00:00Z' },
+    { url: 'https://x.com/asker2/status/1900000000000000100', author: 'asker2', source: 'x', text: 'I wish my agent could pay for APIs by itself.' },
+    { url: 'https://x.com/sam_thing/status/1900000000000000200', author: 'sam_thing', source: 'x', text: 'my own post about agent pay for APIs' },
+  ];
+  const bad = G('ingest', '--file', tmp('bad.json', { phrase: 'nope', status: 'fulfilled', posts: [{ url: 'x' }] }));
+  assert.equal(bad.code, 1);
+  assert.match(bad.json.error, /rewrite it/);
+  const ok = G('ingest', '--file', tmp('ok.json', { phrase: 'agent pay for APIs', status: 'fulfilled', posts }));
+  assert.equal(ok.json.added, 2);
+  assert.deepEqual(ok.json.dropped.map((d) => d.reason), ['own_post']);
+  const next = G('review', 'next');
+  assert.equal(next.json.leads.length, 2);
+  const refuse = G('review', 'ingest', '--file', tmp('r0.json', { reviews: [] }));
+  assert.match(refuse.json.error, /handed out and has no review/);
+  const reviews = next.json.leads.map((l) => ({ key: l.key, fit: 80, intent: 90, timing: 50, quote: l.source === 'x' ? 'my agent could pay for APIs' : 'let an agent pay for APIs', line: 'Asks for it', channel: l.source === 'x' ? 'x_reply' : 'email', keep: true }));
+  const done = G('review', 'ingest', '--file', tmp('r1.json', { reviews }));
+  assert.equal(done.json.kept.length, 2);
+  const rep = G('report').json.text;
+  assert.match(rep, /Reviewed: 2/);
+  assert.match(rep, /"agent pay for APIs": 1 from web, 1 from x/);
+  const st = G('state').json;
+  assert.equal(st.counts.reviewed, 2);
+});
+
+test('the work list shows review_due for new leads, and the plan of the free step follows the chosen sources', () => {
+  G('ingest', '--file', tmp('more.json', { phrase: 'pay per call for Claude', status: 'fulfilled', posts: [{ url: 'https://forum.example.org/t/9', source: 'web', text: 'Need pay per call for Claude, who has done it?' }] }));
+  const w = G('work').json;
+  assert.deepEqual(w.items.map((i) => i.reason), ['review_due']);
+  assert.equal(w.items[0].count, 1);
+  const plan = G('search', 'plan').json;
+  assert.equal(plan.queries.length, 2, 'Hacker News and the web were chosen: one web query per phrase, Hacker News runs in code');
+  assert.deepEqual(plan.queries.map((q) => q.source), ['web', 'web']);
+});
+
+test('G search route refuses without Tenjin ready, and no command here runs the live router', () => {
+  const r = G('search', 'route');
+  assert.equal(r.code, 1);
+  assert.match(r.json.error, /Tenjin is not ready/);
+});
