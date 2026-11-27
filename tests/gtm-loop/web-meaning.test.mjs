@@ -16,10 +16,10 @@ const NOW = Date.parse('2026-11-27T08:00:00Z');
 
 test('the web query is a plain description of the post to find: the phrase and who asks, with no quotes and no operators', () => {
   const d = q.webDescription(offer, 'how did you get your first customers');
-  assert.equal(d, 'A forum, Q&A or Reddit post where someone asks: how did you get your first customers? The person asking is one of: founders and GTM folks, looking for help.');
+  assert.equal(d, 'A forum, Q&A or community post where someone asks: how did you get your first customers? The person asking is one of: founders and GTM folks, looking for help.');
   assert.doesNotMatch(d, /["'()]|site:|lang:|-filter|\bOR\b/);
   assert.doesNotMatch(q.webDescription({ who: '"a" OR (b)' }, 'my "cold" emails (OR) fail?'), /["()]|\bOR\b/);
-  assert.match(q.webDescription({}, 'anyone using Claude for outbound'), /^A forum, Q&A or Reddit post where someone asks: anyone using Claude for outbound\? The person asking is looking for help\.$/);
+  assert.match(q.webDescription({}, 'anyone using Claude for outbound'), /^A forum, Q&A or community post where someone asks: anyone using Claude for outbound\? The person asking is looking for help\.$/);
   assert.ok(q.webDescription({ who: 'x'.repeat(900) }, 'a phrase').length <= 400);
 });
 
@@ -28,7 +28,7 @@ test('a discussion need sends that description, the meaning-based tier and the d
   assert.equal(need.kind, 'web_research');
   assert.equal(need.fields.query, q.webDescription(offer, 'how did you get your first customers'));
   assert.equal(need.fields.mode, 'discussion');
-  assert.match(need.text, /the page described here: A forum, Q&A or Reddit post where someone asks/);
+  assert.match(need.text, /the page described here: A forum, Q&A or community post where someone asks/);
   const input = web.exa.mapper(need.fields);
   assert.equal(input.type, 'auto');
   assert.equal(input.query, need.fields.query);

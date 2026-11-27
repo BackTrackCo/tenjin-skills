@@ -18,7 +18,7 @@ const NOW = Date.parse('2026-11-27T10:00:00Z');
 const OFFER = { id: 'gtm', name: 'LoopA', who: 'founders', phrases: ['how did you get your first customers'], subreddits: ['startups', 'SaaS'] };
 const X_OK = '("any recommendations" OR "looking for") first customers lang:en -filter:retweets -filter:links';
 const RD_OK = '(subreddit:startups OR subreddit:saas) ("looking for" OR "how did") first customers';
-const WEB_OK = 'A forum or Reddit post where someone asks: how did you get your first customers? They are a founder looking for help with outbound.';
+const WEB_OK = 'A forum or community post where someone asks: how did you get your first customers? They are a founder looking for help with outbound.';
 const client = (f) => new router.RouterClient({ bin: f.bin, timeouts: { ...router.TIMEOUTS, shutdown: 300, collect: 40, poll: 10 } });
 const profileWith = (queries, extra = {}) => ({ sources: ['x', 'reddit', 'linkedin', 'web'], offers: [{ ...OFFER, queries, ...extra }] });
 
@@ -101,7 +101,7 @@ test('the daily round runs the stored queries in code: one need per source per o
   assert.deepEqual(routed.queryRefusals(bad).map((r) => [r.offerId, r.src]), [['gtm', 'x']]);
   const f = fake({ answers: [] });
   await routed.runPostRound({ profile: { ...bad, sources: ['x'] }, overlay: { rules: [] }, client: client(f), now: NOW });
-  assert.match(store.loadState().held.find((h) => h.status === 'query_refused').detail, /the stored x query for gtm was refused: X needs lang:en/);
+  assert.match(store.loadState().held.find((h) => h.status === 'query_refused').detail, /the x query gtm:x was refused: X needs lang:en/);
 });
 
 test('a profile with no stored queries keeps the queries code builds, and the report says they were never tried live', () => {
@@ -169,7 +169,7 @@ test('a Hacker News query test is free and uses the stored key words as they are
   assert.ok(calls[0].includes('query=first%20customers&'));
 });
 
-test('the report shows the funnel per source, how many leads each query found and kept, and names a query that kept nothing', async () => {
+test('the report shows the funnel per source and a Queries section; where no query kept a lead the model is due to write variants, with no yes', async () => {
   store.updateState((s) => Object.assign(s, store.emptyState()));
   const x = fixture('router/x-posts.json');
   const p = { ...profileWith({ x: X_OK }), sources: ['x'] };
@@ -182,20 +182,27 @@ test('the report shows the funnel per source, how many leads each query found an
   assert.equal(s.funnel.sources.x.toReview, 2);
   let text = rep.report(s, p, NOW).text;
   assert.match(text, /Last round, x: 1 search, 2 returned; 2 sent to review, 0 kept\./);
-  assert.match(text, /Per query \(found, kept\): gtm x query 2, 2\./);
-  assert.doesNotMatch(text, /Query kept nothing last round/);
-  // a second round where the same posts come back: nothing new is kept
+  assert.match(text, /Queries, x: best: gtm:x kept 0 of 2 results\./);
+  assert.doesNotMatch(text, /rewrite|for the person's yes/);
+  assert.equal(work.itemsOf(s, p, { rules: [] }, NOW).some((i) => i.reason === 'queries_due'), false, 'leads wait for review: no variants yet');
+  // review leaves them all: no query kept a lead, so the model is due to write variants, and it does not wait for a yes
+  store.updateState((st) => { for (const l of Object.values(st.leads)) { l.status = 'skipped'; l.skipReason = 'not_a_real_ask'; } });
+  s = store.loadState();
+  const item = work.itemsOf(s, p, { rules: [] }, NOW).find((i) => i.reason === 'queries_due');
+  assert.equal(item.waitsForPerson, undefined, 'it wakes the model in a woken turn, with no yes');
+  assert.equal(item.detail, 'gtm:x');
+  assert.equal(work.itemsOf(s, p, { rules: [] }, NOW).some((i) => i.reason === 'rewrite_due'), false);
+  // a second round where the same posts come back: nothing new goes to review
   const g = fake({ answers: [specAnswer(x.host), runAnswer(x.host, x.result)] });
   await routed.runPostRound({ profile: p, overlay: { rules: [] }, client: client(g), now: NOW + 3600000 });
   s = store.loadState();
   assert.equal(s.queryYield['query:gtm:x'].lastKept, 0);
   assert.equal(s.funnel.sources.x.duplicate, 2);
+  assert.equal(s.queryYield['query:gtm:x'].rounds, 2);
+  assert.deepEqual(s.queryYield['query:gtm:x'].history.map((h) => h.toReview), [2, 0]);
+  assert.equal(s.queryYield['query:gtm:x'].passed.duplicate, 2);
   text = rep.report(s, p, NOW + 3600000).text;
   assert.match(text, /Last round, x: 1 search, 2 returned, dropped: duplicate 2; 0 sent to review, 0 kept\./);
-  assert.match(text, /Query kept nothing last round: gtm x\. The model proposes a rewrite for the person's yes in an attended turn; nothing is rewritten by itself\./);
-  const item = work.itemsOf(s, p, { rules: [] }, NOW).find((i) => i.reason === 'rewrite_due');
-  assert.equal(item.waitsForPerson, true, 'it never wakes the model');
-  assert.equal(s.queryYield['query:gtm:x'].rounds, 2);
 });
 
 test('the funnel counts every filter by source: link-only, not an ask, not a discussion, outside the list, too old', async () => {
@@ -269,7 +276,7 @@ test('the skill text names the setup steps: write the queries with the phrases, 
   const read = (f) => fs.readFileSync(path.join(SKILL, f), 'utf8');
   const md = read('SKILL.md');
   assert.match(md, /G search route --need "<key>"/);
-  assert.match(md, /`rewrite_due` waits for the person/);
+  assert.match(md, /`queries_due` \(also in a woken turn, with no yes\)/);
   const setup = read('references/setup.md');
   assert.match(setup, /G queries set --offer/);
   assert.match(setup, /G query test <offer id> <source>/);

@@ -28,8 +28,9 @@ test('start: handles are saved on their own, the model is told what is missing, 
   assert.equal(G('profile').json.profile.sender.handles.linkedin, 'SamThing', 'handles merge, nothing is lost');
   const ask = G('ask', 'start');
   assert.equal(ask.code, 0);
-  assert.equal(ask.json.questions.length, 3);
-  assert.deepEqual(ask.json.questions.map((q) => q.header), ['Email', 'Search', 'Sources']);
+  assert.equal(ask.json.questions.length, 4);
+  assert.deepEqual(ask.json.questions.map((q) => q.header), ['Email', 'Search', 'Sources', 'Searches']);
+  assert.match(ask.json.questions[3].options[0].description, /searches? a round, about [\d.]+ cents? a round/);
   assert.ok(ask.json.questions.every((q) => q.options[0].label.endsWith('(Recommended)')));
   assert.match(G('start', 'record').json.error, /needs --email-mode/);
   assert.equal(G('start', 'record', '--email-mode', 'drafts', '--frequency', 'weekly', '--sources', 'free').json.recorded.sources.join(), 'hn,web');
