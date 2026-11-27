@@ -102,30 +102,6 @@ function withEventsQuestion(p, profile) {
 }
 
 const jobCommands = {
-  // Only sets the hint state the hint moments read. It never stops the start and asks nothing.
-  async tenjin([sub, answer]) {
-    if (sub === 'ask-done') {
-      // The ask is made at most once per session; a no is recorded with its date.
-      return out(updateState((s) => {
-        s.tenjin = { ...(s.tenjin || {}), askedAt: new Date().toISOString(), ...(answer === 'no' ? { declinedAt: new Date().toISOString() } : {}) };
-        // A yes holds the moment as tenjin_setup for this period, until `J tenjin` says ready; then it runs in code.
-        if (answer === 'yes') {
-          s.tenjinSetup = { at: new Date().toISOString(), period: periodStart(Date.now(), frequencyOf(readProfile())) };
-          if (!s.held.some((h) => h.reason === 'tenjin_setup')) s.held.push({ reason: 'tenjin_setup', detail: 'waiting for Tenjin to be ready' });
-        }
-        return { asked: true, answer: answer || null };
-      }));
-    }
-    const r = hintState();
-    updateState((s) => {
-      s.held = s.held.filter((h) => h.reason !== 'tenjin_missing' && !(h.reason === 'tenjin_setup' && r.status === 'ready'));
-      if (r.status === 'ready') s.tenjinSetup = null;
-      if (r.status === 'missing') s.held.push({ reason: 'tenjin_missing', detail: 'missing' });
-      s.tenjin = { ...(s.tenjin || {}), status: r.status, version: r.version || null, checkedAt: new Date().toISOString() };
-    });
-    return out(r);
-  },
-
 
   async profile([sub, arg]) {
     if (sub === 'get') return out(readProfile());
@@ -144,43 +120,6 @@ const jobCommands = {
       return out({ saved: Object.keys(next), resumed: resumeHeld(next) });
     }
     return out({ error: 'profile get | set <json>' }, 2);
-  },
-
-  async batch([sub], flags) {
-    if (sub === 'open') {
-      const profile = readProfile();
-      // Only the resume the person named is ever uploaded: a path of its own must be that file.
-      const named = profile.resumeUploadPath || profile.resumePath || null;
-      if (flags.upload !== undefined && flags.upload !== named) return out({ error: 'batch open --upload must be the resume the person named (profile resumeUploadPath or resumePath)' }, 4);
-      const p = batch.openBatch({ mode: flags.unattended ? 'unattended' : 'attended', uploadPath: named });
-      return out({ mode: p.mode, next: 'run apply next' });
-    }
-    if (sub === 'close') {
-      batch.closeBatch();
-      return out({ closed: true });
-    }
-    return out({ error: 'batch open [--unattended] [--upload path] | close' }, 2);
-  },
-
-
-  async ops([arg]) {
-    const ops = readJsonArg(arg);
-    if (Array.isArray(ops)) for (const o of ops) if (o && o.op === 'transition' && o.key) releaseStage(o.key);
-    if (Array.isArray(ops) && ops.some((o) => o && o.op === 'approve') && batch.isActive() && batch.batchMode() === 'unattended') return out({ error: 'ops approve is refused while an unattended batch is open' }, 4);
-    const r = applyOps(ops);
-    const ranked = (Array.isArray(ops) ? ops : []).filter((o) => o.op === 'rank').length;
-    if (ranked) updateState((s) => logRun(s, 'review', ranked));
-    return out(r);
-  },
-
-  // Arm: reclaim a stale lease and say what to start. The watcher itself is `J watch`, started with the Bash tool's
-  // run_in_background and started again after each round; its exit is what wakes the session.
-  async arm() {
-    const now = Date.now();
-    const st = loadState();
-    if (st.lease && leaseFresh(st.lease, now) && watcherStatus(st, now).running) return out({ armed: false, running: true, heldBy: st.lease.holder, note: 'a watcher is already running (this session after a compaction, or another session); if it is another, work attended' });
-    updateState((s) => { if (s.lease) s.lease = null; s.watcherEver = true; });
-    return out({ armed: true, watch: 'start J watch with the Bash tool, run_in_background true; start it again after each round and whenever a J command reports watcher: stopped', view: view(loadState(), { limit: 10 }) });
   },
 
   async sheet([sub, key], flags) {
@@ -346,35 +285,6 @@ const jobCommands = {
     return out({ ...res, approved: list.length, fillOnly: flags['fill-only'] === true, state: stateLine(fin, readProfile(), loadOverlay(), list) });
   },
 
-  // Consent is recorded or revoked only by the person's yes, in an attended session. Recording is refused while a batch is open.
-  async consent([sub, which], flags) {
-    if (sub === 'revoke') {
-      return out(updateState((s) => {
-        revokeConsent(s, which);
-        (s.consentLog ||= []).push({ at: new Date().toISOString(), what: `${which} consent revoked` });
-        return { revoked: which };
-      }));
-    }
-    if (sub !== 'record' || !['unattended', 'writing', 'email'].includes(which)) return out({ error: 'consent record unattended --optional-writing skip|wait | record writing | record email | revoke unattended|writing|email' }, 2);
-    return out(updateState((s) => {
-      if (which === 'email') {
-        const c = em.recordEmailConsent(s, readProfile(), loadOverlay());
-        em.emailState(s).modeAsked = c.at;
-        (s.consentLog ||= []).push({ at: c.at, what: 'email consent recorded (sends to published addresses without a yes each batch)' });
-        return c;
-      }
-      if (which === 'unattended') {
-        const c = recordConsent(s, readProfile(), loadOverlay(), Date.now(), flags['optional-writing']);
-        (s.consentLog ||= []).push({ at: new Date().toISOString(), what: `unattended consent recorded (optional writing: ${flags['optional-writing']})` });
-        return c;
-      }
-      const c = recordWritingConsent(s, readWritingRules());
-      (s.consentLog ||= []).push({ at: new Date().toISOString(), what: 'writing consent recorded' });
-      // jobs that only waited for this consent go back to the queue
-      for (const j of Object.values(s.jobs)) if (j.parked && j.parked.reasons.length === 1 && j.parked.reasons[0] === 'writing_needs_yes') unpark(j);
-      return c;
-    }));
-  },
   // The person read the draft: approve it as it is or edited. Each new-writing field becomes an earlier answer.
   async writing([sub, key], flags) {
     if (sub !== 'approve') return out({ error: 'writing approve <key> [--edits file.json]' }, 2);
@@ -558,34 +468,6 @@ const jobCommands = {
     return out(r, r.ok ? 0 : 4);
   },
 
-  // The default report is short: one count line, the jobs planned, and what needs the person now. `--all` is the full report.
-  // The full report is always saved to the reports folder.
-  async report(_, flags) {
-    const s = loadState();
-    const all = flags.all === true;
-    const base = { since: s.lastReportAt, profile: readProfile() };
-    const full = renderReport(s, loadOverlay(), base);
-    const text = all ? full : renderReport(s, loadOverlay(), { ...base, short: true });
-    const dir = ensureDir(path.join(stateDir(), 'reports'));
-    fs.appendFileSync(path.join(dir, `${new Date().toISOString().slice(0, 10)}.md`), `${full}\n\n`, { mode: 0o600 });
-    updateState((st) => {
-      st.lastReportAt = new Date().toISOString();
-      if (all) {
-        st.updateLines = [];
-        st.uploadLines = [];
-        st.hostsReported = [...new Set([...(st.hostsReported || []), ...firstApplicationHosts(st).map((h) => h.host)])];
-      }
-      for (const c of st.consentLog || []) c.acked = true;
-      markShown(st); // the person is shown the waiting items now: no push repeats them
-      (st.events ||= { items: {}, shown: [], lastAt: null }).shown = [...new Set([...(st.events.shown || []), ...confirmedEvents(st).map((x) => x.event.id)])];
-      // the short report does not list the update lines, so they stay unshown for the full report and the push
-      if (!all) for (const k of Object.keys(st.shown || {})) if (k.startsWith('update:')) delete st.shown[k];
-    });
-    process.stdout.write(text + '\n');
-    // The reply ends with one line on what Tenjin adds. It is not part of the report file. No price.
-    if (!findTenjin()) process.stdout.write('\nTenjin is not installed. With it I can also search X live, add more job-board listings and find people to write to. Ask me to set it up.\n');
-  },
-
   async ingest([file]) {
     if (!file) return out({ error: 'ingest <file>' }, 2);
     let obj;
@@ -740,24 +622,6 @@ const jobCommands = {
       return out(releaseStage(key));
     }
     return out({ error: 'uploads stage <key> | unstage <key>' }, 2);
-  },
-  async rc([sub, v]) {
-    if (sub !== 'set' || !['on', 'unknown'].includes(v)) return out({ error: 'rc set on|unknown' }, 2);
-    return out(updateState((s) => { s.rc = v; return { rc: v, reminder: qs.rcReminder({ rc: v, pushSent: s.pushSent === true, settings: pushSettings() }) }; }));
-  },
-  async chrome([sub, v]) {
-    if (sub !== 'set' || !['on', 'off'].includes(v)) return out({ error: 'chrome set on|off' }, 2);
-    return out(updateState((s) => {
-      s.chrome = v;
-      let cleared = 0;
-      if (v === 'on') {
-        const n = s.held.length;
-        s.held = s.held.filter((h) => !['chrome_disconnected', 'no_chrome_tools'].includes(h.reason));
-        cleared = n - s.held.length;
-        for (const j of Object.values(s.jobs)) if (j.noChromeTools) { j.noChromeTools = false; cleared++; }
-      }
-      return { chrome: v, cleared, ...(v === 'off' ? { steps: CHROME_STEPS } : {}) };
-    }));
   },
   // J open: the OS's own open command, in the person's Chrome (the default browser only as the fallback), with the job's exact URL. Attended turns only.
   async open(keys) {
@@ -1198,34 +1062,6 @@ const jobCommands = {
     writeJsonAtomic(profileFile(), next);
     return out({ saved: name, resumed: resumeHeld(next) });
   },
-  // The watch list: boards the person asked for in their own message, kept in profile.watch until they remove them.
-  async watch([sub, name], flags) {
-    if (!sub) {
-      // the watcher: a background command that exits when work is due
-      const r = await runWatcher({ fetchImpl: globalThis.fetch, runner: asyncRun });
-      process.exitCode = r.exit;
-      return;
-    }
-    if (sub === 'list') return out({ watch: readProfile().watch || [] });
-    const save = (watch) => {
-      ensureDir(stateDir());
-      const next = { ...readProfile(), watch };
-      const bad = validateProfile(next);
-      if (bad.length) throw new Error(`the profile was not saved: ${bad.join('; ')}`);
-      writeJsonAtomic(profileFile(), next);
-    };
-    if (sub === 'add' && name) {
-      const r = await addWatch(name, readProfile().watch, { fetch: globalThis.fetch });
-      if (r.watch && !r.already) save(r.watch);
-      return out(r.line ? { line: r.line } : { added: r.added, board: r.board, already: r.already, watching: r.watch.length });
-    }
-    if (sub === 'remove' && name) {
-      const r = removeWatch(name, readProfile().watch);
-      if (r.removed) save(r.watch);
-      return out({ removed: r.removed, watching: r.watch.length });
-    }
-    return out({ error: 'watch list | add <company or careers link> | remove <company or board>' }, 2);
-  },
   // Example intros: one writer call per job, for the contacts with a channel. Never sent.
   async intros([sub, key], flags) {
     if (sub !== 'save') return out({ error: 'intros save <key> --result file' }, 2);
@@ -1361,24 +1197,6 @@ const jobCommands = {
     return out({ read: true, ...(r.roleHint ? { roleHint: r.roleHint } : {}), source: next.resumeSource, saved: r.resumeTextFile || r.resumePath || null, needsText: next.resumeNeedsText, next: next.resumeNeedsText ? 'read the file with your file reader, then save its text: J resume set --text' : r.roleHint ? 'the profile has job titles: take the role and role words from roleHint (the current position first), save them with J profile set (search.sources: linkedin), and confirm the role with a choice question, your guess first (J ask resume)' : next.resumeThin ? 'a LinkedIn profile has employers but no job titles: confirm the target role with a choice question, your guess first (J ask resume --json {header,question,guess,next,source:"LinkedIn"}); a form that needs more asks for a file or the text' : 'read role, role words, place and remote from the resume' });
   },
 
-  async notify([sub, result], flags) {
-    // The model records each push's answer. A "not sent" notify-only push stops further notify-only wakes until the person's
-    // next turn; an answer that cannot tell sent from not sent allows them only for items that block work.
-    if (sub !== 'result' || !['sent', 'not_sent', 'unknown'].includes(result)) return out({ error: 'notify result sent|not_sent|unknown [--reason off|present|none]' }, 2);
-    const reason = flags.reason;
-    if (reason !== undefined && (result !== 'not_sent' || !['off', 'present', 'none'].includes(reason))) return out({ error: '--reason off|present|none goes with not_sent' }, 2);
-    return out(updateState((s) => {
-      const w = (s.watcher ||= {});
-      w.notifyResult = result;
-      w.notifyAt = new Date().toISOString();
-      if (result === 'sent') s.pushSent = true; // a sent push proves Remote Control and "Push when Claude decides" are both on
-      // One reminder at a push result, once: off says the /config sentence, none says both, present says nothing.
-      const say = result === 'not_sent' && !s.rcPushSaid ? qs.rcAtPush(reason, pushSettings()) : null;
-      if (say) s.rcPushSaid = true;
-      return { recorded: result, ...(reason ? { reason } : {}), say };
-    }));
-  },
-
 };
 
 // A lead's intro must fit its channel. Never sent.
@@ -1419,6 +1237,84 @@ extendApp({ cli: {
   deriveLessons: (state) => deriveLessons(state),
   beforeWork: () => prepareInCode({ fetch: globalThis.fetch, profile: readProfile() }),
   commands: { watch: 'J watch' },
+  // What the shared commands (tenjin, batch, ops, arm, consent, report, rc, chrome, notify, watch) need from Job Search: its words and its steps.
+  word: 'J',
+  readProfile,
+  setupPeriod: () => periodStart(Date.now(), frequencyOf(readProfile())),
+  // Only the resume the person named is ever uploaded: a path of its own must be that file.
+  batchOpen: (flags) => {
+    const profile = readProfile();
+    const named = profile.resumeUploadPath || profile.resumePath || null;
+    if (flags.upload !== undefined && flags.upload !== named) return { error: 'batch open --upload must be the resume the person named (profile resumeUploadPath or resumePath)' };
+    return { uploadPath: named };
+  },
+  batchNext: 'run apply next',
+  beforeOps: (ops) => { if (Array.isArray(ops)) for (const o of ops) if (o && o.op === 'transition' && o.key) releaseStage(o.key); },
+  opsGuard: (ops) => (Array.isArray(ops) && ops.some((o) => o && o.op === 'approve') && batch.isActive() && batch.batchMode() === 'unattended' ? 'ops approve is refused while an unattended batch is open' : null),
+  afterOps: (ops) => { const ranked = (Array.isArray(ops) ? ops : []).filter((o) => o.op === 'rank').length; if (ranked) updateState((s) => logRun(s, 'review', ranked)); },
+  armView: (state) => view(state, { limit: 10 }),
+  consentUsage: 'consent record unattended --optional-writing skip|wait | record writing | record email | revoke unattended|writing|email',
+  consentRecord: {
+    email: (s) => {
+      const c = em.recordEmailConsent(s, readProfile(), loadOverlay());
+      em.emailState(s).modeAsked = c.at;
+      (s.consentLog ||= []).push({ at: c.at, what: 'email consent recorded (sends to published addresses without a yes each batch)' });
+      return c;
+    },
+    unattended: (s, flags) => {
+      const c = recordConsent(s, readProfile(), loadOverlay(), Date.now(), flags['optional-writing']);
+      (s.consentLog ||= []).push({ at: new Date().toISOString(), what: `unattended consent recorded (optional writing: ${flags['optional-writing']})` });
+      return c;
+    },
+    writing: (s) => {
+      const c = recordWritingConsent(s, readWritingRules());
+      (s.consentLog ||= []).push({ at: new Date().toISOString(), what: 'writing consent recorded' });
+      // jobs that only waited for this consent go back to the queue
+      for (const j of Object.values(s.jobs)) if (j.parked && j.parked.reasons.length === 1 && j.parked.reasons[0] === 'writing_needs_yes') unpark(j);
+      return c;
+    },
+  },
+  onFullReport: (st) => {
+    st.uploadLines = [];
+    st.hostsReported = [...new Set([...(st.hostsReported || []), ...firstApplicationHosts(st).map((h) => h.host)])];
+  },
+  markReported: (st) => { (st.events ||= { items: {}, shown: [], lastAt: null }).shown = [...new Set([...(st.events.shown || []), ...confirmedEvents(st).map((x) => x.event.id)])]; },
+  // The reply ends with one line on what Tenjin adds. It is not part of the report file. No price.
+  reportFooter: () => (findTenjin() ? null : '\nTenjin is not installed. With it I can also search X live, add more job-board listings and find people to write to. Ask me to set it up.\n'),
+  rcReminder: (s, v) => qs.rcReminder({ rc: v, pushSent: s.pushSent === true, settings: pushSettings() }),
+  rcAtPush: (reason) => qs.rcAtPush(reason, pushSettings()),
+  chromeSet: (s, v) => {
+    let cleared = 0;
+    if (v === 'on') {
+      const n = s.held.length;
+      s.held = s.held.filter((h) => !['chrome_disconnected', 'no_chrome_tools'].includes(h.reason));
+      cleared = n - s.held.length;
+      for (const j of Object.values(s.jobs)) if (j.noChromeTools) { j.noChromeTools = false; cleared++; }
+    }
+    return { cleared, ...(v === 'off' ? { steps: CHROME_STEPS } : {}) };
+  },
+  // The watch list: boards the person asked for in their own message, kept in profile.watch until they remove them.
+  watchSub: async (sub, name) => {
+    if (sub === 'list') return out({ watch: readProfile().watch || [] });
+    const save = (watch) => {
+      ensureDir(stateDir());
+      const next = { ...readProfile(), watch };
+      const bad = validateProfile(next);
+      if (bad.length) throw new Error(`the profile was not saved: ${bad.join('; ')}`);
+      writeJsonAtomic(profileFile(), next);
+    };
+    if (sub === 'add' && name) {
+      const r = await addWatch(name, readProfile().watch, { fetch: globalThis.fetch });
+      if (r.watch && !r.already) save(r.watch);
+      return out(r.line ? { line: r.line } : { added: r.added, board: r.board, already: r.already, watching: r.watch.length });
+    }
+    if (sub === 'remove' && name) {
+      const r = removeWatch(name, readProfile().watch);
+      if (r.removed) save(r.watch);
+      return out({ removed: r.removed, watching: r.watch.length });
+    }
+    return out({ error: 'watch list | add <company or careers link> | remove <company or board>' }, 2);
+  },
 } });
 
 const commands = commandTable(jobCommands);

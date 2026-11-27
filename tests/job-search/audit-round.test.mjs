@@ -382,8 +382,8 @@ test('subagent runs are logged where their result is recorded, and the report sh
 });
 
 test('watch: with no sub-command it is the watcher, watch list is the board list', () => {
-  const text = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'scripts', 'jobs.mjs'), 'utf8');
-  assert.equal((text.match(/^  async watch\(/gm) || []).length, 1, 'one watch command, not two');
+  const text = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'loop-base', 'lib', 'cli.mjs'), 'utf8');
+  assert.equal((text.match(/^    async watch\(/gm) || []).length, 1, 'one watch command, not two');
   reset();
   assert.ok(runJobs(home, ['watch', 'list']).json.watch);
 });
