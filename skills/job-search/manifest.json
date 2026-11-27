@@ -11,7 +11,8 @@
     "scripts/lib/batch.mjs",
     "scripts/lib/net.mjs",
     "../loop-base/lib/netguard.mjs",
-    "../loop-base/lib/consent.mjs"
+    "../loop-base/lib/consent.mjs",
+    "../loop-base/lib/batch.mjs"
   ],
-  "gatesHash": "be4d6efd58f414b3c4f54df87a5d92f1ed23247e7f196f86a81ca9fddff5bd80"
+  "gatesHash": "c19d95e1ac3f271d4db1458d3ed2a96845216384227728f9b64dfb57691190d7"
 }
