@@ -1,5 +1,5 @@
 import * as x from './x.mjs';
-import { adapter } from './x-search.mjs';
+import { adapter } from '../../../../loop-base/lib/suppliers/x-search.mjs';
 
 // The hiring posts on X through the X search that leads several reads (tenjin#1097, not merged yet). Same query as the other X supplier.
 export const HOST = 'api.getanyapi.com';

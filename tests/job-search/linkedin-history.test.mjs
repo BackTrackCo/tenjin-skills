@@ -7,8 +7,8 @@ import { fixture, tmpHome } from './helpers/env.mjs';
 
 tmpHome();
 const S = '../../skills/job-search/scripts/lib/';
-const hist = await import(`${S}suppliers/linkedin-history.mjs`);
-const thin = await import(`${S}suppliers/linkedin.mjs`);
+const hist = await import('../../skills/loop-base/lib/suppliers/linkedin-history.mjs');
+const thin = await import('../../skills/loop-base/lib/suppliers/linkedin.mjs');
 const sup = await import(`${S}suppliers/index.mjs`);
 const router = await import(`${S}router.mjs`);
 const routed = await import(`${S}routed.mjs`);

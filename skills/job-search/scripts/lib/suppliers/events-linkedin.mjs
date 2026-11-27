@@ -1,4 +1,4 @@
-import { str, linksOf, isoOfUnix, handleOf } from './posts-shared.mjs';
+import { str, linksOf, isoOfUnix, handleOf } from '../../../../loop-base/lib/suppliers/posts-shared.mjs';
 
 // Public LinkedIn posts that mention an event by the company: a keyword search of indexed public posts (one page per need per round;
 // the cursor is not followed, it needs a fresh offer per page). Input: `query`, optional `datePosted`. Result:
