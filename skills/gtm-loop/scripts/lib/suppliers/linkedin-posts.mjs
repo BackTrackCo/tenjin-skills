@@ -11,8 +11,9 @@ export const RECORDED = false;
 
 export function mapper({ query, since }) {
   if (!str(query)) throw new Error('no phrase for the LinkedIn search');
+  // The seller takes only last-hour, last-day, last-week, last-month and last-year.
   const days = since ? Math.max(0, (Date.now() - Date.parse(since)) / 86400000) : 30;
-  return { query: str(query).slice(0, 300), datePosted: days <= 1 ? 'past-24h' : days <= 7 ? 'past-week' : 'past-month' };
+  return { query: str(query).slice(0, 300), datePosted: days <= 1 ? 'last-day' : days <= 7 ? 'last-week' : days <= 31 ? 'last-month' : 'last-year' };
 }
 
 export function adapter(res) {

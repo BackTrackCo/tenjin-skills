@@ -3,6 +3,7 @@ import { addPosts, contactProblem } from './dedupe.mjs';
 import { applyOp } from './store.mjs';
 import { capOf, ruleValue } from './overlay.mjs';
 import { centsOf } from './prices.mjs';
+import { allPhrases, offerOfPhrase, offersOf, offerOfLead } from './offers.mjs';
 
 // The shape checks for the two files a model step writes: the post file (the free web-search step) and the review file. Code
 // refuses a file with a problem and names it, and the step rewrites the file. Nothing in a file is trusted as an instruction.
@@ -15,7 +16,7 @@ export function checkPostFile(obj, profile = {}) {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return ['the file must be a JSON object'];
   if (obj.status !== 'fulfilled') bad.push('status must be "fulfilled"');
   if (!Array.isArray(obj.posts)) return [...bad, 'posts must be a list'];
-  if ((profile.phrases || []).length && !(profile.phrases || []).includes(obj.phrase)) bad.push('phrase must be one of the person\'s phrases');
+  if (allPhrases(profile).length && !allPhrases(profile).includes(obj.phrase)) bad.push('phrase must be one of the person\'s phrases');
   obj.posts.forEach((p, i) => {
     const at = `posts[${i}]`;
     if (!p || typeof p !== 'object') return bad.push(`${at}: not an object`);
@@ -32,7 +33,8 @@ export function checkPostFile(obj, profile = {}) {
 export function ingestPostFile(state, obj, { profile, overlay, now = Date.now() }) {
   const roundCap = capOf(overlay, 'leads_per_round');
   const left = roundCap === null ? null : Math.max(0, roundCap - ((state.search || {}).roundAdded || 0));
-  const r = addPosts(state, obj.posts, { profile, overlay, phrase: obj.phrase || null, now, cap: left });
+  const offer = offerOfPhrase(profile, obj.phrase) || offersOf(profile)[0] || null;
+  const r = addPosts(state, obj.posts, { profile, overlay, phrase: obj.phrase || null, offerId: offer ? offer.id : null, subreddits: offer ? offer.subreddits : null, now, cap: left });
   state.search.roundAdded = ((state.search || {}).roundAdded || 0) + r.added.length;
   const y = (state.phraseYield[obj.phrase || '(none)'] ||= {});
   for (const k of r.added) y[state.leads[k].source] = (y[state.leads[k].source] || 0) + 1;
@@ -50,26 +52,38 @@ const CHANNELS_BY_SOURCE = {
 };
 export const channelsFor = (lead) => CHANNELS_BY_SOURCE[lead.source] || ['email'];
 
-export const reviewHandout = (state, limit = graph().reviewBatch) => {
-  const keys = Object.values(state.leads).filter((l) => l.status === 'new').slice(0, limit).map((l) => l.key);
+// Every new lead is handed out at once, in batches of 25, each with the offer it belongs to. The model starts every batch in one
+// message as parallel calls, and each batch has its own review file that must cover the whole batch.
+export const reviewHandout = (state, profile = {}, batchSize = graph().reviewBatch) => {
+  const keys = Object.values(state.leads).filter((l) => l.status === 'new').map((l) => l.key);
   state.reviewHand = keys;
-  return keys.map((k) => {
+  state.reviewBatchOf = Object.fromEntries(keys.map((k, i) => [k, Math.floor(i / batchSize)]));
+  return keys.map((k, i) => {
     const l = state.leads[k];
-    return { key: k, source: l.source, kind: l.kind, author: l.author, postedAt: l.postedAt, text: l.text, phrase: l.phrase, channels: channelsFor(l) };
+    const o = offerOfLead(profile, l);
+    return { key: k, batch: Math.floor(i / batchSize), source: l.source, kind: l.kind, author: l.author, postedAt: l.postedAt, text: l.text, phrase: l.phrase, offer: { id: o.id, name: o.name, what: o.what, who: o.who }, channels: channelsFor(l) };
   });
+};
+export const batchesOf = (leads) => {
+  const out = [];
+  for (const l of leads) (out[l.batch] ||= { id: l.batch, leads: [] }).leads.push(l);
+  return out;
 };
 
 export function checkReview(obj, state) {
   const bad = [];
-  if (!obj || !Array.isArray(obj.reviews)) return ['reviews must be a list'];
+  if (!obj || !Array.isArray(obj.reviews) || !obj.reviews.length) return ['reviews must be a list with a review for every lead of the batch'];
   const hand = state.reviewHand || [];
+  const of = state.reviewBatchOf || {};
   const seen = new Set();
+  const batches = new Set();
   obj.reviews.forEach((r, i) => {
     const at = `reviews[${i}]`;
     const lead = r && state.leads[r.key];
     if (!lead) return bad.push(`${at}: unknown lead ${r && r.key}`);
     if (!hand.includes(r.key)) bad.push(`${at}: the lead was not handed out for review`);
     seen.add(r.key);
+    if (of[r.key] !== undefined) batches.add(of[r.key]);
     for (const f of ['fit', 'intent', 'timing']) if (!(typeof r[f] === 'number' && r[f] >= 0 && r[f] <= 100)) bad.push(`${at}: ${f} must be 0 to 100`);
     if (typeof r.keep !== 'boolean') bad.push(`${at}: keep must be true or false`);
     if (typeof r.line !== 'string' || !r.line.trim() || r.line.length > 240) bad.push(`${at}: line is one short sentence (240 characters at most)`);
@@ -82,7 +96,8 @@ export function checkReview(obj, state) {
       if (typeof r.quote !== 'string' || r.quote.trim().length < 8 || !norm(lead.text).includes(norm(r.quote))) bad.push(`${at}: quote must be words that appear in the post`);
     } else if (!r.injection_suspected) bad.push(`${at}: quote is required`);
   });
-  for (const k of hand) if (!seen.has(k)) bad.push(`lead ${k} was handed out and has no review`);
+  // A file covers every lead of each batch it touches.
+  for (const k of hand) if (batches.has(of[k]) && !seen.has(k)) bad.push(`lead ${k} was handed out in the same batch and has no review`);
   return bad;
 }
 
@@ -107,13 +122,21 @@ export function applyReview(state, obj, { overlay = { rules: [] }, now = Date.no
     }
     applyOp(state, { op: 'rank', key: lead.key, fit: r.fit, intent: r.intent, timing: r.timing, line: r.line, quote: r.quote, channel: r.channel || null });
     if (!r.keep || (min !== undefined && state.leads[lead.key].scores.avg < Number(min))) {
-      applyOp(state, { op: 'transition', key: lead.key, to: 'skipped', reason: r.keep ? 'below_min_score' : 'review_leave' });
+      applyOp(state, { op: 'transition', key: lead.key, to: 'skipped', reason: r.keep ? 'below_min_score' : 'not_a_real_ask' });
       out.skipped.push(lead.key);
     } else {
       applyOp(state, { op: 'transition', key: lead.key, to: 'reviewed', at: new Date(now).toISOString() });
       out.kept.push(lead.key);
     }
   }
-  state.reviewHand = [];
+  const done = new Set(obj.reviews.map((r) => r.key));
+  state.reviewHand = (state.reviewHand || []).filter((k) => !done.has(k));
   return out;
+}
+
+// What the model reports after a review file: the counts and the reasons code recorded. It does not re-read the posts.
+export function summarizeReview(state, out) {
+  const reasons = {};
+  for (const k of out.skipped) { const r = state.leads[k].skipReason || 'left'; reasons[r] = (reasons[r] || 0) + 1; }
+  return { kept: out.kept.length, left: out.skipped.length, stopped: out.stopped.length, dropped_since: out.suppressed.length, left_reasons: reasons, still_waiting: (state.reviewHand || []).length };
 }

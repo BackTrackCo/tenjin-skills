@@ -12,7 +12,7 @@ import { runWatcher } from './lib/watcher.mjs';
 import { workList, leave } from './lib/work.mjs';
 import { logRun } from './lib/runlog.mjs';
 import './lib/steps.mjs';
-import { checkPostFile, ingestPostFile, reviewHandout, checkReview, applyReview } from './lib/ingest.mjs';
+import { checkPostFile, ingestPostFile, reviewHandout, checkReview, applyReview, summarizeReview, batchesOf } from './lib/ingest.mjs';
 import { searchPlan, searchDone } from './lib/search.mjs';
 import { runHn } from './lib/hn.mjs';
 import { runPostRound, runIdentityReads } from './lib/routed.mjs';
@@ -20,6 +20,7 @@ import { report } from './lib/report.mjs';
 import { startQuestions, validateAsk, EMAIL_MODE_OF, SOURCES_OF } from './lib/questions.mjs';
 import { pushSettings } from './lib/pushsettings.mjs';
 import { hintLines, outdatedLine } from './lib/prices.mjs';
+import { offersOf, isLegacy } from './lib/offers.mjs';
 import { buildRoundRequest, parseRoundResult, applyWriteResult } from './lib/writing.mjs';
 import { pickQuestions, pickLead, openPlan, markSentSocial } from './lib/outreach.mjs';
 import { openPage, copyToClipboard } from './lib/open.mjs';
@@ -104,12 +105,41 @@ register('work', ({ flags }) => {
 register('leave', ({ args, flags }) => leave(args[0], flags.reason));
 
 register('phrases', ({ sub, rest, flags }) => {
-  if (sub !== 'set') return { phrases: readProfile().phrases || [] };
+  const profile = readProfile();
+  if (sub !== 'set') return { offers: offersOf(profile).map((o) => ({ id: o.id, phrases: o.phrases })) };
   const list = (flags.json ? JSON.parse(flags.json) : rest.join(' ').split('|')).map((x) => String(x).trim()).filter(Boolean);
-  if (!list.length) return fail('phrases set needs phrases: G phrases set "first phrase|second phrase" or --json \'["a","b"]\'');
-  return { profile: setProfile({ phrases: list }) };
+  if (!list.length) return fail('phrases set needs phrases: G phrases set [--offer <id>] "first phrase|second phrase" or --json \'["a","b"]\'');
+  if (!Array.isArray(profile.offers)) return { profile: setProfile({ phrases: list }) };
+  const id = typeof flags.offer === 'string' ? flags.offer : profile.offers.length === 1 ? profile.offers[0].id : fail('phrases set --offer <id>: the profile has more than one offer');
+  if (!profile.offers.some((o) => o.id === id)) return fail(`no offer with id ${id}`);
+  return { profile: setProfile({ offers: profile.offers.map((o) => (o.id === id ? { ...o, phrases: list } : o)) }) };
 });
 
+// The offers: each with its own line, who it helps, link, phrases, subreddits and an optional buyer. Setting the list replaces the
+// fields of an older profile (one offer, phrases and buyer at the top).
+register('offers', ({ sub, flags }) => {
+  const profile = readProfile();
+  if (sub !== 'set') return { legacy: isLegacy(profile), offers: offersOf(profile) };
+  const list = flags.json ? JSON.parse(flags.json) : flags.file ? readJsonFile(flags.file) : fail('offers set needs --json or --file: a list of offers');
+  return { profile: setProfile({ offers: list, offer: null, phrases: null, buyer: null, subreddits: null }) };
+});
+
+// What is still missing, in the order to ask it. A profile from an older run still loads; the new fields are proposed once.
+export function startStatus(profile, state) {
+  const missing = [];
+  const offers = offersOf(profile);
+  const s = profile.sender || {};
+  if (!s.name) missing.push('your name (the sender name), asked in the same message as what you sell and your handles: G profile set --json \'{"sender": {"name", "company", "handles": {...}}}\'');
+  if (!offers.length) missing.push('what you sell: one or more offers, each with an id, name, what it does, who it helps, link (G offers set)');
+  if (isLegacy(profile)) missing.push('the new shape: show the person once that the old single offer, phrases and subreddits are replaced by offers (each with its own phrases, subreddits and buyer), propose them from the old ones, and save the confirmed list with G offers set');
+  for (const o of offers) {
+    if (!o.phrases.length) missing.push(`phrases for "${o.name || o.id}": short, first person, as a buyer writes a post (G phrases set --offer ${o.id})`);
+    if ((!profile.sources || profile.sources.includes('reddit')) && !o.subreddits.length) missing.push(`subreddits for "${o.name || o.id}": propose five to eight where its buyer asks, the person edits them`);
+    if (o.who && !o.buyer && !o.buyerAsked) missing.push(`a buyer for "${o.name || o.id}": propose a role, company type and place from "${o.who}" and ask once (buyer, or buyerAsked: true if declined)`);
+  }
+  if (!state.start) missing.push('the start question (G ask start, then G start record)');
+  return { done: missing.length === 0, missing, legacy: isLegacy(profile), next: missing.length ? 'Ask in one message: the person\'s name, company, handles and what they sell (offers, in their own words), who each helps and its link. Save what they give at once, even if partial. Then propose, per offer, short first-person phrases, subreddits and, if none was given, a buyer; let them edit; save; then the start question. See references/setup.md.' : null };
+}
 register('start', ({ sub, flags }) => {
   const profile = readProfile();
   if (sub === 'record') {
@@ -122,11 +152,7 @@ register('start', ({ sub, flags }) => {
     updateState((s) => { s.start = { at: new Date().toISOString(), emailMode: next.emailMode || null, frequency: next.frequency || null, sources: next.sources || null }; });
     return { recorded: loadState().start };
   }
-  const missing = [];
-  if (!profile.offer) missing.push('what you sell (G profile set --json \'{"offer": {"name", "what", "who", "link"}}\')');
-  if (!(profile.phrases || []).length) missing.push('the phrases a buyer would write (G phrases set)');
-  if (!loadState().start) missing.push('the start question (G ask start, then G start record)');
-  return { done: missing.length === 0, missing, next: missing.length ? 'Ask the person, in their own words: what they sell, who it helps, the link, and if they like who buys it (role, company type, place). Propose three to six phrases a buyer would write, let them edit, then save them. Then ask the start question.' : null };
+  return startStatus(profile, loadState());
 });
 register('ask', ({ sub, args }) => {
   if (sub === 'start') {
@@ -203,10 +229,10 @@ register('fit', async ({ sub }) => {
   if (loadState().tenjin.status !== 'ready') return fail('Tenjin is not ready: run G tenjin first');
   return runFitRound({ profile: readProfile(), overlay: loadOverlay() });
 });
-register('companies', ({ sub, args }) => {
+register('companies', ({ sub, args, flags }) => {
   if (sub === 'add') {
     if (args.length < 2) return fail('companies add <domain...>');
-    return { added: updateState((s) => addCompanies(s, args.slice(1))) };
+    return { added: updateState((s) => addCompanies(s, args.slice(1), Date.now(), typeof flags.offer === 'string' ? flags.offer : null)) };
   }
   const list = Object.values(loadState().companies);
   return { companies: list.map((c) => ({ domain: c.domain, name: c.name, source: c.source, peopleDone: Boolean(c.peopleDoneAt) })), waiting: unprocessed(loadState()).length };
@@ -353,17 +379,22 @@ register('ingest', ({ flags }) => {
   if (bad.length) return fail(`the file was refused, rewrite it: ${bad.slice(0, 8).join('; ')}`);
   return updateState((s) => {
     const r = ingestPostFile(s, obj, { profile, overlay: loadOverlay() });
-    return { added: r.added.length, repeated: r.repeated, dropped: r.dropped };
+    const tally = {};
+    for (const x of r.dropped) tally[x.reason.replace(/:.*$/, '')] = (tally[x.reason.replace(/:.*$/, '')] || 0) + 1;
+    return { added: r.added.length, repeated: r.repeated, dropped: r.dropped, dropped_by_reason: tally };
   });
 });
 register('review', ({ sub, flags }) => {
-  if (sub === 'next') return { leads: updateState((s) => reviewHandout(s)), note: 'Review each lead: fit, intent and timing 0 to 100, a quote that appears in the post, one line, the channel, keep or not. Write {"reviews": [...]} and run G review ingest --file <file>.' };
+  if (sub === 'next') {
+    const leads = updateState((s) => reviewHandout(s, readProfile()));
+    return { batches: batchesOf(leads), count: leads.length, note: 'Start every batch in ONE message as parallel Agent calls with model "haiku", one review file per batch. Each lead has its own offer: judge it against that offer only. Write {"reviews": [...]} per batch, then G review ingest --file <file> for each. Report the counts and reasons G prints; do not re-read the posts.' };
+  }
   if (sub === 'ingest') {
     if (!flags.file) return fail('review ingest needs --file');
     const obj = readJsonFile(flags.file);
     const bad = checkReview(obj, loadState());
     if (bad.length) return fail(`the review was refused, rewrite it: ${bad.slice(0, 8).join('; ')}`);
-    return updateState((s) => applyReview(s, obj, { overlay: loadOverlay() }));
+    return updateState((s) => { const out = applyReview(s, obj, { overlay: loadOverlay() }); return { ...out, summary: summarizeReview(s, out) }; });
   }
   return fail('review next, review ingest --file <file>');
 });

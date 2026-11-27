@@ -4,7 +4,7 @@ A lead is a post that asks for what the person sells, or a person who fits their
 
 ## With Tenjin (the watcher, in code)
 
-Each round, per phrase: one need each for X posts, Reddit posts, LinkedIn posts and the web, since the last search (at most 14 days back), then Hacker News through its free search. Then the profile read of each kept lead (X or LinkedIn), because the country and company feed the email rules. Each paid answer is kept at once. The router picks the seller and applies the person's limits; a need it cannot serve is held with its reason and listed in `G report --all`. Run a round by hand with `G search route`.
+Each round, per offer and per phrase: one need each for X posts, Reddit posts, LinkedIn posts and the web, since the last search (at most 14 days back), then Hacker News through its free search. Each need has the shape of its source: key words from the phrase, and for X English only with no retweets, no replies and no link-only posts; for Reddit the offer's own subreddits, most relevant first, in the time window; for the web discussion pages only (forums, community Q&A, Hacker News, Reddit, Indie Hackers). Then the profile read of each kept lead (X or LinkedIn), because the country and company feed the email rules. Each paid answer is kept at once. The router picks the seller and applies the person's limits; a need it cannot serve is held with its reason and listed in `G report --all`. Run a round by hand with `G search route`.
 
 ## Without Tenjin (one Haiku step)
 
@@ -18,6 +18,7 @@ Then `G ingest --file <file>` for each; rewrite a refused file, never edit it wi
 
 ## What code does with every post
 
+- Dropped before review, each counted in `G report`: a post that is only links (few words once the links are removed), a web page that is not a discussion, a Reddit post from outside the offer's subreddits.
 - One lead per post: the same post from two sellers, under x.com and twitter.com, or with tracking parameters, is one lead.
 - One person per identity: platform and handle, a LinkedIn profile, every address published in the post. Identities link only on evidence code holds (a profile link inside a lookup answer), never a guess.
 - Dropped before review: the person's own posts, excluded terms, people and domains, anyone opted out or bounced, anyone already contacted on any channel.

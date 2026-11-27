@@ -29,14 +29,14 @@ G means `node ${CLAUDE_SKILL_DIR}/scripts/gtm.mjs`. Always write it out in full,
 ## Start and recover
 
 Every start, after a compaction or `/resume`: `G tenjin`, `G start status`, `G work --commit`, then `G watch` last (Bash tool, `run_in_background`; it exits when work is due, which wakes you; it refuses while due work is unclaimed; start it again after each round and on `watcher: stopped`; lease elsewhere: attended work).
-First run: references/setup.md (say what the person sells, the phrases, then `G ask start`). Questions: one AskUserQuestion call per `G ask <kind>`, never your own list, never in an unattended turn (hold and notify).
+First run: references/setup.md (one message for the person's name, handles and what they sell; then phrases, subreddits and a buyer per offer; then `G ask start`). Questions: one AskUserQuestion call per `G ask <kind>`, never your own list, never in an unattended turn (hold and notify).
 
 ## The round
 
 When the watcher exits with a line, or the person asks, run `G work --commit` (add `--unattended` in a turn the watcher woke), then start `G watch` last. Handle each item by `reason`; start independent subagents in one message as parallel Agent calls with `model` set.
 
 - `search_due`: references/find.md. With Tenjin the watcher searches in code; without it one Agent `model: "haiku"` step runs the queries `G search plan` prints and writes an ingest file.
-- `review_due`: references/review.md. Up to 25 leads per Agent `model: "haiku"` call, one review file.
+- `review_due`: references/review.md. `G review next` hands out every new lead at once, in batches of 25. Start every batch in one message as parallel Agent calls with `model: "haiku"`, one review file per batch, then `G review ingest --file` for each. Each lead carries its own offer: a lead is judged against that offer only. The main model does not re-check reviews post by post: it reports the counts and reasons that `G review ingest` and `G report` print, and reads a post only when the person asks.
 - `write_due`: references/write.md. One Agent `model: "opus"` call per round: `G write-prompt`, then `G write-result --file`.
 - `approve_due` waits for the person: `G ask pick` builds one question with the drafts and the channel as options.
 - `email_due`: `G email next` hands out one approved email; send exactly that. `replies_due`: `G replies due`. `unknown_due` and `follow_up_due` wait for the person. All in references/send.md.

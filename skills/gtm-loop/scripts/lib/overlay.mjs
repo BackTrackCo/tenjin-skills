@@ -3,6 +3,7 @@ import path from 'node:path';
 import { graph } from './graph.mjs';
 import { readJson, stateDir, writeJsonAtomic } from './paths.mjs';
 import { withLock } from './store.mjs';
+import { offersOf } from './offers.mjs';
 
 export const rulesFile = () => path.join(stateDir(), 'rules.json');
 export const loadOverlay = () => readJson(rulesFile(), { rules: [] });
@@ -68,5 +69,5 @@ export function rulesHash(profile, overlay) {
   const excluded = graph().hashExcluded;
   const rules = (overlay.rules || []).filter((r) => !excluded.includes(r.effect)).map((r) => [r.effect, r.value]).sort();
   const sender = profile.sender || {};
-  return crypto.createHash('sha256').update(canonical({ sender: { name: sender.name || null, company: sender.company || null, postal: sender.postal || null }, offer: (profile.offer || {}).name || null, rules })).digest('hex');
+  return crypto.createHash('sha256').update(canonical({ sender: { name: sender.name || null, company: sender.company || null, postal: sender.postal || null }, offers: offersOf(profile).map((o) => o.name).sort(), rules })).digest('hex');
 }

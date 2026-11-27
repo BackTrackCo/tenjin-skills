@@ -4,6 +4,7 @@ import { sha, contactProblem, contactedInfo, markContacted, isSuppressed, suppre
 import { canonical, capOf } from './overlay.mjs';
 import { emailConsentCurrent, dryRunDone, recordDryRun } from './consent.mjs';
 import { domainOfEmail } from './postinfo.mjs';
+import { offerOfLead } from './offers.mjs';
 
 // Email goes out through the person's Gmail connector, which only the model can call; code decides what may go. These are the
 // gates (SKILL.md gates 1 to 6): a recorded yes for the exact address and text, a footer built here and never edited, an address
@@ -26,7 +27,7 @@ export const needsNotice = (country) => !country || graph().noticeCountries.incl
 // Built here, from the profile and the lead, and nowhere else. No postal address, no email.
 export function buildFooter({ profile, lead, country, addressSource }) {
   const s = profile.sender || {};
-  const offer = profile.offer || {};
+  const offer = offerOfLead(profile, lead);
   if (!String(s.postal || '').trim()) throw new Error('no postal address: an email needs the sender\'s postal address');
   if (!String(s.name || '').trim()) throw new Error('no sender name');
   if (!String(offer.name || '').trim()) throw new Error('no offer name');

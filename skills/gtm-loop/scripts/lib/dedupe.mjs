@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { graph } from './graph.mjs';
 import { platformOf, tweetIdOf, linkedinSlugOf, handleOfXUrl } from './platforms.mjs';
 import { emailsIn, domainOfEmail, injectionSuspected, postFacts } from './postinfo.mjs';
+import { linkOnly, isDiscussion, subredditOf } from './queries.mjs';
 import { bump } from './store.mjs';
 
 const TRACKING = /^(utm_.*|ref|ref_src|ref_url|source|src|gclid|fbclid|mc_.*|s|t|share|context|rcm|trk|trackingId|lipi|utm)$/i;
@@ -184,7 +185,7 @@ export const excludedBy = (rules, lead, person) => {
 const ownHandles = (profile) => Object.entries(((profile && profile.sender) || {}).handles || {}).map(([p, h]) => `${p}:${lower(h).replace(/^@/, '')}`);
 
 // Posts in, leads out. Returns {added: [keys], repeated, dropped: [{url, reason}]}. A dropped lead is never stored.
-export function addPosts(state, posts, { profile = {}, overlay = { rules: [] }, phrase = null, kind = 'post', now = Date.now(), cap = null } = {}) {
+export function addPosts(state, posts, { profile = {}, overlay = { rules: [] }, phrase = null, offerId = null, subreddits = null, kind = 'post', now = Date.now(), cap = null } = {}) {
   const added = [];
   const dropped = [];
   let repeated = 0;
@@ -203,8 +204,13 @@ export function addPosts(state, posts, { profile = {}, overlay = { rules: [] }, 
       continue;
     }
     if (ids.some((i) => mine.includes(i))) { dropped.push({ url: post.url, reason: 'own_post' }); continue; }
+    // Filters in code, before review: a post that is only links, a web page that is not a discussion, a Reddit post from outside the
+    // offer's subreddits.
+    if (kind === 'post' && linkOnly(post.text)) { dropped.push({ url: post.url, reason: 'link_only' }); continue; }
+    if (kind === 'post' && post.source === 'web' && !isDiscussion(post.url)) { dropped.push({ url: post.url, reason: 'not_discussion' }); continue; }
+    if (kind === 'post' && post.source === 'reddit' && subreddits !== null && !subreddits.includes(String(post.subreddit || subredditOf(post.url) || '').toLowerCase())) { dropped.push({ url: post.url, reason: 'outside_subreddits' }); continue; }
     const text = String(post.text || '').slice(0, POST_TEXT);
-    const lead = { key, url: post.url, source: post.source, kind, author: post.author || null, text, postedAt: post.postedAt || null, phrase, phrases: phrase ? [phrase] : [], links: facts.links, emailFromPost: facts.emailFromPost, status: 'new', v: 1, firstSeen: iso, lastSeen: iso, warnings: [] };
+    const lead = { key, url: post.url, source: post.source, kind, author: post.author || null, text, postedAt: post.postedAt || null, phrase, phrases: phrase ? [phrase] : [], links: facts.links, emailFromPost: facts.emailFromPost, offerId, status: 'new', v: 1, firstSeen: iso, lastSeen: iso, warnings: [] };
     lead.hash = contentHash(lead);
     // The person: one per identity, merged on shared identity. A post with no identity is its own person.
     const person = resolvePerson(state, ids, { seed: key, now: iso, name: post.name || null });
@@ -222,14 +228,16 @@ export function addPosts(state, posts, { profile = {}, overlay = { rules: [] }, 
     state.leads[key] = lead;
     added.push(key);
   }
+  state.dropTally ||= {};
+  for (const x of dropped) state.dropTally[x.reason.replace(/:.*$/, '')] = (state.dropTally[x.reason.replace(/:.*$/, '')] || 0) + 1;
   return { added, repeated, dropped };
 }
 
 // A fit lead: a person found by company and people search. Its key is the person, not a post.
-export function addFitLead(state, { key, person, source = 'people', text = '', links = [], phrase = null, now = Date.now() }) {
+export function addFitLead(state, { key, person, source = 'people', text = '', links = [], phrase = null, offerId = null, now = Date.now() }) {
   const iso = new Date(now).toISOString();
   if (state.leads[key]) return { added: false };
-  const lead = { key, url: person.profileUrl || key, source, kind: 'fit', author: person.name || null, text: String(text).slice(0, POST_TEXT), postedAt: null, phrase, phrases: phrase ? [phrase] : [], links, emailFromPost: null, status: 'new', v: 1, firstSeen: iso, lastSeen: iso, warnings: [], personKey: person.key };
+  const lead = { key, url: person.profileUrl || key, source, kind: 'fit', author: person.name || null, text: String(text).slice(0, POST_TEXT), postedAt: null, phrase, phrases: phrase ? [phrase] : [], links, emailFromPost: null, offerId, status: 'new', v: 1, firstSeen: iso, lastSeen: iso, warnings: [], personKey: person.key };
   lead.hash = contentHash(lead);
   state.leads[key] = lead;
   return { added: true };

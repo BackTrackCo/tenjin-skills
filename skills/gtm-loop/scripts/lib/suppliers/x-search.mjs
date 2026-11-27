@@ -9,7 +9,7 @@ export const KIND = 'x_posts';
 export const RECORDED = false;
 
 export function mapper({ query, since }) {
-  if (!str(query)) throw new Error('no phrase for the X search');
+  if (!str(query)) throw new Error('no query for the X search');
   return { query: `${str(query)}${since ? ` since:${since}` : ''}`, queryType: 'Latest' };
 }
 

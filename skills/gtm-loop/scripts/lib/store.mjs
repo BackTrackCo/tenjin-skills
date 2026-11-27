@@ -45,7 +45,9 @@ export function emptyState() {
     left: {},
     handouts: [],
     outreach: [],
+    dropTally: {},
     reviewHand: [],
+    reviewBatchOf: {},
     writeHand: [],
     consentLog: [],
   };

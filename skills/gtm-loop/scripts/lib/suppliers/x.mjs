@@ -5,9 +5,10 @@ import { str } from './posts-shared.mjs';
 export const HOST = 'glim.sh';
 export const KIND = 'x_posts';
 
+// `query` arrives shaped by code: a few key words plus the operators (English, no retweets, no replies, no link-only posts).
 export function mapper({ query, since }) {
-  if (!str(query)) throw new Error('no phrase for the X search');
-  return { query: `${str(query)}${since ? ` since:${since}` : ''} -filter:replies`, sort: 'latest' };
+  if (!str(query)) throw new Error('no query for the X search');
+  return { query: `${str(query)}${since ? ` since:${since}` : ''}`, sort: 'latest' };
 }
 
 export function adapter(result) {

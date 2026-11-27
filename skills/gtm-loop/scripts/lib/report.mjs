@@ -20,6 +20,8 @@ export function report(state, profile = {}, now = Date.now()) {
   if (spend.length) lines.push(`Router spend, last 7 days: ${fmt(Math.round(cents * 10) / 10)}${leadsFound ? `, about ${fmt(Math.round((cents / leadsFound) * 10) / 10)} per new lead` : ''} (prices checked ${pricesCheckedAt()}).`);
   const yieldLines = Object.entries(state.phraseYield || {}).map(([phrase, by]) => `"${phrase}": ${Object.entries(by).map(([s, n]) => `${n} from ${s}`).join(', ') || 'none yet'}`);
   if (yieldLines.length) lines.push(`New leads per phrase and source, all time: ${yieldLines.join('; ')}.`);
+  const drops = Object.entries(state.dropTally || {}).map(([k, n]) => `${k.replace(/_/g, ' ')} ${n}`);
+  if (drops.length) lines.push(`Dropped before review by code filters, all time: ${drops.join(', ')}.`);
   for (const h of state.held || []) lines.push(`Held: ${h.detail || h.reason}.`);
   for (const l of state.updateLines || []) lines.push(l);
   const t = state.tenjin || {};

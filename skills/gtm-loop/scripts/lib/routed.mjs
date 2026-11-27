@@ -6,6 +6,8 @@ import { postNeedKinds, centsOf } from './prices.mjs';
 import { addPosts, linkIdentity } from './dedupe.mjs';
 import { countryFrom } from './geo.mjs';
 import { linkedinSlugOf } from './platforms.mjs';
+import { offersOf, phrasePairs } from './offers.mjs';
+import { xQuery, redditQuery, linkedinQuery, webQuery } from './queries.mjs';
 
 // Searches and lookups run in code in the watcher, because their inputs are fixed by code, so a model step would cost Claude usage
 // and add no judgment. Each need is sent to the router as plain text and the router picks the seller and applies the person's
@@ -18,7 +20,7 @@ export function fillNeed(kind, fields) {
   if (!t) throw new Error(`unknown need: ${kind}`);
   for (const f of t.fields) if (fields[f] === undefined || fields[f] === null || String(fields[f]).trim() === '') throw new Error(`the ${kind} need has no ${f}`);
   const text = t.text.replace(/\{(\w+)\}/g, (_, k) => String(fields[k] ?? ''));
-  return { kind, text, fields: { ...fields }, query: fields.query || fields.handle || fields.url || fields.domain || fields.email || fields.industry || null };
+  return { kind, text, fields: { ...fields }, query: fields.phrase || fields.query || fields.handle || fields.url || fields.domain || fields.email || fields.industry || null };
 }
 
 export const sinceOf = (state, now, maxDays = graph().sweep.maxDaysBack) => {
@@ -26,13 +28,22 @@ export const sinceOf = (state, now, maxDays = graph().sweep.maxDaysBack) => {
   return new Date(Math.max(last, now - maxDays * DAY)).toISOString().slice(0, 10);
 };
 
-// One need per phrase per source. The person's own caps cut the list: phrases per round, searches per day.
+// One need per phrase per source, each in the query shape of its source (key words and that source's operators, never the raw phrase).
+// An offer's Reddit need searches inside its own list of subreddits; an offer with none has no Reddit need and says so. The person's
+// own caps cut the list: phrases per round, searches per day.
 export function postNeeds({ profile, overlay, state, now = Date.now() }) {
-  const phrases = (profile.phrases || []).slice(0, capOf(overlay, 'phrases_per_round') || undefined);
   const kinds = postNeedKinds(profile.sources);
   const since = sinceOf(state, now);
   let needs = [];
-  for (const phrase of phrases) for (const kind of kinds) needs.push(fillNeed(kind, { query: phrase, since }));
+  for (const { offer, phrase } of phrasePairs(profile, capOf(overlay, 'phrases_per_round'))) {
+    const base = { since, phrase, offerId: offer.id };
+    for (const kind of kinds) {
+      if (kind === 'x_posts') needs.push(fillNeed(kind, { ...base, query: xQuery(phrase) }));
+      else if (kind === 'reddit_posts') { if (offer.subreddits.length) needs.push(fillNeed(kind, { ...base, query: redditQuery(phrase), subreddits: offer.subreddits.join(', ') })); }
+      else if (kind === 'linkedin_posts') needs.push(fillNeed(kind, { ...base, query: linkedinQuery(phrase) }));
+      else needs.push(fillNeed(kind, { ...base, query: webQuery(phrase), mode: 'discussion' }));
+    }
+  }
   const perDay = capOf(overlay, 'searches_per_day');
   if (perDay !== null) {
     const today = (state.spend || []).filter((s) => now - Date.parse(s.at) < DAY && s.search).length;
@@ -41,7 +52,13 @@ export function postNeeds({ profile, overlay, state, now = Date.now() }) {
   return needs;
 }
 
-export const heldKey = (need) => `need:${need.kind}:${need.query || ''}`;
+// The subreddits of an offer: a Reddit post from outside the list is dropped in code, so no list drops every Reddit post.
+export const subsOf = (profile, offerId) => (offersOf(profile).find((o) => o.id === offerId) || offersOf(profile)[0] || { subreddits: [] }).subreddits;
+
+// The offers that want Reddit but have no subreddits yet.
+export const noSubreddits = (profile) => (postNeedKinds(profile.sources).includes('reddit_posts') ? offersOf(profile).filter((o) => o.phrases.length && !o.subreddits.length) : []);
+
+const heldKey = (need) => `need:${need.kind}:${need.query || ''}`;
 export function recordHeld(state, need, r) {
   const key = heldKey(need);
   state.held = state.held.filter((h) => h.key !== key);
@@ -54,14 +71,17 @@ export async function runPostRound({ profile, overlay, client = new RouterClient
   const roundsCap = capOf(overlay, 'rounds_per_day');
   if (roundsCap !== null && (loadState().rounds || []).filter((r) => now - Date.parse(r.at) < DAY).length >= roundsCap) return { skipped: 'rounds_per_day', needs: 0, added: 0 };
   const needs = postNeeds({ profile, overlay, state: loadState(), now });
-  updateState((s) => { s.search.roundAdded = 0; });
+  updateState((s) => {
+    s.search.roundAdded = 0;
+    for (const o of noSubreddits(profile)) { s.held = s.held.filter((h) => h.key !== `need:reddit_posts:${o.id}`); s.held.push({ key: `need:reddit_posts:${o.id}`, reason: 'need_held', status: 'no_subreddits', detail: `reddit_posts (${o.name || o.id}): no subreddits yet, so Reddit is not searched for this offer` }); }
+  });
   let added = 0;
   const out = await runRound(needs, {
     client, save,
     onResult: (need, r) => updateState((state) => {
       if (!r.ok) return recordHeld(state, need, r);
       clearHeld(state, need);
-      const res = addPosts(state, r.ingest.posts, { profile, overlay, phrase: need.query, now, cap: capOf(overlay, 'leads_per_round') === null ? null : Math.max(0, capOf(overlay, 'leads_per_round') - state.search.roundAdded) });
+      const res = addPosts(state, r.ingest.posts, { profile, overlay, phrase: need.query, offerId: need.fields.offerId || null, subreddits: subsOf(profile, need.fields.offerId), now, cap: capOf(overlay, 'leads_per_round') === null ? null : Math.max(0, capOf(overlay, 'leads_per_round') - state.search.roundAdded) });
       state.search.roundAdded += res.added.length;
       added += res.added.length;
       const y = (state.phraseYield[need.query] ||= {});

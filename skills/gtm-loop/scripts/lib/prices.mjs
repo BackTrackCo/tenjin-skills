@@ -1,4 +1,5 @@
 import { graph } from './graph.mjs';
+import { allPhrases } from './offers.mjs';
 
 // What each router need costs, as estimates: the catalog's provider price plus the routing fee, upper end, in cents per call, kept
 // in graph.json under `prices` with the date they were checked. Every figure in a hint, an ask or the report is built from
@@ -12,7 +13,7 @@ export const postNeedKinds = (sources) => (sources && sources.length ? sources :
 
 // A round: one call per phrase per post source. Hacker News is free.
 export function roundCents(profile = {}) {
-  const phrases = Math.max(1, (profile.phrases || []).length);
+  const phrases = Math.max(1, allPhrases(profile).length);
   return phrases * postNeedKinds(profile.sources).reduce((n, k) => n + price(k), 0);
 }
 export const centsOf = (cost) => {

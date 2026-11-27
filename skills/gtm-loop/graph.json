@@ -267,10 +267,11 @@
       ]
     },
     "reddit_posts": {
-      "text": "Search recent public Reddit posts and comments for: {query}. Return each one's URL, text, author and date. Posts since {since}.",
+      "text": "Search public Reddit posts for: {query}. Only in these subreddits: {subreddits}. Most relevant first, posts since {since}. Return each post's URL, text, author and date.",
       "fields": [
         "query",
-        "since"
+        "since",
+        "subreddits"
       ]
     },
     "linkedin_posts": {
@@ -281,7 +282,7 @@
       ]
     },
     "web_research": {
-      "text": "Search the web for pages where someone asks for what this describes: {query}. Return each page's URL, title, a short text and its date.",
+      "text": "Search the web for discussion pages (forums, community Q&A, Hacker News, Reddit, Indie Hackers) where someone asks or complains about: {query}. Return each page's URL, title, a short text and its date.",
       "fields": [
         "query"
       ]

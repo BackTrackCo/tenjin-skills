@@ -1,4 +1,5 @@
 import { str, linksOf, listOf, isoOf } from './posts-shared.mjs';
+import { DISCUSSION_HOSTS } from '../queries.mjs';
 
 // Web research: pages where someone asks for what the offer is (forums, blogs, issues). Results are kept as leads, with the page's
 // own link as the lead's source, never as board links. Input: `query`, `type`, `numResults`; Tenjin sets `contents` on every call.
@@ -10,9 +11,11 @@ export const exa = {
   KIND,
   RECORDED: true,
   NO_CACHE: true,
-  mapper: ({ query }) => {
-    if (!str(query)) throw new Error('no phrase for the web research');
-    return { query: str(query).slice(0, 400), type: 'lite', numResults: 10 };
+  // For a lead from a post only discussion pages are asked for: forums, community Q&A, Hacker News, Reddit, Indie Hackers and the like.
+  // Company and fit research (mode other than "discussion") asks the whole web.
+  mapper: ({ query, mode }) => {
+    if (!str(query)) throw new Error('no query for the web research');
+    return { query: str(query).slice(0, 400), type: 'lite', numResults: 10, ...(mode === 'discussion' ? { includeDomains: DISCUSSION_HOSTS.slice(0, 20) } : {}) };
   },
 };
 

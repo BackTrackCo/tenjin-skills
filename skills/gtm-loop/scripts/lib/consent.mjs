@@ -1,4 +1,5 @@
 import { rulesHash } from './overlay.mjs';
+import { offersOf } from './offers.mjs';
 
 // The email consent and the dry run, as in Job Search: a consent is bound to the hash of the person's sender facts and rules, so
 // a change to either ends it. Code refuses to record one inside a batch (batch.mjs).
@@ -9,7 +10,7 @@ export function unattendedProblems(profile) {
   const s = profile.sender || {};
   if (!s.name) bad.push('no sender name');
   if (!s.postal) bad.push('no postal address');
-  if (!(profile.offer && profile.offer.name)) bad.push('no offer');
+  if (!offersOf(profile).some((o) => o.name)) bad.push('no offer');
   return bad;
 }
 

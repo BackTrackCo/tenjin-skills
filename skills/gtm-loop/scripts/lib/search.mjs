@@ -7,27 +7,31 @@ import { runHn } from './hn.mjs';
 import { runPostRound, runIdentityReads } from './routed.mjs';
 import { RouterClient } from './router.mjs';
 import { runFitRound, hasBuyer } from './fit.mjs';
+import { phrasePairs, allPhrases } from './offers.mjs';
+import { kw } from './queries.mjs';
 
 // When a search is due, what runs in code, and what is left to the one free model step. HN is free and always in code. With Tenjin
 // ready, every post source runs in code too; without it the model's one Haiku web-search step runs the queries `G search plan`
 // prints and writes a post file.
 export const searchDue = (state, profile, now = Date.now()) => {
-  if (!(profile.phrases || []).length) return false;
+  if (!allPhrases(profile).length) return false;
   const last = state.search && state.search.lastAt ? Date.parse(state.search.lastAt) : null;
   return searchIsDue({ lastAt: last, now, frequency: frequencyOf(profile), hour: profile.sweepHour ?? graph().sweep.defaultHour });
 };
 
 // The free step's queries: each phrase, then the phrase on each platform the person chose, as web-search queries.
 export function searchPlan(profile, overlay) {
-  const phrases = (profile.phrases || []).slice(0, capOf(overlay, 'phrases_per_round') || undefined);
   const sources = profile.sources && profile.sources.length ? profile.sources : ['x', 'reddit', 'linkedin', 'web'];
-  const sites = { x: 'site:x.com', reddit: 'site:reddit.com', linkedin: 'site:linkedin.com/posts' };
   const queries = [];
-  for (const phrase of phrases) {
-    if (sources.includes('web')) queries.push({ phrase, source: 'web', query: `"${phrase}"` });
-    for (const s of ['x', 'reddit', 'linkedin']) if (sources.includes(s)) queries.push({ phrase, source: s, query: `"${phrase}" ${sites[s]}` });
+  for (const { offer, phrase } of phrasePairs(profile, capOf(overlay, 'phrases_per_round'))) {
+    const k = kw(phrase, 4);
+    const subs = offer.subreddits.map((r) => `site:reddit.com/r/${r}`).join(' OR ');
+    if (sources.includes('web')) queries.push({ phrase, offerId: offer.id, source: 'web', query: `${k} forum OR discussion OR community` });
+    if (sources.includes('x')) queries.push({ phrase, offerId: offer.id, source: 'x', query: `${k} site:x.com` });
+    if (sources.includes('reddit') && subs) queries.push({ phrase, offerId: offer.id, source: 'reddit', query: `${k} (${subs})` });
+    if (sources.includes('linkedin')) queries.push({ phrase, offerId: offer.id, source: 'linkedin', query: `${k} site:linkedin.com/posts` });
   }
-  return { queries, note: 'Search the web with each query. For each result that is a person asking for what the offer is, keep its link, the author handle if shown, the date if shown and the snippet as text (1000 characters at most). Write one file per phrase: {"phrase", "status": "fulfilled", "posts": [{"url", "author", "postedAt", "text", "source"}]}, then run G ingest --file <file>. Never fetch x.com, linkedin.com or reddit.com.' };
+  return { queries, note: 'Search the web with each query. Keep only a person asking or complaining in their own words: not a guide, not a vendor page, not a post that only holds links, not someone selling their own tool. Keep the link, the author handle if shown, the date if shown and the snippet as text (1000 characters at most). Write one file per phrase: {"phrase", "status": "fulfilled", "posts": [{"url", "author", "postedAt", "text", "source"}]}, then run G ingest --file <file>. Never fetch x.com, linkedin.com or reddit.com.' };
 }
 
 const stamp = (n) => n;
