@@ -22,6 +22,10 @@ registerStep('reads', async ({ routerClient, now }) => {
 });
 registerCollector(emailItems);
 registerCollector(followUpItems);
+registerCollector(({ state }) => {
+  const list = Object.entries(state.queryYield || {}).filter(([, y]) => y.rounds > 0 && y.lastKept === 0);
+  return list.length ? [{ key: 'rewrite', reason: 'rewrite_due', v: list.reduce((n, [k, y]) => n + y.rounds * 7 + k.length, 0), count: list.length, waitsForPerson: true }] : [];
+});
 // With the person's email consent current, emails are prepared and approved on the consent in code; the model only hands out.
 registerStep('email', async ({ routerClient, now }) => {
   await prepUnattended({ profile: readProfile(), overlay: loadOverlay(), client: routerClient, now });

@@ -37,6 +37,8 @@ import { openBatch, closeBatch } from './lib/batch.mjs';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dropStaleHolds, staleHoldsLine } from './lib/codeid.mjs';
+import { checkQueries, checkQuery, SOURCES as QUERY_SOURCES } from './lib/querycheck.mjs';
+import { testQuery } from './lib/qtest.mjs';
 
 // G is this file. Every command prints one JSON object. State, rules and profile live in ~/.tenjin-skills/gtm-loop/.
 export function parseArgs(argv) {
@@ -137,6 +139,7 @@ export function startStatus(profile, state) {
   for (const o of offers) {
     if (!o.phrases.length) missing.push(`phrases for "${o.name || o.id}": short, first person, as a buyer writes a post (G phrases set --offer ${o.id})`);
     if ((!profile.sources || profile.sources.includes('reddit')) && !o.subreddits.length) missing.push(`subreddits for "${o.name || o.id}": propose five to eight where its buyer asks, the person edits them`);
+    if (o.phrases.length && !Object.keys(o.queries).length && !o.queriesAsked) missing.push(`queries for "${o.name || o.id}": the model writes one per source (X, Reddit, LinkedIn, web, Hacker News) in the same step as the phrases, tests each with G query test, shows them with their cost for the person's yes (G queries set); or G queries decline --offer ${o.id} to use the loose queries code builds`);
     if (o.who && !o.buyer && !o.buyerAsked) missing.push(`a buyer for "${o.name || o.id}": propose a role, company type and place from "${o.who}" and ask once (buyer, or buyerAsked: true if declined)`);
   }
   if (!state.start) missing.push('the start question (G ask start, then G start record)');
@@ -221,7 +224,8 @@ register('search', async ({ sub, flags }) => {
   if (sub === 'done') return searchDone();
   if (sub === 'route') {
     if (loadState().tenjin.status !== 'ready') return fail('Tenjin is not ready: run G tenjin first');
-    const r = await runPostRound({ profile, overlay: loadOverlay() });
+    const r = await runPostRound({ profile, overlay: loadOverlay(), only: typeof flags.need === 'string' ? flags.need : null });
+    if (typeof flags.need === 'string') return r; // one search only: no profile reads, the schedule untouched
     const reads = flags['no-reads'] ? null : await runIdentityReads({});
     return { ...r, reads };
   }
@@ -371,6 +375,35 @@ register('batch', ({ sub, flags }) => {
   if (sub === 'open') return openBatch({ mode: flags.mode === 'unattended' ? 'unattended' : 'attended' });
   if (sub === 'close') { closeBatch(); return { closed: true }; }
   return fail('batch open [--mode unattended]|close');
+});
+// The queries the model wrote for each offer and source. Written in an attended turn, from the person's words; code checks every one
+// before it is saved and before every run, and refuses one that fails with the reason.
+register('queries', ({ sub, flags }) => {
+  const profile = readProfile();
+  const offerId = typeof flags.offer === 'string' ? flags.offer : null;
+  if (sub === 'set') {
+    const offer = offersOf(profile).find((o) => o.id === offerId) || fail('queries set --offer <id> --json \'{"x": "...", "reddit": "...", "linkedin": "...", "web": "...", "hn": "..."}\'');
+    const given = flags.json ? JSON.parse(flags.json) : fail('queries set needs --json');
+    const bad = checkQueries(given, offer);
+    if (bad.length) return fail(`refused, rewrite: ${bad.join('; ')}`);
+    if (!Array.isArray(profile.offers)) return fail('save the offers list first (G offers set): queries are kept per offer');
+    return { queries: setProfile({ offers: profile.offers.map((o) => (o.id === offerId ? { ...o, queries: { ...(o.queries || {}), ...given } } : o)) }).offers.find((o) => o.id === offerId).queries };
+  }
+  if (sub === 'decline') {
+    if (!Array.isArray(profile.offers) || !profile.offers.some((o) => o.id === offerId)) return fail('queries decline --offer <id>');
+    setProfile({ offers: profile.offers.map((o) => (o.id === offerId ? { ...o, queriesAsked: true } : o)) });
+    return { declined: offerId, note: 'the queries code builds are used for this offer' };
+  }
+  const st = loadState();
+  return { offers: offersOf(profile).map((o) => ({ id: o.id, queries: o.queries, tests: Object.fromEntries(QUERY_SOURCES.map((s) => [s, (st.queryTests || {})[`query:${o.id}:${s}`] || null]).filter(([, v]) => v)), yield: Object.values(st.queryYield || {}).filter((y) => y.offerId === o.id) })) };
+});
+// One query, run once, in the attended turn: the count, what each filter drops, three sample lines, and the cost.
+register('query', async ({ sub, args, flags }) => {
+  if (sub !== 'test') return fail('query test <offer id> <source> [--query "<draft text>"]');
+  const [offerId, source] = [args[1], args[2]];
+  if (!offerId || !QUERY_SOURCES.includes(source)) return fail(`query test <offer id> <${QUERY_SOURCES.join('|')}>`);
+  if (source !== 'hn' && loadState().tenjin.status !== 'ready') return fail('Tenjin is not ready: run G tenjin first');
+  return testQuery({ profile: readProfile(), overlay: loadOverlay(), offerId, source, query: typeof flags.query === 'string' ? flags.query : null, fetch: globalThis.fetch });
 });
 register('hn', async () => runHn({ fetch: globalThis.fetch, profile: readProfile(), overlay: loadOverlay() }));
 register('reads', async () => runIdentityReads({}));

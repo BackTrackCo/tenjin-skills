@@ -8,7 +8,8 @@ import { countryFrom } from './geo.mjs';
 import { linkedinSlugOf } from './platforms.mjs';
 import { offersOf, phrasePairs, liveHeld } from './offers.mjs';
 import { codeId } from './codeid.mjs';
-import { xQuery, redditQuery, linkedinQuery, webQuery } from './queries.mjs';
+import { xQuery, redditQuery, linkedinQuery, webDescription } from './queries.mjs';
+import { checkQuery } from './querycheck.mjs';
 
 // Searches and lookups run in code in the watcher, because their inputs are fixed by code, so a model step would cost Claude usage
 // and add no judgment. Each need is sent to the router as plain text and the router picks the seller and applies the person's
@@ -29,20 +30,43 @@ export const sinceOf = (state, now, maxDays = graph().sweep.maxDaysBack) => {
   return new Date(Math.max(last, now - maxDays * DAY)).toISOString().slice(0, 10);
 };
 
-// One need per phrase per source, each in the query shape of its source (key words and that source's operators, never the raw phrase).
+// One need per source per offer when the person has a stored query for it (written by the model in an attended turn, checked by code
+// before every run); otherwise one need per phrase per source, in the query shape code builds (key words and that source's operators).
 // An offer's Reddit need searches inside its own list of subreddits; an offer with none has no Reddit need and says so. The person's
-// own caps cut the list: phrases per round, searches per day.
+// own caps cut the list: phrases per round (built queries only), searches per day.
+const SRC_OF = { x_posts: 'x', reddit_posts: 'reddit', linkedin_posts: 'linkedin', web_research: 'web' };
+export const queryLabel = (offerId, src) => `query:${offerId}:${src}`;
+function builtNeed(kind, offer, phrase, base) {
+  if (kind === 'x_posts') return fillNeed(kind, { ...base, phrase, query: xQuery(phrase) });
+  if (kind === 'reddit_posts') return offer.subreddits.length ? fillNeed(kind, { ...base, phrase, query: redditQuery(phrase), subreddits: offer.subreddits.join(', ') }) : null;
+  if (kind === 'linkedin_posts') return fillNeed(kind, { ...base, phrase, query: linkedinQuery(phrase) });
+  return fillNeed(kind, { ...base, phrase, query: webDescription(offer, phrase), mode: 'discussion' });
+}
+export function queryRefusals(profile) {
+  const out = [];
+  for (const o of offersOf(profile)) for (const [src, text] of Object.entries(o.queries || {})) {
+    const bad = checkQuery(src, text, o);
+    if (bad.length) out.push({ offerId: o.id, src, bad });
+  }
+  return out;
+}
 export function postNeeds({ profile, overlay, state, now = Date.now() }) {
   const kinds = postNeedKinds(profile.sources);
   const since = sinceOf(state, now);
+  const cap = capOf(overlay, 'phrases_per_round');
   let needs = [];
-  for (const { offer, phrase } of phrasePairs(profile, capOf(overlay, 'phrases_per_round'))) {
-    const base = { since, phrase, offerId: offer.id };
+  for (const offer of offersOf(profile)) {
     for (const kind of kinds) {
-      if (kind === 'x_posts') needs.push(fillNeed(kind, { ...base, query: xQuery(phrase) }));
-      else if (kind === 'reddit_posts') { if (offer.subreddits.length) needs.push(fillNeed(kind, { ...base, query: redditQuery(phrase), subreddits: offer.subreddits.join(', ') })); }
-      else if (kind === 'linkedin_posts') needs.push(fillNeed(kind, { ...base, query: linkedinQuery(phrase) }));
-      else needs.push(fillNeed(kind, { ...base, query: webQuery(phrase), mode: 'discussion' }));
+      const src = SRC_OF[kind];
+      const base = { since, offerId: offer.id };
+      const stored = offer.queries[src];
+      if (stored) {
+        if (checkQuery(src, stored, offer).length) continue; // refused: named in a held line, the model rewrites it
+        const n = kind === 'reddit_posts' ? fillNeed(kind, { ...base, phrase: queryLabel(offer.id, src), query: stored, subreddits: offer.subreddits.join(', ') }) : fillNeed(kind, { ...base, phrase: queryLabel(offer.id, src), query: stored, ...(kind === 'web_research' ? { mode: 'discussion' } : {}) });
+        needs.push(n);
+      } else {
+        for (const phrase of offer.phrases.slice(0, cap || undefined)) { const n = builtNeed(kind, offer, phrase, base); if (n) needs.push(n); }
+      }
     }
   }
   const perDay = capOf(overlay, 'searches_per_day');
@@ -68,36 +92,77 @@ export function recordHeld(state, need, r) {
 export const clearHeld = (state, need) => { state.held = state.held.filter((h) => h.key !== heldKey(need)); };
 
 // A whole round of post searches: one process, the needs one at a time. A paid result is kept at once, before the next need starts.
-export async function runPostRound({ profile, overlay, client = new RouterClient(), now = Date.now(), save }) {
+const is404 = (r) => /\b404\b/.test(`${r.status} ${r.reason}`) || r.status === 'not_found';
+const nextDay = (now) => { const d = new Date(now); d.setHours(24, 0, 0, 0); return d.toISOString(); };
+const SRC_NAME = { x_posts: 'x', reddit_posts: 'reddit', linkedin_posts: 'linkedin', web_research: 'web' };
+
+// The per-round funnel, per source: what the seller returned, what each code filter dropped, what went to review.
+export const FUNNEL_DROPS = ['link_only', 'not_an_ask', 'not_discussion', 'outside_subreddits', 'too_old', 'duplicate'];
+export function funnelAdd(state, source, { returned = 0, dropped = [], repeated = 0, tooOld = 0, toReview = 0, searches = 1 }) {
+  const f = ((state.funnel ||= { at: null, sources: {} }).sources[source] ||= { searches: 0, returned: 0, toReview: 0, ...Object.fromEntries(FUNNEL_DROPS.map((k) => [k, 0])) });
+  f.searches += searches; f.returned += returned; f.toReview += toReview; f.duplicate += repeated; f.too_old += tooOld;
+  for (const x of dropped) { const k = x.reason.replace(/:.*$/, ''); if (k in f) f[k] += 1; }
+}
+
+// A paid post search that answers 404 is empty for that day: held with that reason, and not run again until the next day's round.
+const skippedToday = (state, need, now) => (state.held || []).some((h) => h.key === heldKey(need) && h.skipUntil && Date.parse(h.skipUntil) > now);
+
+// `only`: the held key of one need (G search route --need "<key>"): that search only, whatever it was held for, and the round's
+// schedule is left alone.
+export async function runPostRound({ profile, overlay, client = new RouterClient(), now = Date.now(), save, only = null }) {
   const roundsCap = capOf(overlay, 'rounds_per_day');
-  if (roundsCap !== null && (loadState().rounds || []).filter((r) => now - Date.parse(r.at) < DAY).length >= roundsCap) return { skipped: 'rounds_per_day', needs: 0, added: 0 };
-  const needs = postNeeds({ profile, overlay, state: loadState(), now });
+  if (!only && roundsCap !== null && (loadState().rounds || []).filter((r) => now - Date.parse(r.at) < DAY).length >= roundsCap) return { skipped: 'rounds_per_day', needs: 0, added: 0 };
+  let needs = postNeeds({ profile, overlay, state: loadState(), now });
+  if (only) {
+    needs = needs.filter((n) => heldKey(n) === only);
+    if (!needs.length) throw new Error(`no search has the key ${only}: use a key from G report --all`);
+  } else needs = needs.filter((n) => !skippedToday(loadState(), n, now));
   updateState((s) => {
     s.held = liveHeld(s.held, profile);
-    s.search.roundAdded = 0;
+    s.held = s.held.filter((h) => h.status !== 'query_refused');
+    for (const r of queryRefusals(profile)) s.held.push({ key: `need:query:${r.offerId}:${r.src}`, reason: 'need_held', status: 'query_refused', codeId: codeId(), detail: `the stored ${r.src} query for ${r.offerId} was refused: ${r.bad.join('; ')}. The model rewrites it with the person, in an attended turn` });
+    if (!only) { s.search.roundAdded = 0; s.funnel = { at: new Date(now).toISOString(), sources: (s.funnel && s.funnel.sources && s.funnel.sources.hn) ? { hn: s.funnel.sources.hn } : {} }; }
     for (const o of noSubreddits(profile)) { s.held = s.held.filter((h) => h.key !== `need:reddit_posts:${o.id}`); s.held.push({ key: `need:reddit_posts:${o.id}`, reason: 'need_held', status: 'no_subreddits', codeId: codeId(), detail: `reddit_posts (${o.name || o.id}): no subreddits yet, so Reddit is not searched for this offer` }); }
   });
   let added = 0;
   const out = await runRound(needs, {
     client, save,
     onResult: (need, r) => updateState((state) => {
-      if (!r.ok) return recordHeld(state, need, r);
+      if (!r.ok) {
+        recordHeld(state, need, r);
+        if (is404(r)) {
+          const h = state.held.find((x) => x.key === heldKey(need));
+          Object.assign(h, { status: 'empty_404', skipUntil: nextDay(now), detail: `${need.kind} (${need.query}): the seller answered 404, counted as empty for today and not run again until the next round` });
+          recordYield(state, need, 0, 0, now);
+          funnelAdd(state, SRC_NAME[need.kind] || need.kind, {});
+        }
+        return;
+      }
       clearHeld(state, need);
       const res = addPosts(state, r.ingest.posts, { profile, overlay, phrase: need.query, offerId: need.fields.offerId || null, subreddits: subsOf(profile, need.fields.offerId), now, cap: capOf(overlay, 'leads_per_round') === null ? null : Math.max(0, capOf(overlay, 'leads_per_round') - state.search.roundAdded) });
       state.search.roundAdded += res.added.length;
       added += res.added.length;
+      recordYield(state, need, r.ingest.posts.length, res.added.length, now);
+      funnelAdd(state, SRC_NAME[need.kind] || need.kind, { returned: r.ingest.posts.length + (r.ingest.droppedOld || 0), dropped: res.dropped, repeated: res.repeated, tooOld: r.ingest.droppedOld || 0, toReview: res.added.length });
       const y = (state.phraseYield[need.query] ||= {});
       for (const k of res.added) y[state.leads[k].source] = (y[state.leads[k].source] || 0) + 1;
       state.spend.push({ at: new Date(now).toISOString(), kind: need.kind, cents: centsOf(r.cost), cost: r.cost, leads: res.added.length, search: true });
+      if (need.kind === 'web_research') {
+        const w = (state.webTally ||= { tooOld: 0, undated: 0 });
+        w.tooOld += r.ingest.droppedOld || 0;
+        w.undated += r.ingest.undated || 0;
+      }
     }),
   });
-  updateState((state) => {
-    state.routed.lastSearchAt = new Date(now).toISOString();
-    state.search.lastAt = state.routed.lastSearchAt;
-    state.rounds.push({ at: state.routed.lastSearchAt, needs: needs.length, ok: out.filter((r) => r.ok).length, added });
-    if (state.spend.length > 600) state.spend.splice(0, state.spend.length - 600);
-    if (state.rounds.length > 200) state.rounds.splice(0, state.rounds.length - 200);
-  });
+  if (!only) {
+    updateState((state) => {
+      state.routed.lastSearchAt = new Date(now).toISOString();
+      state.search.lastAt = state.routed.lastSearchAt;
+      state.rounds.push({ at: state.routed.lastSearchAt, needs: needs.length, ok: out.filter((r) => r.ok).length, added });
+      if (state.spend.length > 600) state.spend.splice(0, state.spend.length - 600);
+      if (state.rounds.length > 200) state.rounds.splice(0, state.rounds.length - 200);
+    });
+  }
   return { needs: needs.length, ok: out.filter((r) => r.ok).length, held: out.filter((r) => !r.ok).map((r) => ({ need: r.need, status: r.status, reason: r.reason })), added };
 }
 
@@ -150,4 +215,13 @@ export async function runIdentityReads({ client = new RouterClient(), now = Date
     }),
   });
   return { reads: out.length, ok: out.filter((r) => r.ok).length };
+}
+
+// How many leads each query found and kept, per round and in total. A query that kept nothing for a round is named in the report and
+// waits for the person's yes on a rewrite: nothing is rewritten by itself.
+export const yieldKey = (need) => (String(need.query).startsWith('query:') ? need.query : `${need.fields.offerId || 'main'}:${SRC_OF[need.kind] || need.kind}:${need.query}`);
+export function recordYield(state, need, found, kept, now) {
+  const y = ((state.queryYield ||= {})[yieldKey(need)] ||= { offerId: need.fields.offerId || null, source: SRC_OF[need.kind] || need.kind, stored: String(need.query).startsWith('query:'), label: need.query, rounds: 0, found: 0, kept: 0, lastFound: 0, lastKept: 0, lastAt: null });
+  y.rounds += 1; y.found += found; y.kept += kept; y.lastFound = found; y.lastKept = kept; y.lastAt = new Date(now).toISOString();
+  y.rewriteAskedAt = kept > 0 ? null : y.rewriteAskedAt || null;
 }

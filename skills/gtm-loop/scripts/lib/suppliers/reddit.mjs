@@ -14,7 +14,8 @@ function redditQueryOf({ query, subreddits }) {
   const subs = String(subreddits || '').split(/[,\s+]+/).map((x) => x.replace(/^\/?r\//i, '').trim()).filter(Boolean);
   if (!str(query)) throw new Error('no query for the Reddit search');
   if (!subs.length) throw new Error('no subreddits for the Reddit search');
-  return `(${subs.map((r) => `subreddit:${r}`).join(' OR ')}) ${str(query)}`;
+  // A stored query already holds its subreddit operators (checked against the offer's list); a built one gets them here.
+  return /\bsubreddit:/i.test(str(query)) ? str(query) : `(${subs.map((r) => `subreddit:${r}`).join(' OR ')}) ${str(query)}`;
 }
 // The first seller names the time range `time`; the second names it `timeframe`.
 const redditInput = (f) => ({ query: redditQueryOf(f), sort: 'relevance', time: window(f.since) });

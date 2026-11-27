@@ -175,13 +175,15 @@
     "replies_due",
     "follow_up_due",
     "update_waiting",
-    "unknown_due"
+    "unknown_due",
+    "rewrite_due"
   ],
   "waitsForPerson": [
     "approve_due",
     "follow_up_due",
     "update_waiting",
-    "unknown_due"
+    "unknown_due",
+    "rewrite_due"
   ],
   "freeMail": [
     "gmail.com",
@@ -286,7 +288,7 @@
       ]
     },
     "web_research": {
-      "text": "Search the web for discussion pages (forums, community Q&A, Hacker News, Reddit, Indie Hackers) where someone asks or complains about: {query}. Return each page's URL, title, a short text and its date.",
+      "text": "Search the web for the page described here: {query} Return each page's URL, title, a short text and its date.",
       "fields": [
         "query"
       ]

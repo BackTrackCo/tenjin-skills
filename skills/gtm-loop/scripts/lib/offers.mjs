@@ -4,11 +4,11 @@ const clean = (a) => (Array.isArray(a) ? a.map((s) => String(s).trim()).filter(B
 
 export function offersOf(profile = {}) {
   if (Array.isArray(profile.offers)) {
-    return profile.offers.filter((o) => o && typeof o === 'object').map((o, i) => ({ id: String(o.id || `offer-${i + 1}`), name: o.name || '', what: o.what || '', who: o.who || '', link: o.link || '', phrases: clean(o.phrases), subreddits: clean(o.subreddits).map((s) => s.replace(/^\/?r\//i, '').toLowerCase()), buyer: o.buyer || null, buyerAsked: Boolean(o.buyerAsked) }));
+    return profile.offers.filter((o) => o && typeof o === 'object').map((o, i) => ({ id: String(o.id || `offer-${i + 1}`), name: o.name || '', what: o.what || '', who: o.who || '', link: o.link || '', phrases: clean(o.phrases), subreddits: clean(o.subreddits).map((s) => s.replace(/^\/?r\//i, '').toLowerCase()), buyer: o.buyer || null, buyerAsked: Boolean(o.buyerAsked), queries: o.queries && typeof o.queries === 'object' ? o.queries : {}, queriesAsked: Boolean(o.queriesAsked) }));
   }
   if (profile.offer || clean(profile.phrases).length) {
     const o = profile.offer || {};
-    return [{ id: 'main', name: o.name || '', what: o.what || '', who: o.who || '', link: o.link || '', phrases: clean(profile.phrases), subreddits: clean(profile.subreddits).map((s) => s.replace(/^\/?r\//i, '').toLowerCase()), buyer: profile.buyer || null, buyerAsked: false }];
+    return [{ id: 'main', name: o.name || '', what: o.what || '', who: o.who || '', link: o.link || '', phrases: clean(profile.phrases), subreddits: clean(profile.subreddits).map((s) => s.replace(/^\/?r\//i, '').toLowerCase()), buyer: profile.buyer || null, buyerAsked: false, queries: {}, queriesAsked: false }];
   }
   return [];
 }
@@ -34,6 +34,8 @@ export function liveHeld(held, profile) {
   return (held || []).filter((h) => {
     const m = /^need:([a-z_]+):(.*)$/.exec(h.key || '');
     if (!m || !POST_KINDS.includes(m[1])) return true;
+    const q = /^query:([^:]+):([a-z]+)$/.exec(m[2]);
+    if (q) return Boolean(offersOf(profile).find((o) => o.id === q[1] && o.queries[q[2]]));
     return phrases.has(m[2]) || (m[1] === 'reddit_posts' && ids.has(m[2]));
   });
 }

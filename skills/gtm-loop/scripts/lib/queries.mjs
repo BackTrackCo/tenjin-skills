@@ -22,16 +22,24 @@ export const kw = (phrase, max) => keywords(phrase, max).join(' ');
 // The ask keeps its shape in the query: the markers of a request, quoted and OR'd together, then the topic words. Key words alone match
 // the people who sell or teach the topic.
 export const ASK_MARKERS = ['any recommendations', 'looking for', 'how do you', 'has anyone', 'struggling to'];
-const markerGroup = () => `(${ASK_MARKERS.map((m) => `"${m}"`).join(' OR ')})`;
 // X: the ask markers, key words, English only, no retweets, no replies, no link-only posts, and negation of the sellers' own words
 // (the operators the X search supports: bare words all match, alternatives join with OR in parentheses).
-export const X_NEGATIONS = '-"DM me" -"link in bio" -giveaway -airdrop';
-export const xQuery = (phrase) => `${markerGroup()} ${kw(phrase, 3)} lang:en -filter:retweets -filter:replies -filter:links ${X_NEGATIONS}`;
+// The fallback is loose on purpose: a seller that finds nothing teaches nothing. At most the markers OR the key words, English only,
+// no link-only posts; the ask-shape filter and the review do the rest. It is marked untested live in the report.
+export const xQuery = (phrase) => `(${ASK_MARKERS.map((m) => `"${m}"`).join(' OR ')} OR (${kw(phrase, 3)})) lang:en -filter:links`;
 export const hnQuery = (phrase) => kw(phrase, 3);
-// Reddit: the ask markers and the topic words; the subreddit list is added as `subreddit:` operators by the mapper.
-export const redditQuery = (phrase) => `${markerGroup()} ${kw(phrase, 3)}`;
+// Reddit: the topic words; the subreddit list is added as `subreddit:` operators by the mapper.
+export const redditQuery = (phrase) => kw(phrase, 3);
 export const linkedinQuery = (phrase) => kw(phrase, 4);
 export const webQuery = (phrase) => kw(phrase, 5);
+// The web source reads meaning, not key words: a plain description of the post to find, from the phrase and who the offer is for.
+// No quotes, no operators.
+export function webDescription(offer, phrase) {
+  const plain = (t) => String(t || '').replace(/["'`()\[\]{}]/g, ' ').replace(/\b(?:OR|AND)\b/g, ' ').replace(/\s+/g, ' ').trim();
+  const ask = plain(phrase).replace(/[?.!]+$/, '');
+  const who = plain(offer && offer.who);
+  return `A forum, Q&A or Reddit post where someone asks: ${ask}?${who ? ` The person asking is one of: ${who}, looking for help.` : ' The person asking is looking for help.'}`.slice(0, 400);
+}
 
 // The shape of an ask, checked on the post's own text before review: a question mark, or a first-person request marker. A post with
 // neither is an announcement, a pitch or news, not a person asking.

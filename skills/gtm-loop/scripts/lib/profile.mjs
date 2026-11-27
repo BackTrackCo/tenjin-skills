@@ -2,6 +2,7 @@ import path from 'node:path';
 import { readJson, stateDir, writeJsonAtomic } from './paths.mjs';
 import { withLock } from './store.mjs';
 import { MAX_PHRASE_WORDS, wordsIn } from './queries.mjs';
+import { checkQueries } from './querycheck.mjs';
 
 export const profileFile = () => path.join(stateDir(), 'profile.json');
 export const readProfile = () => readJson(profileFile(), {});
@@ -41,6 +42,8 @@ export function validateProfile(p) {
         if (o.subreddits !== undefined) need(strList(o.subreddits), `${at}.subreddits must be a list of subreddit names`);
         if (o.buyer !== undefined && o.buyer !== null) checkBuyer(o.buyer, `${at}.buyer`);
         if (o.buyerAsked !== undefined) need(typeof o.buyerAsked === 'boolean', `${at}.buyerAsked must be true or false`);
+        if (o.queriesAsked !== undefined) need(typeof o.queriesAsked === 'boolean', `${at}.queriesAsked must be true or false`);
+        for (const b of checkQueries(o.queries, o)) bad.push(`${at}.queries.${b}`);
       });
     }
   }
