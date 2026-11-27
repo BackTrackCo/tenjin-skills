@@ -44,7 +44,7 @@ test('two apps keep their data in two folders, and neither reads or writes the o
   assert.equal(paths.stateDir(), path.join(root, 'outreach'));
   assert.equal(paths.readJson(path.join(paths.stateDir(), 'state.json'), null), null, 'outreach cannot see alpha\'s state');
   paths.writeJsonAtomic(path.join(paths.stateDir(), 'state.json'), { who: 'outreach' });
-  assert.deepEqual(graphMod.graph().terminal, ['sent']);
+  assert.deepEqual(graphMod.graph().terminal, ['replied', 'closed']);
   assert.equal(appMod.envName('OPEN_BIN'), 'OUTREACH_OPEN_BIN');
 
   appMod.setApp(alpha);
