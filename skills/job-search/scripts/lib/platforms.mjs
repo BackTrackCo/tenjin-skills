@@ -1,4 +1,4 @@
-import { graph } from '../../../loop-base/lib/graph.mjs';
+import { graph } from './graph.mjs';
 
 // Platforms where automation is not allowed, and the YC properties, whose Terms of Use ban automated access
 // (news.ycombinator.com and workatastartup.com included). Nothing here is ever opened by the browser or fetched.

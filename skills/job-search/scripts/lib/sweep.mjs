@@ -1,9 +1,9 @@
-import { graph } from '../../../loop-base/lib/graph.mjs';
+import { graph } from './graph.mjs';
 import { fetchBoard, parseCareersUrl } from './boards.mjs';
 import { mergeJobs, normalizeUrl } from './dedupe.mjs';
 import { effectiveProfile } from './overlay.mjs';
 import { screenJob } from './verify.mjs';
-import { frequencyOf, searchIsDue } from '../../../loop-base/lib/schedule.mjs';
+import { frequencyOf, searchIsDue } from './schedule.mjs';
 import { bump, updateState } from './store.mjs';
 
 const HOUR = 3600000;

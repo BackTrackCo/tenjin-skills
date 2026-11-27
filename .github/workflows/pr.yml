@@ -25,14 +25,8 @@ jobs:
       - name: Every SKILL.md parses (npx skills add must not skip it)
         if: matrix.node == 24
         run: npm run check:skills
-      - name: Gates hash matches every manifest that has one
+      - name: Gates hash matches the manifest
         run: |
-          for m in skills/*/manifest.json; do
-            if [ ! -e "$m" ]; then continue; fi
-            d=$(dirname "$m")
-            want=$(node -p "require('./$m').gatesHash || ''")
-            if [ -z "$want" ]; then continue; fi
-            cli=$(ls "$d"/scripts/*.mjs | grep -v '/app\.mjs$' | head -1)
-            got=$(node "$cli" gates | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).gatesHash")
-            test "$want" = "$got"
-          done
+          want=$(node -p "require('./skills/job-search/manifest.json').gatesHash")
+          got=$(node skills/job-search/scripts/jobs.mjs gates | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).gatesHash")
+          test "$want" = "$got"

@@ -1,8 +1,8 @@
-import { graph } from '../../../loop-base/lib/graph.mjs';
+import { graph } from './graph.mjs';
 import { updateState, loadState } from './store.mjs';
 import { loadOverlay, activeLessons, ruleValue } from './overlay.mjs';
 import { readJson, stateDir } from './paths.mjs';
-import { frequencyOf, periodStart, searchIsDue } from '../../../loop-base/lib/schedule.mjs';
+import { frequencyOf, periodStart, searchIsDue } from './schedule.mjs';
 import { applyPathOf, consentStatus, periodLimit } from './apply.mjs';
 import { openUrlOf } from './open.mjs';
 import { hintLines, offerItems, outdatedLine, pricesCheckedAt, paceText, searchRoundNote } from './prices.mjs';
@@ -10,8 +10,6 @@ import { employerName } from './employer.mjs';
 import { resolveWatchList } from './sweep.mjs';
 import { sha } from './dedupe.mjs';
 import { canonical } from './overlay.mjs';
-import { extendApp } from '../../../loop-base/lib/app.mjs';
-import * as baseWork from '../../../loop-base/lib/work.mjs';
 import { cleanupStale, isActive, batchMode } from './batch.mjs';
 import { postFacts } from './postinfo.mjs';
 import { tenjinAsk as tenjinAskQuestion } from './questions.mjs';
@@ -20,11 +18,6 @@ import { collectFacts, splitByOptions } from './facts.mjs';
 import { referralListWaiting, referralWaiting } from './referral.mjs';
 import { candidateEvents, eventsDue, unseenEvents } from './events.mjs';
 import path from 'node:path';
-
-// The claims, the waiting set, the notify line and the wake tokens are the loop base's work core; Job Search declares what they read.
-export const { CLAIM_MS, claimActive, claimItems, settleClaims, roundOpen, releaseClaims, refreshClaims, unclaimedDue, waitingSet, markShown } = baseWork;
-const CLOCK_FIELDS = ['lastSeen', 'verifiedAt', 'firstSeen', 'statusAt', 'siteShownAt', 'siteAskedV', 'broughtAt', 'inFlight', 'openedAt'];
-extendApp({ work: { waitingSetRaw: (state) => waitingSetRaw(state), notifyParts: (fresh, w, ctx) => notifyParts(fresh, w, ctx), notifyHint: (state, { unattended = false } = {}) => (unattended ? tenjinHint(state, 'daily_search') : null), clockFields: CLOCK_FIELDS } });
 
 export const POST_BATCH = 25;
 const HOUR = 3600000;
@@ -167,10 +160,55 @@ export function leaveItem(state, key, reason, profile, now = Date.now()) {
   (state.leftItems ||= {})[key] = { reason, at: new Date(now).toISOString(), inputs: itemInputs(state, key, profile, now) };
 }
 export const itemStillLeft = (state, key, profile, now) => Boolean(state.leftItems && state.leftItems[key] && state.leftItems[key].inputs === itemInputs(state, key, profile, now));
-// Work already handed to the model is claimed in code (the loop base's work core: claim items, settle claims, the 20-minute limit).
+// Work already handed to the model is claimed in code, with a time, so it never wakes the model again: `J work --commit`
+// claims the items it prints. The watcher's wake set leaves claimed items out. A claim ends when the item's result is
+// ingested, when it is left, when the item is no longer due, or at the time limit. The limit is 20 minutes: a little longer
+// than the slowest claimed step, one browser application (a few minutes, up to about a quarter of an hour with slow pages),
+// so a step that is still running keeps its claim, while an agent that died holds its item for at most 20 minutes. An item
+// still open when its claim times out gets a version change, so it wakes the model once. An apply loop refreshes its claims.
+export const CLAIM_MS = 20 * 60000;
+const ckey = (i) => `${i.key}|${i.reason}`;
+export const claimActive = (state, item, now = Date.now()) => {
+  const c = (state.claims || {})[ckey(item)];
+  return Boolean(c && now - Date.parse(c.at) < CLAIM_MS);
+};
+export function claimItems(state, items, now = Date.now()) {
+  for (const i of items) if (!i.waitsForPerson) (state.claims ||= {})[ckey(i)] = { at: new Date(now).toISOString() };
+}
+// Drop claims for items that are no longer due, and end claims past the limit: an item still due then wakes once.
+export function settleClaims(state, items, now = Date.now()) {
+  const due = new Set(items.map(ckey));
+  const base = Object.fromEntries(items.map((i) => [ckey(i), String(i.v || '').replace(/~\d+$/, '')]));
+  for (const [k, c] of Object.entries(state.claims || {})) {
+    if (!due.has(k)) { delete state.claims[k]; delete (state.claimBase || {})[k]; }
+    else if (now - Date.parse(c.at) >= CLAIM_MS) {
+      delete state.claims[k];
+      // An item still open wakes the model once when its claim times out. Timing out again with nothing new about the item wakes
+      // nobody: an item the model cannot progress does not come back every twenty minutes.
+      if ((state.claimBase || {})[k] !== base[k]) {
+        (state.claimEpochs ||= {})[k] = (state.claimEpochs[k] || 0) + 1;
+        (state.claimBase ||= {})[k] = base[k];
+      }
+    }
+  }
+}
+// A round is open while any claimed item has not been handled: the session starts the watcher last, after it.
+export const roundOpen = (state, now = Date.now()) => Object.values(state.claims || {}).some((c) => now - Date.parse(c.at) < CLAIM_MS);
+export function releaseClaims(state, match) {
+  for (const k of Object.keys(state.claims || {})) if (match(k.split('|')[0], k.split('|')[1])) delete state.claims[k];
+}
+export function refreshClaims(state, reason, now = Date.now()) {
+  for (const [k, c] of Object.entries(state.claims || {})) if (k.endsWith(`|${reason}`)) c.at = new Date(now).toISOString();
+}
+// The due items the model could act on now that nobody has been handed.
+export const unclaimedDue = (state, items, now = Date.now()) => items.filter((i) => !i.waitsForPerson && !claimActive(state, i, now));
+
 // Every write to an item raises its state version: the version is a hash of the job's own record, apart from the clocks
 // that a re-verify touches without any news.
-export const itemVersion = (job) => baseWork.itemVersion(job, CLOCK_FIELDS);
+export function itemVersion(job) {
+  const { lastSeen, verifiedAt, firstSeen, statusAt, siteShownAt, siteAskedV, broughtAt, inFlight, openedAt, ...rest } = job;
+  return sha(canonical(rest)).slice(0, 10);
+}
 // What waits for the person never wakes the model: a sheet that needs their yes (unless they gave it, or the mode is auto),
 // a filled form waiting for their submit, a follow-up that asks them. Each keeps its one notification.
 export function waitsForPerson(state, profile, item, overlay = { rules: [] }) {
@@ -346,7 +384,7 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
   for (const i of items) {
     const job = state.jobs[i.key];
     i.v = i.rv ? i.rv : i.reason === 'email_due' ? sha(canonical(pendingEmails(state).map((c) => c.id))).slice(0, 10) : i.reason === 'need_due' ? (() => { const n = state.search.needPending.find((x) => `need:${x.kind}` === i.key); return `${n.round}:${n.at}`; })() : job ? itemVersion(job) : i.reason === 'search_due' ? `${(state.search.session || {}).round ?? 'new'}:${state.routed.lastSearchAt}` : String(i.posts ? i.posts.length : 0);
-    i.v = baseWork.withClaimEpoch(state, i); // a timed-out claim on a still-open item: one more wake
+    { const ep = (state.claimEpochs || {})[ckey(i)]; if (ep) i.v = `${i.v}~${ep}`; } // a timed-out claim on a still-open item: one more wake
     i.waitsForPerson = waitsForPerson(state, profile, i, overlay);
   }
   for (const i of items) {
@@ -384,6 +422,23 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
   };
 }
 
+// What waits on the person, as key -> signature. A parked item that did not change keeps the same signature.
+// An item shown to the person in an attended turn (the report, an approval question, a reply) is marked with its signature,
+// and leaves the notify set until the item changes: a push never repeats what the person was just shown.
+export function waitingSet(state) {
+  const raw = waitingSetRaw(state);
+  const w = {};
+  for (const [k, v] of Object.entries(raw)) if ((state.shown || {})[k] !== v) w[k] = v;
+  return w;
+}
+export function markShown(state, keys = null) {
+  const raw = waitingSetRaw(state);
+  const next = {};
+  for (const [k, v] of Object.entries(state.shown || {})) if (raw[k] === v) next[k] = v; // a changed or gone item is not shown any more
+  for (const [k, v] of Object.entries(raw)) if (!keys || keys.some((x) => k === x || k.endsWith(`:${x}`))) next[k] = v;
+  state.shown = next;
+  return Object.keys(next).length;
+}
 export function waitingSetRaw(state) {
   const w = {};
   const mode = readJson(path.join(stateDir(), 'profile.json'), {}).applyMode; // a fill needs no yes, and nothing is submitted in fill_only or open_only
@@ -413,8 +468,18 @@ const STOP_PHRASE = { captcha: 'a bot check', login: 'a sign-in', email_code: 'a
 export const plainReason = (r) => STOP_PHRASE[r] || String(r).replace(/_/g, ' ');
 const HELD_PHRASE = { chrome_disconnected: 'Claude in Chrome lost its connection', no_chrome_tools: 'Claude in Chrome is not available in this session', update_waiting: 'an update waits for your yes', update_failed: 'the update could not be installed', stopped: 'a job stopped' };
 export const plainHeld = (reason, detail = '') => `${HELD_PHRASE[reason] || String(reason).replace(/_/g, ' ')}${detail ? ` (${String(detail).replace(/_/g, ' ')})` : ''}`;
-// The phrases of a push, in order, for the new items of the waiting set: every one is a phrase a person understands.
-function notifyParts(fresh, w, { state, overlay }) {
+export function notifyLine(state, overlay, now = Date.now(), { unattended = false } = {}) {
+  const w = waitingSet(state);
+  const fresh = Object.keys(w).filter((k) => state.notified[k] !== w[k]);
+  if (!fresh.length) return { line: null, next: w };
+  if (ruleValue(overlay, 'notify_off') !== undefined) return { line: null, next: w };
+  const q = ruleValue(overlay, 'notify_quiet_hours');
+  if (typeof q === 'string' && /^\d{1,2}-\d{1,2}$/.test(q)) {
+    const [a, b] = q.split('-').map(Number);
+    const h = new Date(now).getHours();
+    const inQuiet = a <= b ? h >= a && h < b : h >= a || h < b;
+    if (inQuiet) return { line: null, quiet: true, next: state.notified }; // keep unnotified, so it pushes after quiet hours
+  }
   const yes = fresh.filter((k) => k.startsWith('yes:')).length;
   const filled = fresh.filter((k) => k.startsWith('fill:')).length;
   const mails = fresh.filter((k) => k.startsWith('email:'));
@@ -440,9 +505,13 @@ function notifyParts(fresh, w, { state, overlay }) {
   if (updates.length) parts.push(`${updates.length} update${updates.length > 1 ? 's' : ''} for the report`);
   if (consents.length) parts.push(`consent changed: ${[...new Set(consents.map((k) => w[k]))].join('; ')}`);
   if (held.length) parts.push(`needs you: ${[...new Set(held)].join('; ')}`);
-  return parts;
+  let line = parts.join(', ').replace(/[*_`#\[\]]/g, '');
+  if (line.length > 190) line = line.slice(0, 187) + '...';
+  // In an unattended run nobody can answer the ask, so the Tenjin hint rides on the notification when it fits.
+  const hint = unattended ? tenjinHint(state, 'daily_search') : null;
+  if (hint && line.length + 3 + hint.line.length < 200) line += ` | ${hint.line}`;
+  return { line, next: w };
 }
-export const notifyLine = (state, overlay, now = Date.now(), { unattended = false } = {}) => baseWork.notifyLine(state, overlay, now, { unattended });
 
 // The work-list command. With commit, the notify line is marked as sent (at most once).
 export function workList({ now = Date.now(), commit = false, unattended = false } = {}) {

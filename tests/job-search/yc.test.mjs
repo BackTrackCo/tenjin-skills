@@ -13,7 +13,7 @@ const yc = await import(`${S}/yc.mjs`);
 const plat = await import(`${S}/platforms.mjs`);
 const report = await import(`${S}/report.mjs`);
 const work = await import(`${S}/work.mjs`);
-const { graph } = await import('../../skills/loop-base/lib/graph.mjs');
+const { graph } = await import(`${S}/graph.mjs`);
 
 const rd = (f) => fs.readFileSync(path.join(FIX, 'yc', f), 'utf8');
 const ROLE = rd('role-software-engineer.html');

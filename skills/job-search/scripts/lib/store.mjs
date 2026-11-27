@@ -1,12 +1,8 @@
-import { graph } from '../../../loop-base/lib/graph.mjs';
-import { extendApp } from '../../../loop-base/lib/app.mjs';
-import * as base from '../../../loop-base/lib/store.mjs';
-import { transition } from '../../../loop-base/lib/kinds.mjs';
+import fs from 'node:fs';
+import path from 'node:path';
+import { graph } from './graph.mjs';
 import { isYc } from './platforms.mjs';
-import './paths.mjs';
-
-// The store core (lock, load, update, op batches, old-field refusal) is the loop base's; this file keeps the job state shape and ops.
-export const { withLock, stateFile, loadState, updateState, applyOps, oldStateError, readOldStateFields } = base;
+import { ensureDir, readJson, stateDir, writeJsonAtomic } from './paths.mjs';
 
 export const SCHEMA_VERSION = 1;
 // A job's version changes only on real news about it: new data, a re-verify result, a status change. The watcher and the
@@ -68,6 +64,87 @@ export function emptyState() {
   };
 }
 
+const sleepBuf = new Int32Array(new SharedArrayBuffer(4));
+function sleep(ms) {
+  Atomics.wait(sleepBuf, 0, 0, ms);
+}
+function pidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === 'EPERM';
+  }
+}
+
+export function withLock(fn, { timeoutMs = 15000 } = {}) {
+  const dir = ensureDir(stateDir());
+  const lockFile = path.join(dir, 'state.lock');
+  const start = Date.now();
+  for (;;) {
+    try {
+      const fd = fs.openSync(lockFile, 'wx', 0o600);
+      fs.writeSync(fd, String(process.pid));
+      fs.closeSync(fd);
+      break;
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+      let text;
+      try {
+        text = fs.readFileSync(lockFile, 'utf8');
+      } catch (er) {
+        if (er.code === 'ENOENT') continue; // released between our attempt and our read
+        throw er;
+      }
+      const holder = Number(text);
+      let stale = false;
+      if (text.trim() && Number.isInteger(holder) && holder > 0) stale = !pidAlive(holder);
+      else {
+        // empty or garbage: a holder may be mid-write, so only an old file counts as stale
+        try {
+          stale = Date.now() - fs.statSync(lockFile).mtimeMs > 2000;
+        } catch {}
+      }
+      if (stale) {
+        try {
+          if (fs.readFileSync(lockFile, 'utf8') === text) fs.unlinkSync(lockFile);
+        } catch {}
+        continue;
+      }
+      if (Date.now() - start > timeoutMs) throw new Error('state lock timeout');
+      sleep(5);
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    try {
+      fs.unlinkSync(lockFile);
+    } catch {}
+  }
+}
+
+export function stateFile() {
+  return path.join(stateDir(), 'state.json');
+}
+
+export function loadState() {
+  const s = readJson(stateFile(), null);
+  if (!s) return emptyState();
+  if (s.schemaVersion > SCHEMA_VERSION) throw new Error(`state.json is schema ${s.schemaVersion}, newer than this code (${SCHEMA_VERSION})`);
+  return { ...emptyState(), ...s };
+}
+
+// Every read-modify-write goes through here.
+export function updateState(fn) {
+  return withLock(() => {
+    const state = loadState();
+    const out = fn(state);
+    writeJsonAtomic(stateFile(), state);
+    return out;
+  });
+}
+
 export function applyOp(state, op) {
   const g = graph();
   if (!op || !g.ops.includes(op.op)) throw new Error(`unknown op: ${op && op.op}`);
@@ -83,10 +160,19 @@ export function applyOp(state, op) {
     case 'warn':
       job.warnings = [...new Set([...(job.warnings || []), String(op.warning).slice(0, 120)])];
       break;
-    case 'transition':
-      // The rule that moves a job between statuses is the base's; the job's side effects run in its onTransition.
-      transition(state, 'job', job, op.to, op);
+    case 'transition': {
+      const allowed = g.transitions[job.status] || [];
+      if (!g.statuses.includes(op.to) || !allowed.includes(op.to)) throw new Error(`illegal transition ${job.status} -> ${op.to}`);
+      job.status = op.to;
+      bump(job);
+      job.statusAt = op.at || new Date().toISOString();
+      if (op.to === 'submitted') { job.fillReady = null; job.submitNow = null; job.inFlight = null; }
+      if (op.to === 'skipped') job.skipReason = String(op.reason || 'no reason given').slice(0, 160);
+      if (op.to === 'submitted') {
+        state.applications.push({ key: job.key, companyKey: companyTitleKey(job), at: job.statusAt });
+      }
       break;
+    }
     case 'contact':
       // A contact needs a source link, how to reach them and one thing they care about. A likely person is shown only
       // when marked not confirmed. Never a guess, and never the YC company page or a fetched LinkedIn page.
@@ -148,11 +234,26 @@ export function oldStateFields(raw) {
   if (jobs.some((j) => j && j.applyVia === 'linkedin')) list.push({ field: 'jobs.*.applyVia', why: 'the "linkedin" value is now "site"' });
   return list;
 }
+export const oldStateError = (list) => `state.json has ${list.length > 1 ? 'old fields' : 'an old field'} the skill no longer reads: ${list.map((o) => `${o.field} (${o.why})`).join('; ')}. Remove ${list.length > 1 ? 'them' : 'it'} from state.json, then run the command again.`;
+export function readOldStateFields() {
+  return oldStateFields(readJson(stateFile(), null));
+}
+
 export function normLabel(s) {
   return String(s).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 export function companyTitleKey(job) {
   return `${normLabel(job.company)}|${normLabel(job.title)}`;
+}
+
+export function applyOps(ops) {
+  return updateState((state) => {
+    // validate the whole batch on a copy first, so a bad op lands nothing
+    const copy = JSON.parse(JSON.stringify(state));
+    for (const op of ops) applyOp(copy, op);
+    for (const op of ops) applyOp(state, op);
+    return { applied: ops.length };
+  });
 }
 
 export function view(state, { keys, limit = 30 } = {}) {
@@ -171,16 +272,3 @@ export function view(state, { keys, limit = 30 } = {}) {
   };
 }
 
-
-// The job kind comes from graph.json (statuses, transitions, terminal); what a landed transition changes on the job is here.
-function onJobTransition({ state, item: job, to, op }) {
-  bump(job);
-  job.statusAt = op.at || new Date().toISOString();
-  if (to === 'submitted') { job.fillReady = null; job.submitNow = null; job.inFlight = null; }
-  if (to === 'skipped') job.skipReason = String(op.reason || 'no reason given').slice(0, 160);
-  if (to === 'submitted') {
-    state.applications.push({ key: job.key, companyKey: companyTitleKey(job), at: job.statusAt });
-  }
-}
-
-extendApp({ kinds: { job: { collection: 'jobs', statuses: graph().statuses, transitions: graph().transitions, terminal: graph().terminal, onTransition: onJobTransition } }, state: { schemaVersion: SCHEMA_VERSION, empty: emptyState, applyOp, oldFields: oldStateFields } });

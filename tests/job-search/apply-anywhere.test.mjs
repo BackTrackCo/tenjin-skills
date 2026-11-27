@@ -17,7 +17,7 @@ const ap = await import('../../skills/job-search/scripts/lib/apply.mjs');
 const ing = await import('../../skills/job-search/scripts/lib/ingest.mjs');
 const emp = await import('../../skills/job-search/scripts/lib/employer.mjs');
 const report = await import('../../skills/job-search/scripts/lib/report.mjs');
-const graph = (await import('../../skills/loop-base/lib/graph.mjs')).graph();
+const graph = (await import('../../skills/job-search/scripts/lib/graph.mjs')).graph();
 
 const NOW = Date.parse('2026-11-23T12:00:00Z');
 const empty = { rules: [], lessons: [] };

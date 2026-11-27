@@ -12,7 +12,7 @@ const em = await import(`${S}email.mjs`);
 const report = await import(`${S}report.mjs`);
 const ing = await import(`${S}ingest.mjs`);
 const watcher = await import(`${S}watcher.mjs`);
-const lease = await import('../../skills/loop-base/lib/lease.mjs');
+const lease = await import(`${S}lease.mjs`);
 
 const NOW = Date.parse('2026-11-25T10:00:00Z');
 const empty = { rules: [], lessons: [] };
@@ -129,7 +129,7 @@ test('41: an update line never wakes the session on its own, and the same line i
   assert.deepEqual(Object.keys(w).filter((k) => k.startsWith('update:')).length, 1);
   store.updateState((s) => { s.updateLines.push('Update check failed: offline'); });
   assert.equal(Object.keys(work.waitingSet(store.loadState())).filter((k) => k.startsWith('update:')).length, 1, 'a repeated line is one key');
-  const src = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'loop-base', 'lib', 'watcher.mjs'), 'utf8');
+  const src = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'scripts', 'lib', 'watcher.mjs'), 'utf8');
   assert.match(src, /!k\.startsWith\('update:'\)/);
 });
 

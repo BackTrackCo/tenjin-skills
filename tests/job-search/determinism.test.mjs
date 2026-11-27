@@ -7,7 +7,7 @@ import { mkJob, runJobs, tmpHome } from './helpers/env.mjs';
 const home = tmpHome();
 const store = await import('../../skills/job-search/scripts/lib/store.mjs');
 const work = await import('../../skills/job-search/scripts/lib/work.mjs');
-const lease = await import('../../skills/loop-base/lib/lease.mjs');
+const lease = await import('../../skills/job-search/scripts/lib/lease.mjs');
 const watcher = await import('../../skills/job-search/scripts/lib/watcher.mjs');
 const report = await import('../../skills/job-search/scripts/lib/report.mjs');
 const q = await import('../../skills/job-search/scripts/lib/questions.mjs');
@@ -84,8 +84,7 @@ test('the watcher logs each wake with its reason counts, and the report shows th
 
 test('no script starts claude: the orchestrator and the Monitor stay, and no model step is a headless process', () => {
   const dir = path.join(import.meta.dirname, '..', '..', 'skills', 'job-search');
-  const base = path.join(dir, '..', 'loop-base', 'lib');
-  const files = [path.join(dir, 'scripts', 'jobs.mjs'), ...fs.readdirSync(path.join(dir, 'scripts', 'lib'), { recursive: true }).filter((f) => f.endsWith('.mjs')).map((f) => path.join(dir, 'scripts', 'lib', f)), ...fs.readdirSync(base, { recursive: true }).filter((f) => f.endsWith('.mjs')).map((f) => path.join(base, f))];
+  const files = [path.join(dir, 'scripts', 'jobs.mjs'), ...fs.readdirSync(path.join(dir, 'scripts', 'lib'), { recursive: true }).filter((f) => f.endsWith('.mjs')).map((f) => path.join(dir, 'scripts', 'lib', f))];
   for (const f of files) {
     const t = fs.readFileSync(f, 'utf8');
     assert.doesNotMatch(t, /spawn(Sync)?\([^)]*['"`]claude['"`]/, path.basename(f));

@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { tmpRoot } from './helpers/demo.mjs';
+import { tmpHome } from './helpers/env.mjs';
 
-tmpRoot();
-const t = await import('../../skills/loop-base/lib/tenjin.mjs');
+tmpHome();
+const t = await import('../../skills/job-search/scripts/lib/tenjin.mjs');
 
 const fakeRun = (script) => {
   const calls = [];
@@ -67,7 +67,7 @@ test('the skill reads Tenjin with --version and balance --json only, and runs no
   const run = (cmd, args) => { calls.push(args.join(' ')); return args[0] === '--version' ? { code: 0, stdout: '0.1.0-alpha.35' } : balance(1, '$0.000001'); };
   t.hintState({ bin: '/x/tenjin', run });
   assert.deepEqual(calls, ['--version', 'balance --json']);
-  const src = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'loop-base', 'lib', 'tenjin.mjs'), 'utf8');
+  const src = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'scripts', 'lib', 'tenjin.mjs'), 'utf8');
   const cmds = [...src.matchAll(/run\(bin, \[([^\]]*)\]/g)].map((m) => m[1].replace(/['\s]/g, ''));
   assert.deepEqual(cmds.sort(), ['--version', 'balance,--json'].sort());
   assert.doesNotMatch(src, /config|subagents|deepseek/i);

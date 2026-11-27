@@ -1,4 +1,4 @@
-import { graph } from '../../../../loop-base/lib/graph.mjs';
+import { graph } from '../graph.mjs';
 
 // The event search with Tenjin: the same web search the board search uses, called by catalog tool id (a free spec first, then the
 // run), with the event domains as the filter and the company's name and the place in the query. Results are pages, never saved;

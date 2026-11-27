@@ -1,13 +1,13 @@
-import { graph } from '../../../loop-base/lib/graph.mjs';
-import { fmt, tenths } from '../../../loop-base/lib/prices.mjs';
+import { graph } from './graph.mjs';
 
 // What each Tenjin capability costs, as estimates: the recorded provider price, plus the routing fee (15%) for a routed query only,
 // rounded up to a tenth of a cent, kept in graph.json under `prices` with the date they were checked and how each need goes (`via`:
 // a routed query, or a catalog tool id, which carries no routing fee). Every figure in a hint or the ask is built from this data, so
 // a price change flows into the text.
 const price = (need) => graph().prices.needs[need].estimateCents;
+const tenths = (cents) => Math.round(cents * 10);
 
-export { fmt };
+export const fmt = (cents) => `${Number.isInteger(cents) ? cents : (Math.round(cents * 10) / 10).toString()}¢`;
 const sumTenths = (...needs) => needs.reduce((n, k) => n + tenths(price(k)), 0);
 
 // A search round runs the postings, X and the board search for the role and for each variant in the person's own list, so its

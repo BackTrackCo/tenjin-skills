@@ -1,4 +1,4 @@
-import { graph } from '../../../loop-base/lib/graph.mjs';
+import { graph } from './graph.mjs';
 import { RouterClient, runNeed, runRound } from './router.mjs';
 import { SUPPLIERS } from './suppliers/index.mjs';
 import { ingest } from './ingest.mjs';

@@ -1,7 +1,27 @@
+import crypto from 'node:crypto';
 import { bump, companyTitleKey, normLabel } from './store.mjs';
 
-export { sha, normalizeUrl } from '../../../loop-base/lib/hash.mjs';
-import { normalizeUrl, sha } from '../../../loop-base/lib/hash.mjs';
+// gh_jid is kept: on an employer's own page it names the job.
+const TRACKING = /^(utm_.*|gh_src|lever-source|lever-origin|ref|source|src|gclid|fbclid|mc_.*)$/i;
+
+export function sha(s) {
+  return crypto.createHash('sha256').update(s).digest('hex');
+}
+
+export function normalizeUrl(u) {
+  let url;
+  try {
+    url = new URL(u);
+  } catch {
+    return String(u).trim(); // a link with no scheme is kept as it came, never thrown on
+  }
+  url.hash = '';
+  for (const k of [...url.searchParams.keys()]) if (TRACKING.test(k)) url.searchParams.delete(k);
+  url.hostname = url.hostname.toLowerCase();
+  let s = url.toString();
+  s = s.replace(/\/application\/?$/, '/application').replace(/\/+$/, '');
+  return s;
+}
 
 export function contentHash(job) {
   return sha([job.title, job.company, job.city, job.region, job.country, job.remote, job.type, job.salary, job.desc].join('\u0001')).slice(0, 16);

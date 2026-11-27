@@ -10,7 +10,7 @@ const S = '../../skills/job-search/scripts/lib/';
 const store = await import(`${S}store.mjs`);
 const work = await import(`${S}work.mjs`);
 const watcher = await import(`${S}watcher.mjs`);
-const lease = await import('../../skills/loop-base/lib/lease.mjs');
+const lease = await import(`${S}lease.mjs`);
 const report = await import(`${S}report.mjs`);
 const routed = await import(`${S}routed.mjs`);
 const router = await import(`${S}router.mjs`);
@@ -333,7 +333,7 @@ test('other_system comes back when a release takes the host off the deny list, a
   assert.notEqual(work.inputsHash(store.loadState(), store.loadState().jobs[j.key], empty, { search: { role: 'chef' } }, 'low_score'), lowA, 'a role change is');
   assert.notEqual(work.inputsHash(store.loadState(), store.loadState().jobs[j.key], empty, { unattended: { minScore: 80 } }, 'low_score'), lowA, 'the score floor is');
 });
-const graphObj = (await import('../../skills/loop-base/lib/graph.mjs')).graph();
+const graphObj = (await import(`${S}graph.mjs`)).graph();
 
 test('sign_in comes back when the person says they have an account on that host: J fact set account', () => {
   const j = noPosting(1, { otherSystem: { system: 'Workday', url: 'https://acme.wd1.test/jobs' } });
@@ -382,8 +382,8 @@ test('subagent runs are logged where their result is recorded, and the report sh
 });
 
 test('watch: with no sub-command it is the watcher, watch list is the board list', () => {
-  const text = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'loop-base', 'lib', 'cli.mjs'), 'utf8');
-  assert.equal((text.match(/^    async watch\(/gm) || []).length, 1, 'one watch command, not two');
+  const text = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'job-search', 'scripts', 'jobs.mjs'), 'utf8');
+  assert.equal((text.match(/^  async watch\(/gm) || []).length, 1, 'one watch command, not two');
   reset();
   assert.ok(runJobs(home, ['watch', 'list']).json.watch);
 });

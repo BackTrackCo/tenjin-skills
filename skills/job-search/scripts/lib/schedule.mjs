@@ -29,6 +29,3 @@ export function periodStart(now, frequency = 'daily') {
   if (frequency === 'weekly') d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
   return d.getTime();
 }
-
-// A follow-up comes due a set number of days after a moment (a timing default the person can change, never a cap).
-export const afterDays = (from, days, now = Date.now()) => Number.isFinite(from) && now - from >= days * 24 * HOUR;

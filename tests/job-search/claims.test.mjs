@@ -8,7 +8,7 @@ const home = tmpHome();
 const S = '../../skills/job-search/scripts/lib/';
 const store = await import(`${S}store.mjs`);
 const work = await import(`${S}work.mjs`);
-const lease = await import('../../skills/loop-base/lib/lease.mjs');
+const lease = await import(`${S}lease.mjs`);
 const watcher = await import(`${S}watcher.mjs`);
 
 const dir = () => path.join(process.env.TENJIN_SKILLS_DIR, 'job-search');

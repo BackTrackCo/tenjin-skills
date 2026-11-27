@@ -5,7 +5,7 @@ import { mkJob, runJobs, tmpHome, noReferrals } from './helpers/env.mjs';
 const home = tmpHome();
 const store = await import('../../skills/job-search/scripts/lib/store.mjs');
 const work = await import('../../skills/job-search/scripts/lib/work.mjs');
-const lease = await import('../../skills/loop-base/lib/lease.mjs');
+const lease = await import('../../skills/job-search/scripts/lib/lease.mjs');
 const watcher = await import('../../skills/job-search/scripts/lib/watcher.mjs');
 const overlay = await import('../../skills/job-search/scripts/lib/overlay.mjs');
 const NOW = Date.parse('2026-11-23T12:00:00Z');

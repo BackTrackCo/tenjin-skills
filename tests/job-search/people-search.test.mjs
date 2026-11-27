@@ -15,7 +15,7 @@ const report = await import(`${S}report.mjs`);
 const qs = await import(`${S}questions.mjs`);
 const work = await import(`${S}work.mjs`);
 const people = await import(`${S}suppliers/people.mjs`);
-const cl = await import('../../skills/loop-base/lib/suppliers/company.mjs');
+const cl = await import(`${S}suppliers/company.mjs`);
 
 const FAKE = path.join(import.meta.dirname, 'helpers', 'fake-tenjin.mjs');
 const FX = { company: fixture('router/company-lookup.json'), people: fixture('router/people-search.json') };

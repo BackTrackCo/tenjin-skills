@@ -342,7 +342,7 @@ test('hints are shown as contacts marked "also worked at", and nothing reads or 
   assert.match(out, /Also worked at \(people you could ask; the skill never contacts them, and none counts as a referral unless you say so\)/);
   assert.match(out, /Target Placeholder: Alex Sample, Engineer: also worked at Placeholder Labs \(small employer\)/);
   for (const f of ['lib/warmpath.mjs', 'lib/referral.mjs']) assert.doesNotMatch(text(f).replace(/\/\/.*$/gm, ''), /connections?\b/i, f);
-  assert.doesNotMatch(fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'skills', 'loop-base', 'lib', 'suppliers', 'linkedin-history.mjs'), 'utf8').replace(/\/\/.*$/gm, ''), /connection/i);
+  assert.doesNotMatch(text('lib/suppliers/linkedin-history.mjs').replace(/\/\/.*$/gm, ''), /connection/i);
 });
 
 

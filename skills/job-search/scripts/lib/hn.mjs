@@ -3,7 +3,7 @@ import { guardedFetch } from './net.mjs';
 import { HN_API_HOST } from './platforms.mjs';
 import { updateState } from './store.mjs';
 import { hasWord, placeKey, roleWords } from './verify.mjs';
-import { INTERVAL_MS, frequencyOf } from '../../../loop-base/lib/schedule.mjs';
+import { INTERVAL_MS, frequencyOf } from './schedule.mjs';
 
 // Hacker News through its official APIs only, never news.ycombinator.com (the YC Terms of Use ban automated access to the site):
 //  - the hiring thread's comments through the HN Search API by Algolia, one query per role word, new comments only;

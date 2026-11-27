@@ -1,9 +1,0 @@
-{
-  "statuses": ["new", "drafted", "sent", "replied", "closed"],
-  "transitions": { "new": ["drafted"], "drafted": ["sent"], "sent": ["replied", "closed"], "replied": [], "closed": [] },
-  "terminal": ["replied", "closed"],
-  "followUpDays": 3,
-  "ruleEffects": ["exclude_company", "daily_send_max", "notify_off", "notify_quiet_hours"],
-  "lessonEffects": [],
-  "lessonDays": [7]
-}
