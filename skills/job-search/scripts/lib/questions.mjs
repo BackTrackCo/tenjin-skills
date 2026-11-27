@@ -7,7 +7,13 @@
 import { graph } from '../../../loop-base/lib/graph.mjs';
 import { fmt } from './prices.mjs';
 import { REFERRAL_QUESTION } from './referral.mjs';
-const q = (header, question, options, multiSelect = false) => ({ header, question, multiSelect, options });
+import { extendApp } from '../../../loop-base/lib/app.mjs';
+import { plain, q, validateAsk } from '../../../loop-base/lib/questions.mjs';
+import './paths.mjs';
+
+// The question shape rules and the validator are the loop base's; these are Job Search's exceptions to them.
+export { validateAsk };
+extendApp({ questions: { noMarker: ['Missing fact', 'Terms', 'Referral'], markers: ['from your resume', 'from your LinkedIn'], firstOptionOk: [/^(Skip them|Yes|Install|Employer's site \(I apply\))/] } });
 
 // Options that need Claude in Chrome get a note when it is off in this session (`J chrome set off`), and the question says so
 // once. The pick is still recorded.
@@ -18,7 +24,6 @@ export function chromeQ(header, question, options, { chromeOff = false, needs = 
   const noted = chromeOff && options.some((o) => needing(o.label, needs));
   return q(header, noted ? `${question} ${CHROME_SENTENCE}` : question, options.map((o) => (chromeOff && needing(o.label, needs) ? { ...o, description: `${o.description} ${CHROME_NOTE}` } : o)), multiSelect);
 }
-const plain = (text) => ({ plain: text });
 // The referral question at the start: a plain message in every apply mode, never part of the question call, with no options.
 export const referralQuestion = () => plain(REFERRAL_QUESTION);
 
@@ -290,30 +295,4 @@ export function approvePickQuestions(sheets, { chromeOff = false } = {}) {
     groups.push({ questions: [...picks, how], keys: g.map((x) => x.key) });
   }
   return groups;
-}
-
-// A payload is valid when it fits the question tool: 1 to 4 questions, 2 to 4 options each, labels and descriptions
-// present, the first option marked as the default.
-// The question tool shows its own free-text option; no question or option text may name it ("type under Other"). A form's own
-// option that happens to start with "Other" (for example "Other job boards") is fine.
-const NAMES_OTHER = /\b(under|through|via|in|use|choose|pick|select|type|write|enter)\s+(?:\w+\s+){0,3}["']?Other["']?\b|\bOther:|\bor\s+["']?Other["']?\s*[.?]|\bOther\s+(?:option|field)\b/i;
-const NO_MARKER = new Set(['Missing fact', 'Terms', 'Referral']);
-export function validateAsk(p) {
-  const bad = [];
-  if (!p || !Array.isArray(p.questions) || p.questions.length < 1 || p.questions.length > 4) return ['1 to 4 questions per call'];
-  for (const [i, x] of p.questions.entries()) {
-    const at = `question ${i}`;
-    if (!x.header || x.header.length > 12) bad.push(`${at}: a short header (12 characters at most)`);
-    if (!x.question) bad.push(`${at}: no question text`);
-    if (NAMES_OTHER.test(String(x.question || ''))) bad.push(`${at}: the question text names the free-text option`);
-    if (!Array.isArray(x.options) || x.options.length < 2 || x.options.length > 4) bad.push(`${at}: 2 to 4 options`);
-    else {
-      for (const o of x.options) {
-        if (!o.label || !o.description || o.description.includes('\n')) bad.push(`${at}: each option needs a label and a one-line description`);
-        if (NAMES_OTHER.test(`${o.label} ${o.description}`)) bad.push(`${at}: an option names the free-text option`);
-      }
-      if (!x.multiSelect && !NO_MARKER.has(x.header) && !/\((Recommended|from your resume|from your LinkedIn)\)$/.test(x.options[0].label) && !/^(Skip them|Yes|Install|Employer's site \(I apply\))/.test(x.options[0].label)) bad.push(`${at}: the first option is the default and carries its marker`);
-    }
-  }
-  return bad;
 }
