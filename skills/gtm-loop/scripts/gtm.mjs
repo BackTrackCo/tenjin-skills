@@ -104,6 +104,8 @@ register('work', ({ flags }) => {
   // Old finished leads go; the suppression lists and the contacted ledger never do.
   updateState((s) => compact(s));
   const staleHolds = updateState((s) => dropStaleHolds(s));
+  // Drafts from before the file existed (or written by a round that did not reach it) get their section first, then the marks are read.
+  updateState((s) => writeDrafts(s, readProfile()));
   const synced = updateState((s) => syncDrafts(s, readProfile()));
   const wl = workList({ commit: Boolean(flags.commit) });
   updateState((s) => logRun(s, 'work', wl.items.length));
@@ -161,6 +163,7 @@ register('start', ({ sub, flags }) => {
     return { recorded: loadState().start };
   }
   const stale = updateState((s) => dropStaleHolds(s));
+  updateState((s) => writeDrafts(s, profile));
   updateState((s) => syncDrafts(s, profile));
   return { ...startStatus(profile, loadState()), ...(stale ? { note: staleHoldsLine(stale) } : {}) };
 });
