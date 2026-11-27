@@ -47,7 +47,7 @@ const CHANNELS_BY_SOURCE = {
   reddit: ['reddit_comment', 'email'],
   linkedin: ['linkedin_comment', 'linkedin_note', 'email'],
   hn: ['hn_reply', 'email'],
-  web: ['email'],
+  web: ['web_reply', 'email'],
   people: ['linkedin_note', 'email', 'x_dm'],
 };
 export const channelsFor = (lead) => CHANNELS_BY_SOURCE[lead.source] || ['email'];
@@ -61,7 +61,7 @@ export const reviewHandout = (state, profile = {}, batchSize = graph().reviewBat
   return keys.map((k, i) => {
     const l = state.leads[k];
     const o = offerOfLead(profile, l);
-    return { key: k, batch: Math.floor(i / batchSize), source: l.source, kind: l.kind, author: l.author, postedAt: l.postedAt, text: l.text, phrase: l.phrase, offer: { id: o.id, name: o.name, what: o.what, who: o.who }, channels: channelsFor(l) };
+    return { key: k, batch: Math.floor(i / batchSize), dated: Boolean(l.postedAt), reply: l.source === 'web' ? 'the person opens the page and answers there' : null, source: l.source, kind: l.kind, author: l.author, postedAt: l.postedAt, text: l.text, phrase: l.phrase, offer: { id: o.id, name: o.name, what: o.what, who: o.who }, channels: channelsFor(l) };
   });
 };
 export const batchesOf = (leads) => {

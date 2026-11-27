@@ -10,7 +10,7 @@ export const RECORDED = false;
 
 export function mapper({ query, since }) {
   if (!str(query)) throw new Error('no query for the X search');
-  return { query: `${str(query)}${since ? ` since:${since}` : ''}`, queryType: 'Latest' };
+  return { query: `${str(query)}${since ? ` since:${since}` : ''}`, queryType: 'Top' };
 }
 
 export function adapter(res) {

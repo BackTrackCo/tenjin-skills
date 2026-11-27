@@ -9,7 +9,7 @@ import { hostOf, tweetIdOf } from './platforms.mjs';
 // G open: the operating system's own open command, in the person's Google Chrome, with one page. Opening a URL is what a
 // person clicking a link does: nothing reads, fetches, fills or clicks that page, not code and not Claude in Chrome. Only X,
 // LinkedIn, Reddit and Hacker News pages open here, https only, and never a local or private address.
-export function checkOpenUrl(url) {
+export function checkOpenUrl(url, { web = false } = {}) {
   let u;
   try {
     u = new URL(url);
@@ -24,7 +24,7 @@ export function checkOpenUrl(url) {
   if (net.isIP(host) && isPrivateAddress(host)) return 'local or private address';
   if (u.username || u.password) return 'a link with a login in it';
   if (/["\u0000-\u001f\u007f]/.test(String(url))) return 'a link with a quote or a control character in it';
-  if (!graph().openHosts.some((h) => host === h || host.endsWith(`.${h}`))) return 'only X, LinkedIn, Reddit and Hacker News pages open';
+  if (!web && !graph().openHosts.some((h) => host === h || host.endsWith(`.${h}`))) return 'only X, LinkedIn, Reddit and Hacker News pages open';
   return null;
 }
 
@@ -53,8 +53,8 @@ export function defaultCommand(url, platform = process.platform) {
 export const FALLBACK_LINE = 'Google Chrome did not open it, so the page opened in your default browser.';
 
 // `spawn` is injected in tests so no test opens a real browser. GTM_LOOP_OPEN_BIN replaces the whole command in tests.
-export function openPage(url, { spawn = spawnSync, platform = process.platform, env = process.env, exists = fs.existsSync } = {}) {
-  const bad = checkOpenUrl(url);
+export function openPage(url, { web = false, spawn = spawnSync, platform = process.platform, env = process.env, exists = fs.existsSync } = {}) {
+  const bad = checkOpenUrl(url, { web });
   if (bad) return { ok: false, why: bad };
   url = new URL(url).href;
   const run = ({ bin, args }) => spawn(bin, args, { stdio: 'ignore', timeout: 10000 });

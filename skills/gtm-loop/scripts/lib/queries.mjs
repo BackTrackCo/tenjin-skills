@@ -19,12 +19,45 @@ export function keywords(phrase, max = 4) {
 }
 export const kw = (phrase, max) => keywords(phrase, max).join(' ');
 
-// X: key words, English only, no retweets, no replies, no link-only posts (the operators the X search supports).
-export const xQuery = (phrase) => `${kw(phrase, 3)} lang:en -filter:retweets -filter:replies -filter:links`;
+// The ask keeps its shape in the query: the markers of a request, quoted and OR'd together, then the topic words. Key words alone match
+// the people who sell or teach the topic.
+export const ASK_MARKERS = ['any recommendations', 'looking for', 'how do you', 'has anyone', 'struggling to'];
+const markerGroup = () => `(${ASK_MARKERS.map((m) => `"${m}"`).join(' OR ')})`;
+// X: the ask markers, key words, English only, no retweets, no replies, no link-only posts, and negation of the sellers' own words
+// (the operators the X search supports: bare words all match, alternatives join with OR in parentheses).
+export const X_NEGATIONS = '-"DM me" -"link in bio" -giveaway -airdrop';
+export const xQuery = (phrase) => `${markerGroup()} ${kw(phrase, 3)} lang:en -filter:retweets -filter:replies -filter:links ${X_NEGATIONS}`;
 export const hnQuery = (phrase) => kw(phrase, 3);
-export const redditQuery = (phrase) => kw(phrase, 4);
+// Reddit: the ask markers and the topic words; the subreddit list is added as `subreddit:` operators by the mapper.
+export const redditQuery = (phrase) => `${markerGroup()} ${kw(phrase, 3)}`;
 export const linkedinQuery = (phrase) => kw(phrase, 4);
 export const webQuery = (phrase) => kw(phrase, 5);
+
+// The shape of an ask, checked on the post's own text before review: a question mark, or a first-person request marker. A post with
+// neither is an announcement, a pitch or news, not a person asking.
+export const REQUEST_MARKERS = [
+  /\bi(?:'m| am)?\s+(?:looking|searching|trying|struggling|stuck|wondering|curious|hoping)\b/i,
+  /\bwe(?:'re| are)?\s+(?:looking|searching|trying|struggling|stuck)\b/i,
+  /\bi\s+(?:need|want|wish|can't|cannot|don't know|have no idea|would like|'d like)\b/i,
+  /\bwe\s+(?:need|want|wish)\b/i,
+  /\b(?:any|some)\s+(?:recommendations?|advice|tips|suggestions|ideas|pointers|help)\b/i,
+  /\b(?:has|does|did|can|could|would)\s+(?:anyone|anybody|someone)\b/i,
+  /\banyone\s+(?:know|have|using|used|tried|else|got|found|here|success)\b/i,
+  /\bhow\s+(?:do|did|can|should|would|could)\s+(?:i|you|we|people|folks)\b/i,
+  /\b(?:help me|please help|need help|recommend me|what do you use|what should i|which should i|is there (?:a|any)|are there any)\b/i,
+  /\bstruggling\b/i,
+  /\b(?:looking for|searching for|in need of|need (?:a|an|to|some|help|advice)|wish (?:my|i|we|there))\b/i,
+];
+// A question counts when one short sentence ending in a question mark speaks in the first person or asks for a recommendation: a
+// rhetorical or marketing question ("Ready to grow your business?") does not. An ask is short; an essay is not an ask.
+export const MAX_ASK_CHARS = 700;
+const ASKER = /\b(i|i'm|i've|i'd|my|me|we|we're|our|anyone|anybody|someone|recommend\w*|suggest\w*|advice|tips|best way|how (?:do|can|should|to)|what (?:do|should|are your)|which)\b/i;
+const questionAsked = (t) => t.split(/(?<=[.!?\n])\s+/).some((sent) => sent.trim().endsWith('?') && wordsIn(sent).length <= 30 && ASKER.test(sent));
+export const isAsk = (text) => {
+  const t = String(text || '');
+  if (t.length > MAX_ASK_CHARS) return false;
+  return questionAsked(t) || REQUEST_MARKERS.some((re) => re.test(t));
+};
 
 // A post that is only links, or a title and a link, is not someone asking. Few words left once the links are removed.
 export const MIN_WORDS_NO_LINKS = 4;

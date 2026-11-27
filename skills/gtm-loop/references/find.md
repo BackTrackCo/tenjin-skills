@@ -18,7 +18,8 @@ Then `G ingest --file <file>` for each; rewrite a refused file, never edit it wi
 
 ## What code does with every post
 
-- Dropped before review, each counted in `G report`: a post that is only links (few words once the links are removed), a web page that is not a discussion, a Reddit post from outside the offer's subreddits.
+- Dropped before review, each counted in `G report`: a post that is only links (few words once the links are removed), a post that has no ask shape (no short first-person question and no request marker such as "looking for", "any recommendations", "has anyone"; an essay over 700 characters is not an ask), a web page that is not a discussion, a Reddit post from outside the offer's subreddits.
+- A query keeps the ask: the ask markers are quoted and OR'd with the topic words, so key words alone do not match the people who sell or teach the topic. X is searched in English, with no retweets, no replies and no link-only posts, with the sellers' own words negated, sorted by engagement (not plain latest). Reddit's own `subreddit:` operator inside the query holds the list of subreddits.
 - One lead per post: the same post from two sellers, under x.com and twitter.com, or with tracking parameters, is one lead.
 - One person per identity: platform and handle, a LinkedIn profile, every address published in the post. Identities link only on evidence code holds (a profile link inside a lookup answer), never a guess.
 - Dropped before review: the person's own posts, excluded terms, people and domains, anyone opted out or bounced, anyone already contacted on any channel.

@@ -25,3 +25,15 @@ export function phrasePairs(profile, cap = null) {
 }
 export const allPhrases = (profile) => offersOf(profile).flatMap((o) => o.phrases);
 export const buyerOk = (b) => Boolean(b && ((b.roles || []).length || b.industry));
+
+// Held post needs name a phrase (or an offer, for Reddit without a list). One for a phrase or offer that no longer exists is not shown.
+const POST_KINDS = ['x_posts', 'reddit_posts', 'linkedin_posts', 'web_research'];
+export function liveHeld(held, profile) {
+  const phrases = new Set(allPhrases(profile));
+  const ids = new Set(offersOf(profile).map((o) => o.id));
+  return (held || []).filter((h) => {
+    const m = /^need:([a-z_]+):(.*)$/.exec(h.key || '');
+    if (!m || !POST_KINDS.includes(m[1])) return true;
+    return phrases.has(m[2]) || (m[1] === 'reddit_posts' && ids.has(m[2]));
+  });
+}

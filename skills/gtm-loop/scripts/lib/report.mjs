@@ -1,3 +1,4 @@
+import { liveHeld } from './offers.mjs';
 import { fmt, hintLines, pricesCheckedAt } from './prices.mjs';
 
 // The short report: what is new, what waits for the person, what went out, what came back, what it cost. Built from state, never
@@ -22,7 +23,13 @@ export function report(state, profile = {}, now = Date.now()) {
   if (yieldLines.length) lines.push(`New leads per phrase and source, all time: ${yieldLines.join('; ')}.`);
   const drops = Object.entries(state.dropTally || {}).map(([k, n]) => `${k.replace(/_/g, ' ')} ${n}`);
   if (drops.length) lines.push(`Dropped before review by code filters, all time: ${drops.join(', ')}.`);
-  for (const h of state.held || []) lines.push(`Held: ${h.detail || h.reason}.`);
+  const skipped = Object.values(state.leads).filter((l) => l.status === 'skipped');
+  if (skipped.length) {
+    const why = {};
+    for (const l of skipped) why[l.skipReason || 'left'] = (why[l.skipReason || 'left'] || 0) + 1;
+    lines.push(`Skipped: ${skipped.length} (${Object.entries(why).map(([k, n]) => `${k.replace(/_/g, ' ')} ${n}`).join(', ')}).`);
+  }
+  for (const h of liveHeld(state.held, profile)) lines.push(`Held: ${h.detail || h.reason}.`);
   for (const l of state.updateLines || []) lines.push(l);
   const t = state.tenjin || {};
   if (t.status && t.status !== 'ready') lines.push(hintLines(profile).search);

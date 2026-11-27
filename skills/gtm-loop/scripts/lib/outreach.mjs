@@ -7,8 +7,8 @@ import { q } from './questions.mjs';
 
 // What happens after a draft exists: the pick (one question, the channel as the options), the page that opens in the person's own
 // Chrome with the text on the clipboard, and the person's word that they sent it. The skill acts on none of the four sites.
-export const CHANNEL_LABEL = { x_reply: 'Reply on X', x_dm: 'Message on X', reddit_comment: 'Comment on Reddit', linkedin_comment: 'Comment on LinkedIn', linkedin_note: 'LinkedIn note', hn_reply: 'Reply on Hacker News', email: 'Email' };
-export const SOCIAL = ['x_reply', 'x_dm', 'reddit_comment', 'linkedin_comment', 'linkedin_note', 'hn_reply'];
+export const CHANNEL_LABEL = { x_reply: 'Reply on X', x_dm: 'Message on X', reddit_comment: 'Comment on Reddit', linkedin_comment: 'Comment on LinkedIn', linkedin_note: 'LinkedIn note', hn_reply: 'Reply on Hacker News', web_reply: 'Reply on the page', email: 'Email' };
+export const SOCIAL = ['x_reply', 'x_dm', 'reddit_comment', 'linkedin_comment', 'linkedin_note', 'hn_reply', 'web_reply'];
 const clip = (t, n) => String(t).replace(/\s+/g, ' ').slice(0, n);
 const hashInt = (s) => parseInt(crypto.createHash('sha256').update(s).digest('hex').slice(0, 8), 16);
 
@@ -79,7 +79,7 @@ export function pageFor(state, lead, channel, text) {
       const s = idOf(state, lead, 'linkedin:');
       return s ? `https://www.linkedin.com/in/${s.slice(9)}` : lead.url;
     }
-    case 'reddit_comment': case 'linkedin_comment': case 'hn_reply': return lead.url;
+    case 'reddit_comment': case 'linkedin_comment': case 'hn_reply': case 'web_reply': return lead.url;
     default: throw new Error(`${channel} does not open a page`);
   }
 }

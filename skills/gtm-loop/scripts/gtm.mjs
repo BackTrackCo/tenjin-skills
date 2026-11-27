@@ -203,7 +203,7 @@ register('open', ({ args }) => {
   if (!key) return fail('open <key>');
   const plan = openPlan(loadState(), key);
   const clip = copyToClipboard(plan.text);
-  const r = openPage(plan.url);
+  const r = openPage(plan.url, { web: plan.channel === 'web_reply' }); // a discussion page found by search: the person opens it and answers there
   if (!r.ok) return { opened: false, why: r.why, text: plan.text, clipboard: clip, say: 'The page did not open. Show the person the text and the link.', link: plan.url };
   return { opened: true, browser: r.browser, line: r.line || null, clipboard: clip, link: plan.url, text: plan.text, say: `The page is open in your Chrome${clip ? ' and the text is on your clipboard' : ''}. Press send yourself, then tell me: G sent ${key}.` };
 });

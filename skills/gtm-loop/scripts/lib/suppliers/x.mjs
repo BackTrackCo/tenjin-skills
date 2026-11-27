@@ -8,7 +8,8 @@ export const KIND = 'x_posts';
 // `query` arrives shaped by code: a few key words plus the operators (English, no retweets, no replies, no link-only posts).
 export function mapper({ query, since }) {
   if (!str(query)) throw new Error('no query for the X search');
-  return { query: `${str(query)}${since ? ` since:${since}` : ''}`, sort: 'latest' };
+  // Sorted by what the seller offers besides plain latest: "top", the most engaged matching posts.
+  return { query: `${str(query)}${since ? ` since:${since}` : ''}`, sort: 'top' };
 }
 
 export function adapter(result) {

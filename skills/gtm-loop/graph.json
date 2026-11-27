@@ -119,6 +119,10 @@
       "platform": "email",
       "maxWords": 120,
       "subjectMax": 100
+    },
+    "web_reply": {
+      "platform": "web",
+      "max": 600
     }
   },
   "ruleEffects": [

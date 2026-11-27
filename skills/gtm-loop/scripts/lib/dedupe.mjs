@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { graph } from './graph.mjs';
 import { platformOf, tweetIdOf, linkedinSlugOf, handleOfXUrl } from './platforms.mjs';
 import { emailsIn, domainOfEmail, injectionSuspected, postFacts } from './postinfo.mjs';
-import { linkOnly, isDiscussion, subredditOf } from './queries.mjs';
+import { linkOnly, isAsk, isDiscussion, subredditOf } from './queries.mjs';
 import { bump } from './store.mjs';
 
 const TRACKING = /^(utm_.*|ref|ref_src|ref_url|source|src|gclid|fbclid|mc_.*|s|t|share|context|rcm|trk|trackingId|lipi|utm)$/i;
@@ -207,6 +207,7 @@ export function addPosts(state, posts, { profile = {}, overlay = { rules: [] }, 
     // Filters in code, before review: a post that is only links, a web page that is not a discussion, a Reddit post from outside the
     // offer's subreddits.
     if (kind === 'post' && linkOnly(post.text)) { dropped.push({ url: post.url, reason: 'link_only' }); continue; }
+    if (kind === 'post' && !isAsk(post.text)) { dropped.push({ url: post.url, reason: 'not_an_ask' }); continue; }
     if (kind === 'post' && post.source === 'web' && !isDiscussion(post.url)) { dropped.push({ url: post.url, reason: 'not_discussion' }); continue; }
     if (kind === 'post' && post.source === 'reddit' && subreddits !== null && !subreddits.includes(String(post.subreddit || subredditOf(post.url) || '').toLowerCase())) { dropped.push({ url: post.url, reason: 'outside_subreddits' }); continue; }
     const text = String(post.text || '').slice(0, POST_TEXT);

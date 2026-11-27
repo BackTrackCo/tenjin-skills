@@ -7,14 +7,18 @@ import { subredditOf } from '../queries.mjs';
 export const KIND = 'reddit_posts';
 export const RECORDED = false;
 
-// Search inside the offer's list of subreddits, most relevant first, in the time window. A post from outside the list is dropped in code.
+// Search inside the offer's list of subreddits: Reddit's own `subreddit:` operator inside the query (neither seller has a subreddit field;
+// one refuses any unknown field), most relevant first, in the time window. A post from outside the list is dropped in code.
 const window = (since) => { const d = since ? (Date.now() - Date.parse(since)) / 86400000 : 30; return d <= 1 ? 'day' : d <= 7 ? 'week' : d <= 31 ? 'month' : 'year'; };
-function redditInput({ query, subreddits, since }) {
+function redditQueryOf({ query, subreddits }) {
   const subs = String(subreddits || '').split(/[,\s+]+/).map((x) => x.replace(/^\/?r\//i, '').trim()).filter(Boolean);
   if (!str(query)) throw new Error('no query for the Reddit search');
   if (!subs.length) throw new Error('no subreddits for the Reddit search');
-  return { query: str(query), subreddit: subs.join('+'), sort: 'relevance', time: window(since) };
+  return `(${subs.map((r) => `subreddit:${r}`).join(' OR ')}) ${str(query)}`;
 }
+// The first seller names the time range `time`; the second names it `timeframe`.
+const redditInput = (f) => ({ query: redditQueryOf(f), sort: 'relevance', time: window(f.since) });
+const redditInputAnyapi = (f) => ({ query: redditQueryOf(f), sort: 'relevance', timeframe: window(f.since) });
 const absolute = (u) => (/^https?:\/\//i.test(str(u)) ? str(u) : str(u).startsWith('/') ? `https://www.reddit.com${str(u)}` : '');
 
 function toPost(p) {
@@ -42,7 +46,7 @@ export const anyapi = {
   HOST: 'api.getanyapi.com',
   KIND,
   RECORDED,
-  mapper: redditInput,
+  mapper: redditInputAnyapi,
   adapter: (res) => {
     const out = (res && res.output) || res || {};
     if (out.found === false) return { posts: [] };

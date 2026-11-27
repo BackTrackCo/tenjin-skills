@@ -6,7 +6,7 @@ import { postNeedKinds, centsOf } from './prices.mjs';
 import { addPosts, linkIdentity } from './dedupe.mjs';
 import { countryFrom } from './geo.mjs';
 import { linkedinSlugOf } from './platforms.mjs';
-import { offersOf, phrasePairs } from './offers.mjs';
+import { offersOf, phrasePairs, liveHeld } from './offers.mjs';
 import { xQuery, redditQuery, linkedinQuery, webQuery } from './queries.mjs';
 
 // Searches and lookups run in code in the watcher, because their inputs are fixed by code, so a model step would cost Claude usage
@@ -72,6 +72,7 @@ export async function runPostRound({ profile, overlay, client = new RouterClient
   if (roundsCap !== null && (loadState().rounds || []).filter((r) => now - Date.parse(r.at) < DAY).length >= roundsCap) return { skipped: 'rounds_per_day', needs: 0, added: 0 };
   const needs = postNeeds({ profile, overlay, state: loadState(), now });
   updateState((s) => {
+    s.held = liveHeld(s.held, profile);
     s.search.roundAdded = 0;
     for (const o of noSubreddits(profile)) { s.held = s.held.filter((h) => h.key !== `need:reddit_posts:${o.id}`); s.held.push({ key: `need:reddit_posts:${o.id}`, reason: 'need_held', status: 'no_subreddits', detail: `reddit_posts (${o.name || o.id}): no subreddits yet, so Reddit is not searched for this offer` }); }
   });
