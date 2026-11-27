@@ -55,8 +55,8 @@ test('the free path: ingest a post file, refuse a bad one with its problems, rev
 test('the work list shows review_due for new leads, and the plan of the free step follows the chosen sources', () => {
   G('ingest', '--file', tmp('more.json', { phrase: 'pay per call for Claude', status: 'fulfilled', posts: [{ url: 'https://forum.example.org/t/9', source: 'web', text: 'Need pay per call for Claude, who has done it?' }] }));
   const w = G('work').json;
-  assert.deepEqual(w.items.map((i) => i.reason), ['review_due']);
-  assert.equal(w.items[0].count, 1);
+  assert.deepEqual(w.items.map((i) => i.reason).sort(), ['review_due', 'write_due'], 'two leads reviewed earlier wait for the writer');
+  assert.equal(w.items.find((i) => i.reason === 'review_due').count, 1);
   const plan = G('search', 'plan').json;
   assert.equal(plan.queries.length, 2, 'Hacker News and the web were chosen: one web query per phrase, Hacker News runs in code');
   assert.deepEqual(plan.queries.map((q) => q.source), ['web', 'web']);
