@@ -222,7 +222,7 @@ test('what waits for the person never wakes the model: one notify wake for a new
   store.applyOps([{ op: 'signal', kind: 'waiting' }]);
   const r = await watcher.runWatcher({ write: (l) => lines.push(l), maxTicks: 3, tickMs: 1, sleep: async () => {}, ctx: {} });
   assert.equal(r.reason, 'due');
-  assert.match(lines.at(-1), /notify: 1 drafts waiting for your pick/);
+  assert.match(lines.at(-1), /notify: 1 drafts parked in your drafts file for you to read/);
   const G = (...a) => runGtm(home, a);
   assert.equal(G('notify', 'result', 'not_sent', '--reason', 'off').json.recorded, 'not_sent');
   store.applyOps([{ op: 'signal', kind: 'waiting' }]);
