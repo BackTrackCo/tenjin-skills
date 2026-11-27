@@ -28,7 +28,7 @@ test('every command prints JSON; an unknown command prints the command list in t
   const bad = run('nope');
   assert.equal(bad.code, 2);
   assert.equal(bad.json.error, 'unknown command: nope');
-  assert.deepEqual(bad.json.commands, ['hello', 'rules', 'work', 'shown', 'lessons', 'gates', 'release', 'news', 'refused', 'boom']);
+  assert.deepEqual(bad.json.commands, ['hello', 'rules', 'work', 'shown', 'lessons', 'gates', 'release', 'tenjin', 'batch', 'ops', 'arm', 'consent', 'report', 'rc', 'chrome', 'notify', 'watch', 'news', 'refused', 'boom']);
   const boom = run('boom');
   assert.deepEqual([boom.code, boom.json], [2, { error: 'it broke' }]);
 });
@@ -116,4 +116,125 @@ test('work hands out the app\'s list after its own first step, and says to start
   assert.deepEqual(r.json, { items: [{ key: 'k', reason: 'r' }], notify: null, commit: true, then: 'start A watch last, with run_in_background, after every item is handed out or done' });
   assert.match(r.stderr, /before work/);
   assert.equal(run('work').json.then, undefined);
+});
+
+// ---- the rest of the shared table: tenjin, batch, ops, arm, consent, report, rc, chrome, notify and watch, with the app's text in hooks ----
+async function hooked() {
+  const { setApp } = await import(path.join(BASE_LIB, 'app.mjs'));
+  const { defineDemo, demoState } = await import('./helpers/demo.mjs');
+  const st = demoState();
+  const empty = st.empty;
+  st.empty = () => ({ ...empty(), update: { waiting: null }, held: [], updateLines: [], consentLog: [], shown: {}, consent: { unattended: null, writing: null, email: null, dryRun: { records: [] } } });
+  const calls = [];
+  setApp(defineDemo(skill, {
+    state: st,
+    rules: { effects: () => ['exclude_company'], lessonEffects: () => [], lessonDays: () => [1], lessonTemplates: {}, exempt: [], hashParts: () => ({}) },
+    consents: { kinds: ['unattended', 'writing', 'email'], writingScope: 's', problems: () => [], limitsOf: () => ({}), loosened: () => false },
+    batch: { denied: [], unattendedDenied: [] },
+    work: { waitingSetRaw: () => ({}), notifyParts: () => [], clockFields: [], list: () => ({ items: [], notify: null }), roundMark: () => 'm' },
+    report: { sections: ({ now }) => [[`# Alpha report, ${new Date(now).toISOString().slice(0, 10)}`, '', 'body'], { shared: 'updates' }] },
+    cli: {
+      word: 'A', commands: { work: 'A work', watch: 'A watch' }, readProfile: () => ({ p: 1 }),
+      setupPeriod: () => 'period-1',
+      batchOpen: (f) => (f.upload === 'bad' ? { error: 'the upload must be the named file' } : { uploadPath: f.upload ? '/named' : null }),
+      batchNext: 'run A apply',
+      beforeOps: (ops) => calls.push(['before', ops.length]),
+      opsGuard: (ops) => (ops.some((o) => o.op === 'approve') ? 'ops approve is refused' : null),
+      afterOps: (ops) => calls.push(['after', ops.length]),
+      armView: (s) => ({ lease: s.lease ? s.lease.holder : null }),
+      consentUsage: 'consent record unattended|writing|email | revoke ...',
+      consentRecord: { unattended: (s, f) => { s.consentLog.push({ at: 'x', what: `unattended ${f['optional-writing']}` }); return { kind: 'unattended' }; }, email: () => ({ kind: 'email' }) },
+      onFullReport: (s) => { s.fullDone = true; },
+      markReported: (s, o) => { s.reportedAll = o.all; },
+      reportFooter: () => '\nfooter line\n',
+      rcReminder: (s, v) => `reminder ${v}`,
+      rcAtPush: (reason) => `say ${reason}`,
+      chromeSet: (s, v) => ({ cleared: v === 'on' ? 2 : 0, ...(v === 'off' ? { steps: ['a'] } : {}) }),
+      watchSub: async (sub, name) => { calls.push(['watch', sub, name]); },
+    },
+  }));
+  return calls;
+}
+async function say(fn, ...a) {
+  const out = [];
+  const real = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (t) => { out.push(t); return true; };
+  try { await fn(...a); } finally { process.stdout.write = real; process.exitCode = 0; }
+  const text = out.join('');
+  try { return JSON.parse(text); } catch { return text; }
+}
+
+test('tenjin, batch, ops and arm run the app\'s text and checks through hooks', async () => {
+  const calls = await hooked();
+  const cli = await import(path.join(BASE_LIB, 'cli.mjs'));
+  const { loadState, updateState } = await import(path.join(BASE_LIB, 'store.mjs'));
+  const t = cli.sharedCommands();
+  updateState((s) => { s.batch = null; });
+  assert.deepEqual(await say(t.tenjin, ['ask-done', 'yes'], {}), { asked: true, answer: 'yes' });
+  assert.equal(loadState().tenjinSetup.period, 'period-1');
+  assert.ok(loadState().held.some((h) => h.reason === 'tenjin_setup'));
+  assert.equal((await say(t.tenjin, ['ask-done', 'no'], {})).answer, 'no');
+  assert.ok(loadState().tenjin.declinedAt);
+  assert.deepEqual(await say(t.batch, ['open'], { upload: 'bad' }), { error: 'the upload must be the named file' });
+  assert.deepEqual(await say(t.batch, ['open'], { upload: 'x', unattended: true }), { mode: 'unattended', next: 'run A apply' });
+  assert.equal(loadState().batch.uploadPath, '/named');
+  assert.deepEqual(await say(t.batch, ['close'], {}), { closed: true });
+  assert.equal((await say(t.batch, ['nope'], {})).error, 'batch open [--unattended] [--upload path] | close');
+  assert.deepEqual(await say(t.ops, ['[{"op":"count","key":"a"}]'], {}), { applied: 1 });
+  assert.deepEqual(calls.filter((c) => c[0] !== 'watch'), [['before', 1], ['after', 1]]);
+  assert.equal((await say(t.ops, ['[{"op":"approve"}]'], {})).error, 'ops approve is refused');
+  assert.equal(loadState().counts.a, 1, 'a refused batch lands nothing');
+  const armed = await say(t.arm, [], {});
+  assert.equal(armed.armed, true);
+  assert.match(armed.watch, /^start A watch with the Bash tool, run_in_background true; start it again after each round and whenever a A command reports watcher: stopped$/);
+  assert.deepEqual(armed.view, { lease: null });
+  const lease = await import(path.join(BASE_LIB, 'lease.mjs'));
+  lease.claimLease({ holder: 'w', pid: process.pid, now: Date.now() });
+  const again = await say(t.arm, [], {});
+  assert.deepEqual([again.armed, again.running, again.heldBy], [false, true, 'w']);
+  lease.releaseLease('w');
+  updateState((st) => { st.watcherEver = false; });
+});
+
+test('consent, report, rc, chrome, notify and watch: the base does the work and the app gives its words', async () => {
+  const calls = await hooked();
+  const cli = await import(path.join(BASE_LIB, 'cli.mjs'));
+  const { loadState, updateState } = await import(path.join(BASE_LIB, 'store.mjs'));
+  const t = cli.sharedCommands();
+  assert.deepEqual(await say(t.consent, ['record', 'unattended'], { 'optional-writing': 'skip' }), { kind: 'unattended' });
+  assert.equal((await say(t.consent, ['record', 'writing'], {})).error, 'consent record unattended|writing|email | revoke ...', 'a kind with no record hook shows the usage');
+  assert.equal((await say(t.consent, ['record', 'nope'], {})).error, 'consent record unattended|writing|email | revoke ...');
+  updateState((s) => { s.consent.email = { x: 1 }; });
+  assert.deepEqual(await say(t.consent, ['revoke', 'email'], {}), { revoked: 'email' });
+  assert.equal(loadState().consent.email, null);
+  assert.ok(loadState().consentLog.some((c) => c.what === 'email consent revoked'));
+  // report: saved to the reports folder, consent changes acknowledged, update lines cleared by the full report only
+  updateState((s) => { s.updateLines = ['u']; s.shown = { 'update:abc': 'x', 'sig:1': 'y' }; });
+  const short = await say(t.report, [], {});
+  assert.match(short, /# Alpha report, \d{4}-\d{2}-\d{2}\n\nbody\n\n## Updates\n- u\n\nfooter line\n$/);
+  assert.equal(loadState().reportedAll, false);
+  assert.deepEqual(loadState().updateLines, ['u'], 'the short report keeps the update lines');
+  assert.equal(loadState().fullDone, undefined);
+  assert.ok(loadState().consentLog.every((c) => c.acked));
+  await say(t.report, [], { all: true });
+  assert.deepEqual(loadState().updateLines, []);
+  assert.equal(loadState().fullDone, true);
+  assert.equal(loadState().reportedAll, true);
+  const { stateDir } = await import(path.join(BASE_LIB, 'paths.mjs'));
+  assert.ok(fs.readdirSync(path.join(stateDir(), 'reports')).length >= 1);
+  // rc, chrome, notify
+  assert.deepEqual(await say(t.rc, ['set', 'on'], {}), { rc: 'on', reminder: 'reminder on' });
+  assert.equal((await say(t.rc, ['set', 'maybe'], {})).error, 'rc set on|unknown');
+  assert.deepEqual(await say(t.chrome, ['set', 'on'], {}), { chrome: 'on', cleared: 2 });
+  assert.deepEqual(await say(t.chrome, ['set', 'off'], {}), { chrome: 'off', cleared: 0, steps: ['a'] });
+  assert.equal((await say(t.chrome, ['set', 'x'], {})).error, 'chrome set on|off');
+  assert.deepEqual(await say(t.notify, ['result', 'not_sent'], { reason: 'off' }), { recorded: 'not_sent', reason: 'off', say: 'say off' });
+  assert.equal((await say(t.notify, ['result', 'not_sent'], { reason: 'off' })).say, null, 'once');
+  assert.deepEqual(await say(t.notify, ['result', 'sent'], {}), { recorded: 'sent', say: null });
+  assert.equal(loadState().pushSent, true);
+  assert.equal((await say(t.notify, ['result', 'sent'], { reason: 'off' })).error, '--reason off|present|none goes with not_sent');
+  assert.equal((await say(t.notify, ['later'], {})).error, 'notify result sent|not_sent|unknown [--reason off|present|none]');
+  // watch: a sub-command goes to the app's hook
+  await t.watch(['list', 'x'], {});
+  assert.deepEqual(calls.filter((c) => c[0] === 'watch'), [['watch', 'list', 'x']]);
 });
