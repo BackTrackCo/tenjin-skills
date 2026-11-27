@@ -40,12 +40,12 @@ test('a post is an ask when its own text has a short first-person question or a 
   assert.ok(q.REQUEST_MARKERS.length >= 8, 'the list is in code');
 });
 
-test('the query keeps the ask: the markers, quoted and OR\'d, then the topic words, with the seller words negated', () => {
+test('the fallback query is loose on purpose: it keeps the ask markers or the key words, never both, and no negations', () => {
   const x = q.xQuery('my cold emails get no replies');
   for (const m of q.ASK_MARKERS) assert.ok(x.includes(`"${m}"`), m);
-  assert.match(x, /\) cold emails replies lang:en -filter:retweets -filter:replies -filter:links/);
-  assert.match(x, /-"DM me" -"link in bio" -giveaway/);
-  assert.match(q.redditQuery('how did you get your first users'), /^\("any recommendations" OR .* first users$/);
+  assert.match(x, /OR \(cold emails replies\)\) lang:en -filter:links$/);
+  assert.doesNotMatch(x, /-"|retweets|replies -/);
+  assert.equal(q.redditQuery('how did you get your first users'), 'first users', 'no marker group for Reddit');
   assert.equal(q.hnQuery('how did you get your first users'), 'first users', 'Hacker News is narrowed by the Ask HN tag, not by markers');
 });
 

@@ -51,10 +51,10 @@ test('a phrase becomes key words: first person and filler words go, the order st
   assert.equal(q.keywords('one two three four five six', 3).length, 3);
 });
 
-test('X: the query is key words plus the operators, in English, no retweets, no replies, no link-only posts; HN has no quotes', () => {
-  const MARK = '("any recommendations" OR "looking for" OR "how do you" OR "has anyone" OR "struggling to")';
-  assert.equal(q.xQuery('my cold emails get no replies'), `${MARK} cold emails replies lang:en -filter:retweets -filter:replies -filter:links -"DM me" -"link in bio" -giveaway -airdrop`);
-  assert.equal(xs.mapper({ query: q.xQuery('how did you get your first users'), since: '2026-11-20' }).query, `${MARK} first users lang:en -filter:retweets -filter:replies -filter:links -"DM me" -"link in bio" -giveaway -airdrop since:2026-11-20`);
+test('X: the fallback is loose (the markers OR the key words, English, no link-only posts); HN has no quotes', () => {
+  const MARK = '"any recommendations" OR "looking for" OR "how do you" OR "has anyone" OR "struggling to"';
+  assert.equal(q.xQuery('my cold emails get no replies'), `(${MARK} OR (cold emails replies)) lang:en -filter:links`);
+  assert.equal(xs.mapper({ query: q.xQuery('how did you get your first users'), since: '2026-11-20' }).query, `(${MARK} OR (first users)) lang:en -filter:links since:2026-11-20`);
   assert.equal(xs.mapper({ query: 'a', since: '2026-11-20' }).sort, 'top', 'not plain latest');
   assert.equal(q.hnQuery('my cold emails get no replies'), 'cold emails replies');
   assert.doesNotMatch(q.hnQuery('how did you get your first users'), /"/);
@@ -117,12 +117,12 @@ test('several offers: each has its own queries, subreddits and lead offer; phras
   assert.equal(needs.length, 3 * 4, 'three phrases, four sources');
   const byKind = (k, o) => needs.filter((n) => n.kind === k && n.fields.offerId === o);
   assert.equal(byKind('x_posts', 'gtm')[0].fields.query, q.xQuery('how did you get your first users'));
-  assert.match(byKind('x_posts', 'gtm')[0].fields.query, /^\("any recommendations" OR "looking for" OR "how do you" OR "has anyone" OR "struggling to"\) first users/, 'the ask stays in the query');
-  assert.match(byKind('reddit_posts', 'gtm')[0].fields.query, /^\("any recommendations" OR /);
+  assert.match(byKind('x_posts', 'gtm')[0].fields.query, /OR \(first users\)\) lang:en -filter:links$/, 'the ask markers OR the key words');
+  assert.equal(byKind('reddit_posts', 'gtm')[0].fields.query, 'first users', 'Reddit: the key words; the subreddit operators are added by the mapper');
   assert.equal(byKind('reddit_posts', 'jobs')[0].fields.subreddits, 'cscareerquestions');
   assert.match(byKind('reddit_posts', 'gtm')[0].text, /Only in these subreddits: startups, saas/);
   assert.equal(byKind('web_research', 'jobs')[0].fields.mode, 'discussion');
-  assert.ok(needs.every((n) => !/how did you get your first users|my cold emails/.test(n.fields.query)), 'the raw phrase is never the query');
+  assert.ok(needs.filter((n) => n.kind !== 'web_research').every((n) => !/how did you get your first users|my cold emails/.test(n.fields.query)), 'the raw phrase is never a key-word query');
   assert.deepEqual(needs.map((n) => n.query).filter((x, i, a) => a.indexOf(x) === i), ['how did you get your first users', 'my cold emails get no replies', 'anyone using Claude for job applications']);
 });
 
@@ -219,7 +219,7 @@ test('a profile from before the offers list still loads as one offer, and the ne
   assert.ok(st.missing.some((m) => /subreddits for "Thing"/.test(m)) === false, 'reddit is not a chosen source here');
   const withReddit = startStatus({ ...legacy, sources: undefined }, { start: { at: 'x' } });
   assert.ok(withReddit.missing.some((m) => /subreddits for "Thing"/.test(m)));
-  assert.equal(startStatus({ ...profile, offers: profile.offers.map((o2) => ({ ...o2, buyerAsked: true })) }, { start: { at: 'x' } }).done, true);
+  assert.equal(startStatus({ ...profile, offers: profile.offers.map((o2) => ({ ...o2, buyerAsked: true, queriesAsked: true })) }, { start: { at: 'x' } }).done, true);
   // a lead found before offers existed is reviewed and written against the one offer
   assert.equal(offers.offerOfLead(legacy, { offerId: undefined }).id, 'main');
 });

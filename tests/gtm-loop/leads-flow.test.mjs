@@ -18,11 +18,13 @@ test('start: handles are saved on their own, the model is told what is missing, 
   assert.equal(G('profile', 'set', '--json', JSON.stringify({ sender: { handles: { x: 'sam_thing', linkedin: 'SamThing' } } })).code, 0, 'a partial answer with no sender name is saved');
   assert.deepEqual(G('profile').json.profile.sender.handles, { x: 'sam_thing', linkedin: 'SamThing' });
   const offers = [{ id: 'main', name: 'Thing', what: 'lets an agent pay for APIs', who: 'founders and builders', link: 'https://example.org/thing', phrases: ['agent pay for APIs', 'pay per call for Claude'], subreddits: ['ClaudeAI', 'r/LocalLLaMA'] }];
+  const asked = [{ ...offers[0], buyerAsked: true, queriesAsked: true }];
   assert.equal(G('offers', 'set', '--json', JSON.stringify(offers)).code, 0);
   const m = G('start', 'status').json.missing;
   assert.ok(m.some((x) => x.startsWith('your name')));
   assert.ok(m.some((x) => x.startsWith('a buyer for "Thing"')), 'a buyer is proposed when only who it helps is given');
-  assert.equal(G('profile', 'set', '--json', JSON.stringify({ sender: { name: 'Sam', company: 'Co', handles: { x: 'sam_thing' } }, offers: [{ ...offers[0], buyerAsked: true }] })).code, 0);
+  assert.ok(m.some((x) => x.startsWith('queries for "Thing"')), 'the model is told to write and test queries once');
+  assert.equal(G('profile', 'set', '--json', JSON.stringify({ sender: { name: 'Sam', company: 'Co', handles: { x: 'sam_thing' } }, offers: asked })).code, 0);
   assert.equal(G('profile').json.profile.sender.handles.linkedin, 'SamThing', 'handles merge, nothing is lost');
   const ask = G('ask', 'start');
   assert.equal(ask.code, 0);

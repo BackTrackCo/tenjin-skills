@@ -59,7 +59,7 @@ test('a routed post round: one need per phrase per source, each result kept at o
   assert.equal(res.added, 5);
   assert.equal(res.held[0].status, 'needs_approval');
   const calls = f.calls();
-  assert.deepEqual(calls.filter((c) => c.query).map((c) => c.query.split(':')[0]), ['Search recent public X posts for', 'Search public Reddit posts for', 'Search recent public LinkedIn posts for the keywords', 'Search the web for discussion pages (forums, community Q&A, Hacker News, Reddit, Indie Hackers) where someone asks or complains about']);
+  assert.deepEqual(calls.filter((c) => c.query).map((c) => c.query.split(':')[0]), ['Search recent public X posts for', 'Search public Reddit posts for', 'Search recent public LinkedIn posts for the keywords', 'Search the web for the page described here']);
   const s = store.loadState();
   assert.equal(Object.values(s.leads).filter((l) => l.source === 'x').length, 2);
   assert.ok(s.held.some((h) => h.key === 'need:web_research:agent pay for APIs' && /over the per-call limit/.test(h.detail)));
