@@ -4,7 +4,7 @@
   "host": "api.getanyapi.com",
   "input": { "query": "agent pay for APIs since:2026-11-20", "queryType": "Latest" },
   "result": { "output": { "found": true, "data": { "items": [
-    { "text": "Anyone know how to let my agent pay for APIs without sharing a card? Tired of API keys.", "url": "https://twitter.com/Dev_One/status/1900000000000000001?s=20", "authorUsername": "Dev_One", "createdUtc": 1764063000, "likeCount": 3 },
-    { "text": "Need a way for Claude to pay per call. See https://example.org/pay-per-call", "url": "https://x.com/dev_three/status/1900000000000000003", "authorUsername": "dev_three", "createdUtc": 1764066000 }
+    { "text": "Anyone know how to let my agent pay for APIs without sharing a card? Tired of API keys.", "url": "https://twitter.com/Dev_One/status/1900000000000000001?s=20", "authorUsername": "Dev_One", "createdUtc": 1795599000, "likeCount": 3 },
+    { "text": "Need a way for Claude to pay per call. See https://example.org/pay-per-call", "url": "https://x.com/dev_three/status/1900000000000000003", "authorUsername": "dev_three", "createdUtc": 1795602000 }
   ], "nextCursor": null } } }
 }

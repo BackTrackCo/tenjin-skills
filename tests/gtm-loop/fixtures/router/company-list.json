@@ -1,0 +1,11 @@
+{
+  "_note": "Synthetic, built from the catalog entry of the company list search (companies[] with name, domain, linkedin_url, employees, country).",
+  "kind": "company_list",
+  "host": "stableenrich.dev",
+  "input": { "industry": "robotics", "employeeRange": "11-50", "location": "Toronto", "limit": 25 },
+  "result": { "companies": [
+    { "name": "Acme Robotics", "domain": "https://www.acme-robotics.example/", "linkedin_url": "https://www.linkedin.com/company/acme-robotics", "employees": "11-50", "country": "CA" },
+    { "name": "Bolt Works", "domain": "boltworks.example", "employees": "11-50", "country": "CA" },
+    { "name": "No Domain Co" }
+  ] }
+}

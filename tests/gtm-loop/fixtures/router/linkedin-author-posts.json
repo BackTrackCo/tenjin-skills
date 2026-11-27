@@ -1,0 +1,10 @@
+{
+  "_note": "Synthetic, built from the catalog entry of the author posts read: {output: {found, data: {items, nextCursor}}}.",
+  "kind": "linkedin_author_posts",
+  "host": "api.getanyapi.com",
+  "input": { "url": "https://www.linkedin.com/in/pat-lee-123" },
+  "result": { "output": { "found": true, "data": { "items": [
+    { "id": "1", "url": "https://www.linkedin.com/posts/pat-lee-123_old-activity-1-aa", "text": "An old post about hiring.", "createdUtc": 1700000000 },
+    { "id": "2", "url": "https://www.linkedin.com/posts/pat-lee-123_new-activity-2-bb", "text": "We are rethinking how our robots pay for cloud APIs. Notes: https://example.org/robots", "createdUtc": 1795596000, "articleUrl": "https://example.org/robots" }
+  ], "nextCursor": null } } }
+}

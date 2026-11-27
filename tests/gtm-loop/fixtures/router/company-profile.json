@@ -1,0 +1,7 @@
+{
+  "_note": "Synthetic. One company object, as the profile by domain answers it.",
+  "kind": "company_profile",
+  "host": "api.apollo.example",
+  "input": { "domain": "boltworks.example" },
+  "result": { "name": "Bolt Works", "domain": "boltworks.example", "socials": { "linkedin_url": "https://www.linkedin.com/company/boltworks" }, "employees": "11-50", "country": "CA" }
+}
