@@ -91,3 +91,17 @@ export function startQuestions({ rc = 'unknown', pushSent = false, settings = {}
     reminder: rcReminder({ rc, pushSent, settings }),
   };
 }
+
+// One yes for one exact email: the address, the subject, the text with its footer, and where the person is, said in the question.
+export function emailQuestion({ cand, via }) {
+  const where = cand.country ? `They appear to be in ${cand.country}.` : 'Their country is not known, so the footer says where the details came from and how to object.';
+  const how = via === 'send' ? 'It is sent from your Gmail.' : via === 'drafts' ? 'It becomes a draft in your Gmail; you press Send.' : 'You get the text with a mailto link; you send it.';
+  const found = cand.source === 'lookup' ? ' The address was found by a lookup and checked as valid.' : ' The address is the one they published.';
+  const draftNote = cand.mustDraft ? ' A found address in this country is only ever a draft.' : '';
+  return {
+    questions: [q('Email', `Email ${cand.to}? ${where}${found}${draftNote} ${how} Subject: ${cand.subject}. Text: ${cand.text}`, [
+      { label: via === 'send' ? 'Yes, send it (Recommended)' : via === 'drafts' ? 'Yes, make the draft (Recommended)' : 'Yes, show me the text (Recommended)', description: 'Records your yes for exactly this address and this text.' },
+      { label: 'No, not this one', description: 'Nothing is sent and the lead stays as it is.' },
+    ])],
+  };
+}

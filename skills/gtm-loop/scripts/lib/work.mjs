@@ -52,7 +52,7 @@ export function notifyLine(items) {
   if (!waiting.length) return null;
   const n = {};
   for (const i of waiting) n[i.reason] = (n[i.reason] || 0) + (i.count || 1);
-  const words = { approve_due: 'drafts waiting for your pick', follow_up_due: 'follow-ups waiting for your yes', update_waiting: 'update waiting for your yes' };
+  const words = { approve_due: 'drafts waiting for your pick', follow_up_due: 'follow-ups waiting for your yes', update_waiting: 'update waiting for your yes', unknown_due: 'emails waiting for your word on whether they went' };
   return Object.entries(n).map(([k, c]) => `${c} ${words[k] || k}`).join(', ');
 }
 

@@ -24,6 +24,11 @@ import { buildRoundRequest, parseRoundResult, applyWriteResult } from './lib/wri
 import { pickQuestions, pickLead, openPlan, markSentSocial } from './lib/outreach.mjs';
 import { openPage, copyToClipboard } from './lib/open.mjs';
 import { runFitRound, addCompanies, unprocessed } from './lib/fit.mjs';
+import { buildCandidate, approveEmail, nextEmail, markSent, resolveUnknown, repliesDue, recordReply, unknownList, MODES, viaOf, emailState } from './lib/email.mjs';
+import { resolveAddress } from './lib/lookup.mjs';
+import { recordEmailConsent, revokeConsent, confirmDryRun, consentStatus } from './lib/consent.mjs';
+import { suppressPerson, suppressDomain, resolvePerson } from './lib/dedupe.mjs';
+import { emailQuestion } from './lib/questions.mjs';
 
 // G is this file. Every command prints one JSON object. State, rules and profile live in ~/.tenjin-skills/gtm-loop/.
 export function parseArgs(argv) {
@@ -113,13 +118,23 @@ register('start', ({ sub, flags }) => {
   if (!loadState().start) missing.push('the start question (G ask start, then G start record)');
   return { done: missing.length === 0, missing, next: missing.length ? 'Ask the person, in their own words: what they sell, who it helps, the link, and if they like who buys it (role, company type, place). Propose three to six phrases a buyer would write, let them edit, then save them. Then ask the start question.' : null };
 });
-register('ask', ({ sub }) => {
+register('ask', ({ sub, args }) => {
   if (sub === 'start') {
     const st = loadState();
     const ask = startQuestions({ rc: st.rc, pushSent: st.pushSent, settings: pushSettings() });
     const bad = validateAsk(ask);
     if (bad.length) return fail(bad.join('; '));
     return ask;
+  }
+  if (sub === 'email') {
+    const st = loadState();
+    const lead = st.leads[args[1]];
+    if (!lead) return fail('ask email <lead key>');
+    const cand = buildCandidate(st, lead, readProfile());
+    const ask = emailQuestion({ cand, via: viaOf(st, cand) });
+    const bad = validateAsk(ask);
+    if (bad.length) return fail(bad.join('; '));
+    return { ...ask, id: cand.id, exact: { to: cand.to, subject: cand.subject, text: cand.text }, note: 'Show the exact text to the person in the question. On yes: G email approve <lead key> --id <id>. On no: G pick is unchanged; run G leave or skip it.' };
   }
   if (sub === 'pick') {
     const groups = pickQuestions(loadState());
@@ -185,6 +200,83 @@ register('companies', ({ sub, args }) => {
   }
   const list = Object.values(loadState().companies);
   return { companies: list.map((c) => ({ domain: c.domain, name: c.name, source: c.source, peopleDone: Boolean(c.peopleDoneAt) })), waiting: unprocessed(loadState()).length };
+});
+register('email', async ({ sub, args, flags }) => {
+  const profile = readProfile();
+  const overlay = loadOverlay();
+  if (sub === 'connector') {
+    if (!MODES.includes(args[1])) return fail(`connector is one of ${MODES.join(', ')}`);
+    return updateState((s) => { emailState(s).connector = args[1]; return { connector: args[1] }; });
+  }
+  if (sub === 'resolve') {
+    if (!args[1]) return fail('email resolve <key>');
+    const lead = loadState().leads[args[1]];
+    if (!lead) return fail(`unknown lead: ${args[1]}`);
+    if (lead.status !== 'picked' || !lead.pick || lead.pick.channel !== 'email') return fail('pick Email for this lead first (G pick <key> email)');
+    if (loadState().tenjin.status !== 'ready' && !lead.emailFromPost) return fail('the address needs a lookup and Tenjin is not ready: say the send is the person\'s, with the lead\'s own contact');
+    const r = lead.emailFromPost ? { lookups: 0 } : await resolveAddress({ leadKey: args[1] });
+    const st = loadState();
+    let cand;
+    try {
+      cand = buildCandidate(st, st.leads[args[1]], profile);
+    } catch (e) {
+      return { ...r, ready: false, why: e.message };
+    }
+    return { ...r, ready: true, id: cand.id, to: cand.to, subject: cand.subject, text: cand.text, source: cand.source, country: cand.country, notice: cand.notice, via: viaOf(st, cand), mustDraft: cand.mustDraft };
+  }
+  if (sub === 'approve') {
+    if (!args[1] || !flags.id) return fail('email approve <lead key> --id <the id email resolve printed>');
+    return updateState((s) => approveEmail(s, s.leads[args[1]] || fail(`unknown lead: ${args[1]}`), profile, { expectId: flags.id }));
+  }
+  if (sub === 'next') {
+    const r = updateState((s) => nextEmail(s, { profile, overlay, unattended: Boolean(flags.unattended) }));
+    return r;
+  }
+  if (sub === 'sent') {
+    if (!args[1]) return fail('email sent <id> [message id] [--thread <id>] [--how sent|drafted|shown]');
+    return updateState((s) => markSent(s, args[1], { messageId: args[2] || null, threadId: flags.thread || null, how: flags.how || 'sent' }));
+  }
+  if (sub === 'unknown') {
+    if (!args[1] || !args[2]) return fail('email unknown <id> sent|not_sent');
+    return updateState((s) => resolveUnknown(s, args[1], args[2]));
+  }
+  if (sub === 'status') {
+    const e = emailState(loadState());
+    return { connector: e.connector, drafts: Object.values(e.drafts).map((d) => ({ id: d.id, to: d.to, status: d.status })), unknown: unknownList(loadState()).map((d) => d.id) };
+  }
+  return fail('email connector|resolve|approve|next|sent|unknown|status');
+});
+register('replies', ({ sub }) => {
+  if (sub !== 'due') return fail('replies due');
+  return { threads: repliesDue(loadState()), note: 'Read only these threads, with the Gmail tool\'s thread read. For each, G reply <id> replied|opt_out|bounce|not_interested [--text "<the reply>"] [--company].' };
+});
+register('reply', ({ args, flags }) => {
+  if (!args[0] || !args[1]) return fail('reply <email id> replied|opt_out|bounce|not_interested [--text <reply>] [--company]');
+  return updateState((s) => recordReply(s, args[0], args[1], { text: typeof flags.text === 'string' ? flags.text : '', company: Boolean(flags.company) }));
+});
+register('consent', ({ sub, args }) => {
+  if (sub === 'status') return consentStatus(loadState(), readProfile(), loadOverlay());
+  if (sub === 'record') {
+    if (args[1] !== 'email') return fail('consent record email');
+    return updateState((s) => recordEmailConsent(s, readProfile(), loadOverlay()));
+  }
+  if (sub === 'revoke') return updateState((s) => revokeConsent(s, args[1] || 'email'));
+  return fail('consent status|record email|revoke email');
+});
+register('dryrun', ({ sub }) => {
+  if (sub !== 'confirm') return fail('dryrun confirm');
+  return updateState((s) => confirmDryRun(s, readProfile(), loadOverlay()));
+});
+register('suppress', ({ sub, flags }) => {
+  if (sub !== 'add') return fail('suppress add --id <identity or email:addr> --reason <reason> | --domain <domain> --reason <reason>');
+  const reason = typeof flags.reason === 'string' ? flags.reason : 'person_said_so';
+  return updateState((s) => {
+    if (flags.domain) return suppressDomain(s, String(flags.domain), reason);
+    if (!flags.id) throw new Error('suppress add needs --id or --domain');
+    const id = String(flags.id).toLowerCase();
+    const p = resolvePerson(s, [id]);
+    return suppressPerson(s, p.key, reason);
+  });
 });
 register('hn', async () => runHn({ fetch: globalThis.fetch, profile: readProfile(), overlay: loadOverlay() }));
 register('reads', async () => runIdentityReads({}));

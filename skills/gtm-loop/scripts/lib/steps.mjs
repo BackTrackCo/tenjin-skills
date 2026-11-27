@@ -4,6 +4,7 @@ import { loadOverlay } from './overlay.mjs';
 import { reviewItems, searchItems, searchStep } from './search.mjs';
 import { approveItems, writeItems } from './outreach.mjs';
 import { runIdentityReads } from './routed.mjs';
+import { emailItems } from './email-items.mjs';
 import { loadState } from './store.mjs';
 
 // Everything the CLI adds to the work list and the watcher tick. Imported by gtm.mjs, so a command and the watcher always agree.
@@ -16,3 +17,4 @@ registerCollector(approveItems);
 registerStep('reads', async ({ routerClient, now }) => {
   if (loadState().tenjin.status === 'ready') await runIdentityReads({ client: routerClient, now });
 });
+registerCollector(emailItems);

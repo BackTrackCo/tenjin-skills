@@ -8,7 +8,7 @@ import { updateState } from './store.mjs';
 export const REPO = 'BackTrackCo/tenjin-skills';
 export const SKILLS_CLI = 'skills@1.9.0';
 const DAY = 86400000;
-export const GATE_FILES = ['graph.json', 'scripts/lib/email.mjs', 'scripts/lib/consent.mjs', 'scripts/lib/batch.mjs', 'scripts/lib/net.mjs', 'scripts/lib/open.mjs'];
+export const GATE_FILES = ['graph.json', 'scripts/lib/email.mjs', 'scripts/lib/consent.mjs', 'scripts/lib/batch.mjs', 'scripts/lib/net.mjs', 'scripts/lib/open.mjs', 'scripts/lib/dedupe.mjs'];
 
 const parseVer = (v) => String(v).split('.').map((n) => parseInt(n, 10) || 0);
 export function cmpVer(a, b) {
