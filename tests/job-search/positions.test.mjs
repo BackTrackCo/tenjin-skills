@@ -8,7 +8,7 @@ const home = tmpHome();
 const store = await import('../../skills/job-search/scripts/lib/store.mjs');
 const ap = await import('../../skills/job-search/scripts/lib/apply.mjs');
 const work = await import('../../skills/job-search/scripts/lib/work.mjs');
-const sched = await import('../../skills/job-search/scripts/lib/schedule.mjs');
+const sched = await import('../../skills/loop-base/lib/schedule.mjs');
 const ov = await import('../../skills/job-search/scripts/lib/overlay.mjs');
 const q = await import('../../skills/job-search/scripts/lib/questions.mjs');
 

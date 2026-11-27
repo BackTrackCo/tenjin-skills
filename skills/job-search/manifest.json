@@ -10,7 +10,8 @@
     "scripts/lib/apply.mjs",
     "scripts/lib/batch.mjs",
     "scripts/lib/net.mjs",
-    "../loop-base/lib/netguard.mjs"
+    "../loop-base/lib/netguard.mjs",
+    "../loop-base/lib/consent.mjs"
   ],
-  "gatesHash": "506121b839fb8a046e5bc109b5291a27e44a68bd681f8da87ff4a5733e94e4cc"
+  "gatesHash": "be4d6efd58f414b3c4f54df87a5d92f1ed23247e7f196f86a81ca9fddff5bd80"
 }
