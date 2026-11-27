@@ -1,23 +1,25 @@
 #!/usr/bin/env node
 // Job Search runtime. Every command prints JSON. Exit 0 ok (an empty work-list too: the JSON says empty), 2 error, 4 refused.
-import fs, { writeFileSync } from 'node:fs';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { graph } from '../../loop-base/lib/graph.mjs';
-import { SKILL_DIR, ensureDir, readJson, stateDir, writeJsonAtomic } from './lib/paths.mjs';
-import { applyOp, applyOps, bump, companyTitleKey, loadState, oldStateError, readOldStateFields, updateState, view } from './lib/store.mjs';
+import { extendApp } from '../../loop-base/lib/app.mjs';
+import { coerce, commandTable, out, readJsonArg, runCli } from '../../loop-base/lib/cli.mjs';
+import { ensureDir, readJson, stateDir, writeJsonAtomic } from './lib/paths.mjs';
+import { applyOp, applyOps, bump, companyTitleKey, loadState, updateState, view } from './lib/store.mjs';
 
-import { addRule, deriveLessons, loadOverlay, removeRule } from './lib/overlay.mjs';
-import { markShown, roundOpen, refreshClaims, releaseClaims, itemVersion, LEAVE_REASONS, ITEM_LEAVE_REASONS, advanceSearch, askFirst, tenjinHint, itemKind, leaveItem, leaveRecord, park, unpark, workList } from './lib/work.mjs';
+import { addRule, deriveLessons, loadOverlay } from './lib/overlay.mjs';
+import { markShown, refreshClaims, releaseClaims, itemVersion, LEAVE_REASONS, ITEM_LEAVE_REASONS, advanceSearch, askFirst, tenjinHint, itemKind, leaveItem, leaveRecord, park, unpark } from './lib/work.mjs';
 import { applyRoundDrafts, checkJobSheet, prepareInCode, writableFields } from './lib/prepare.mjs';
 import { logRun } from '../../loop-base/lib/runlog.mjs';
 import * as em from './lib/email.mjs';
 import * as rs from './lib/resume.mjs';
 import { buildRoundRequest, parseRoundResult } from './lib/writing.mjs';
 import { webPlan } from './lib/websearch.mjs';
-import { claimLease, leaseFresh, touchLease, watcherStatus } from '../../loop-base/lib/lease.mjs';
-import { readProfile, runWatcher, tick, watcherCodeHash } from './lib/watcher.mjs';
-import { applyUpdate, checkRelease, gatesHash, recordRelease } from './lib/release.mjs';
+import { claimLease, leaseFresh, watcherStatus } from '../../loop-base/lib/lease.mjs';
+import { readProfile, runWatcher, tick } from './lib/watcher.mjs';
+import './lib/release.mjs'; // registers Job Search's release settings with the shared release command
 import { applyNext, applyPathOf, inFlight, confirmDryRun, recordConsent, recordDryRun, recordWritingConsent, revokeConsent } from './lib/apply.mjs';
 import { addAnswer, approveWriting, loadAnswers } from './lib/answers.mjs';
 import * as batch from './lib/batch.mjs';
@@ -49,38 +51,8 @@ import { fillRulesKey, isFillOnly, markFillReady, markSubmitted } from './lib/fi
 export function readySheets(st) {
   return Object.values(st.jobs).filter((j) => ((j.status === 'apply_ready' && j.sheet) || (j.status === 'prepared' && j.awaitingApproval && j.sheet)) && j.employerPosting && !st.approvals[j.key]).sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1)).map((j) => ({ key: j.key, company: j.company, title: j.title, fitLine: j.fitLine || '', missingFacts: j.awaitingApproval ? j.missingFacts || [] : [], newAnswers: (j.sheet.fields || []).filter((f) => f.tag === 'new_writing').map((f) => ({ label: f.label, value: f.value })) }));
 }
-const out = (o, code = 0) => {
-  // After a start, every J command says when the watcher is not running: it must be started again (SKILL.md).
-  if (o && typeof o === 'object' && !Array.isArray(o) && process.argv[2] !== 'watch' && process.argv[2] !== 'arm') {
-    try {
-      const st = loadState();
-      if (st.watcherEver && !watcherStatus(st).running && !roundOpen(st)) o = { ...o, watcher: 'stopped' };
-    } catch {}
-  }
-  process.stdout.write(JSON.stringify(o, null, 2) + '\n');
-  process.exitCode = code;
-};
-const readJsonArg = (arg) => JSON.parse(arg === '-' ? fs.readFileSync(0, 'utf8') : fs.existsSync(arg) ? fs.readFileSync(arg, 'utf8') : arg);
 const profileFile = () => path.join(stateDir(), 'profile.json');
 const asyncRun = async (cmd, args) => defaultRun(cmd, args);
-
-function parseArgs(argv) {
-  const pos = [];
-  const flags = {};
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a.startsWith('--')) {
-      const k = a.slice(2);
-      const next = argv[i + 1];
-      if (next === undefined || next.startsWith('--')) flags[k] = true;
-      else {
-        flags[k] = next;
-        i++;
-      }
-    } else pos.push(a);
-  }
-  return { pos, flags };
-}
 
 function loadQuestions(file) {
   const j = readJsonArg(file);
@@ -129,7 +101,7 @@ function withEventsQuestion(p, profile) {
   ] }] };
 }
 
-const commands = {
+const jobCommands = {
   // Only sets the hint state the hint moments read. It never stops the start and asks nothing.
   async tenjin([sub, answer]) {
     if (sub === 'ask-done') {
@@ -201,21 +173,6 @@ const commands = {
     return out(r);
   },
 
-  async rules([sub, ...rest], flags) {
-    if (sub === 'add') {
-      // A rule asked as a question-tool call: the chosen option's label is the person's words, with the date.
-      const words = flags['from-choice'] !== undefined ? flags['from-choice'] : flags.words;
-      if (flags['from-choice'] !== undefined && (flags['from-choice'] === true || !String(flags['from-choice']).trim())) return out({ error: 'rules add --from-choice "<the option label the person chose>" --effect e --value v' }, 2);
-      return out(addRule({ effect: flags.effect, value: flags.value === undefined ? null : coerce(flags.value), words }));
-    }
-    if (sub === 'remove') return out({ removed: removeRule(rest[0]) });
-    return out(loadOverlay().rules);
-  },
-  async lessons([sub, ...rest], flags) {
-    if (sub === 'derive') return out(deriveLessons(loadState()));
-    return out(loadOverlay().lessons);
-  },
-
   // Arm: reclaim a stale lease and say what to start. The watcher itself is `J watch`, started with the Bash tool's
   // run_in_background and started again after each round; its exit is what wakes the session.
   async arm() {
@@ -224,12 +181,6 @@ const commands = {
     if (st.lease && leaseFresh(st.lease, now) && watcherStatus(st, now).running) return out({ armed: false, running: true, heldBy: st.lease.holder, note: 'a watcher is already running (this session after a compaction, or another session); if it is another, work attended' });
     updateState((s) => { if (s.lease) s.lease = null; s.watcherEver = true; });
     return out({ armed: true, watch: 'start J watch with the Bash tool, run_in_background true; start it again after each round and whenever a J command reports watcher: stopped', view: view(loadState(), { limit: 10 }) });
-  },
-  async work(_, flags) {
-    await prepareInCode({ fetch: globalThis.fetch, profile: readProfile() });
-    const wl = workList({ commit: flags.commit === true, unattended: flags.unattended === true });
-    // An empty list is not an error: wl.empty says so (exit 0 for every list). A committed round ends by starting the watcher again.
-    return out(flags.commit === true ? { ...wl, then: 'start J watch last, with run_in_background, after every item is handed out or done' } : wl);
   },
 
   async sheet([sub, key], flags) {
@@ -633,24 +584,6 @@ const commands = {
     process.stdout.write(text + '\n');
     // The reply ends with one line on what Tenjin adds. It is not part of the report file. No price.
     if (!findTenjin()) process.stdout.write('\nTenjin is not installed. With it I can also search X live, add more job-board listings and find people to write to. Ask me to set it up.\n');
-  },
-
-  async release([sub], flags) {
-    const state = loadState();
-    if (sub === 'check') {
-      const r = await checkRelease({ fetchImpl: globalThis.fetch, runner: asyncRun });
-      recordRelease(r);
-      return out(r);
-    }
-    if (sub === 'apply') {
-      const w = state.update.waiting;
-      if (!w) return out({ error: 'no update waits' }, 2);
-      const m = readJson(path.join(SKILL_DIR, 'manifest.json'), {});
-      const r = await applyUpdate({ tag: w.tag, writingTag: w.writingTag, change: w.change, runner: asyncRun, previousTag: `job-search-v${m.version}`, previousWriting: m.writing });
-      recordRelease(r);
-      return out(r);
-    }
-    return out({ error: 'release check | apply (after the person says yes)' }, 2);
   },
 
   async ingest([file]) {
@@ -1428,10 +1361,6 @@ const commands = {
     return out({ read: true, ...(r.roleHint ? { roleHint: r.roleHint } : {}), source: next.resumeSource, saved: r.resumeTextFile || r.resumePath || null, needsText: next.resumeNeedsText, next: next.resumeNeedsText ? 'read the file with your file reader, then save its text: J resume set --text' : r.roleHint ? 'the profile has job titles: take the role and role words from roleHint (the current position first), save them with J profile set (search.sources: linkedin), and confirm the role with a choice question, your guess first (J ask resume)' : next.resumeThin ? 'a LinkedIn profile has employers but no job titles: confirm the target role with a choice question, your guess first (J ask resume --json {header,question,guess,next,source:"LinkedIn"}); a form that needs more asks for a file or the text' : 'read role, role words, place and remote from the resume' });
   },
 
-  // Items shown to the person in a reply: they leave the notify set until their version changes.
-  async shown(keys, flags) {
-    return out(updateState((s) => ({ shown: markShown(s, flags.all === true || !keys.length ? null : keys) })));
-  },
   async notify([sub, result], flags) {
     // The model records each push's answer. A "not sent" notify-only push stops further notify-only wakes until the person's
     // next turn; an answer that cannot tell sent from not sent allows them only for items that block work.
@@ -1448,16 +1377,6 @@ const commands = {
       if (say) s.rcPushSaid = true;
       return { recorded: result, ...(reason ? { reason } : {}), say };
     }));
-  },
-
-  async gates(_, flags) {
-    const h = gatesHash();
-    if (flags.write) {
-      const f = path.join(SKILL_DIR, 'manifest.json');
-      const m = readJson(f, {});
-      writeFileSync(f, JSON.stringify({ ...m, gatesHash: h }, null, 2) + '\n');
-    }
-    return out({ gatesHash: h });
   },
 
 };
@@ -1486,37 +1405,22 @@ function saveLeadIntros(s, r, { strict = true } = {}) {
   return n;
 }
 
-function coerce(v) {
-  if (v === 'true') return true;
-  if (v === 'false') return false;
-  return /^-?\d+(\.\d+)?$/.test(String(v)) ? Number(v) : v;
-}
-
-async function main() {
-  const [cmd, ...rest] = process.argv.slice(2);
-  const { pos, flags } = parseArgs(rest);
-  if (!commands[cmd]) return out({ error: `unknown command: ${cmd}`, commands: Object.keys(commands) }, 2);
+// The CLI frame (the argument parser, the JSON output, the shared commands, the pre-checks, the batch refusal and the lease touch) is the
+// loop base's. Job Search declares its own commands and what the frame reads.
+// The order the unknown-command error lists the commands in.
+const ORDER = ['tenjin', 'profile', 'batch', 'ops', 'rules', 'lessons', 'arm', 'work', 'sheet', 'apply', 'approve', 'consent', 'writing', 'answer', 'dryrun', 'stop', 'unpark', 'contacts', 'write-prompt', 'write-result', 'report', 'release', 'ingest', 'routed', 'leads', 'yc', 'hn', 'site', 'may-submit', 'uploads', 'rc', 'chrome', 'open', 'eeo', 'fillonly', 'agree', 'fill', 'submitted', 'search', 'start', 'ask', 'frequency', 'events', 'referral', 'facts', 'fact', 'watch', 'intros', 'route', 'leave', 'retry', 'outcome', 'email', 'resume', 'shown', 'notify', 'gates'];
+extendApp({ cli: {
+  order: ORDER,
+  personCommands: ['report', 'approve', 'submitted', 'ask', 'answer', 'fact', 'start', 'resume', 'consent', 'fill'],
+  // The person's answer is news: items left alone come back for it.
+  isNews: (cmd, pos) => ['fact set', 'profile set', 'answer add', 'writing approve'].includes(`${cmd} ${pos[0]}`) && !(cmd === 'fact' && pos[1] === 'account'),
   // A profile that holds a field from an older version is refused with the field's name; `J profile` itself still runs, to remove it.
-  if (cmd !== 'profile') {
-    const old = oldFields(readProfile());
-    if (old.length) return out({ error: oldFieldError(old) }, 2);
-  }
-  // A state that holds a field from an older version is refused with the field's name, never converted.
-  const oldState = readOldStateFields();
-  if (oldState.length) return out({ error: oldStateError(oldState) }, 2);
-  // A command that changes what a submit may do is refused while a batch is open, whoever calls it.
-  if (batch.isBatchDenied(cmd, pos[0], batch.batchMode()) && batch.isActive()) return out({ error: `${cmd} ${pos[0] || ''} is refused while a batch is open; close it in an attended session first`.replace('  ', ' ') }, 4);
-  try {
-    await commands[cmd](pos, flags);
-    if (cmd !== 'watch') touchLease();
-    // The person's next turn lifts the "not sent" stop on notify-only wakes (only a person runs these).
-    if (['report', 'approve', 'submitted', 'ask', 'answer', 'fact', 'start', 'resume', 'consent', 'fill'].includes(cmd)) updateState((st) => { if (st.watcher && st.watcher.notifyResult === 'not_sent') st.watcher.notifyResult = null; });
-    // The person's answer is news: items left alone come back for it.
-    if (!process.exitCode && (['fact set', 'profile set', 'answer add', 'writing approve'].includes(`${cmd} ${pos[0]}`) && !(cmd === 'fact' && pos[1] === 'account'))) updateState((st) => { st.answerV = (st.answerV || 0) + 1; });
-  } catch (e) {
-    out({ error: e.message }, 2);
-  }
-}
+  preChecks: (cmd) => { if (cmd === 'profile') return null; const old = oldFields(readProfile()); return old.length ? oldFieldError(old) : null; },
+  deriveLessons: (state) => deriveLessons(state),
+  beforeWork: () => prepareInCode({ fetch: globalThis.fetch, profile: readProfile() }),
+  commands: { watch: 'J watch' },
+} });
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) await main();
+const commands = commandTable(jobCommands);
+if (process.argv[1] === fileURLToPath(import.meta.url)) await runCli(jobCommands);
 export { commands };
