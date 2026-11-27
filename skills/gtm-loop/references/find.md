@@ -25,4 +25,10 @@ Then `G ingest --file <file>` for each; rewrite a refused file, never edit it wi
 
 ## Leads by fit
 
-When the person described a buyer, a company list search, then people search at those companies, then each person's recent posts as the reason to write now. See references/review.md for how a fit lead is reviewed.
+When the person described a buyer (`buyer`: roles, industry, size, place), the watcher also finds people who fit it, with Tenjin ready. It is always in code:
+
+1. One company list search by industry, size and place. It costs the most, so it runs only when no company is waiting for its people search. A company the person names by its domain joins the list: `G companies add <domain...>`, and `G companies` shows the list.
+2. People at each waiting company, by the buyer's roles. Each person becomes a lead with their LinkedIn profile as the identity, the company, the company domain and the country the answer gives. Anyone opted out, already contacted or excluded by the person's rules is dropped.
+3. The person's recent post, if any, as the reason to write now (LinkedIn posts, newest within 60 days). A person with no recent post is reviewed as `no signal`.
+
+`G fit route` runs the same round by hand. These people never asked for anything: the writer may not say they did, and the email gates apply in full (references/send.md). A cap on companies per search exists only if the person sets the `companies_per_search` rule.

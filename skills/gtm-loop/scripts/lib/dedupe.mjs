@@ -164,7 +164,7 @@ export function contactProblem(state, personKey, { followUp = null, now = Date.n
 
 // ---- leads ----------------------------------------------------------------------------------------------------------
 const POST_TEXT = 1000;
-const excludedBy = (rules, lead, person) => {
+export const excludedBy = (rules, lead, person) => {
   const text = lower(`${lead.text} ${lead.author}`);
   for (const r of rules || []) {
     const v = lower(r.value);

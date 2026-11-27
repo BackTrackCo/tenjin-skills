@@ -23,6 +23,7 @@ import { hintLines, outdatedLine } from './lib/prices.mjs';
 import { buildRoundRequest, parseRoundResult, applyWriteResult } from './lib/writing.mjs';
 import { pickQuestions, pickLead, openPlan, markSentSocial } from './lib/outreach.mjs';
 import { openPage, copyToClipboard } from './lib/open.mjs';
+import { runFitRound, addCompanies, unprocessed } from './lib/fit.mjs';
 
 // G is this file. Every command prints one JSON object. State, rules and profile live in ~/.tenjin-skills/gtm-loop/.
 export function parseArgs(argv) {
@@ -171,6 +172,19 @@ register('search', async ({ sub, flags }) => {
     return { ...r, reads };
   }
   return fail('search plan, search route, search done');
+});
+register('fit', async ({ sub }) => {
+  if (sub !== 'route') return fail('fit route');
+  if (loadState().tenjin.status !== 'ready') return fail('Tenjin is not ready: run G tenjin first');
+  return runFitRound({ profile: readProfile(), overlay: loadOverlay() });
+});
+register('companies', ({ sub, args }) => {
+  if (sub === 'add') {
+    if (args.length < 2) return fail('companies add <domain...>');
+    return { added: updateState((s) => addCompanies(s, args.slice(1))) };
+  }
+  const list = Object.values(loadState().companies);
+  return { companies: list.map((c) => ({ domain: c.domain, name: c.name, source: c.source, peopleDone: Boolean(c.peopleDoneAt) })), waiting: unprocessed(loadState()).length };
 });
 register('hn', async () => runHn({ fetch: globalThis.fetch, profile: readProfile(), overlay: loadOverlay() }));
 register('reads', async () => runIdentityReads({}));

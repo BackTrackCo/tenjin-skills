@@ -6,6 +6,7 @@ import { frequencyOf, searchIsDue } from './schedule.mjs';
 import { runHn } from './hn.mjs';
 import { runPostRound, runIdentityReads } from './routed.mjs';
 import { RouterClient } from './router.mjs';
+import { runFitRound, hasBuyer } from './fit.mjs';
 
 // When a search is due, what runs in code, and what is left to the one free model step. HN is free and always in code. With Tenjin
 // ready, every post source runs in code too; without it the model's one Haiku web-search step runs the queries `G search plan`
@@ -48,6 +49,13 @@ export async function searchStep({ profile, overlay, fetchImpl, now, routerClien
     try {
       out.reads = await runIdentityReads({ client: routerClient || new RouterClient(), now, save });
     } catch {}
+    if (hasBuyer(profile)) {
+      try {
+        out.fit = await runFitRound({ profile, overlay, client: routerClient || new RouterClient(), now, save });
+      } catch (e) {
+        updateState((st) => { st.held = [...st.held.filter((h) => !String(h.detail).startsWith('fit:')), { reason: 'source_empty', detail: `fit: ${e.message}` }]; });
+      }
+    }
   } else {
     updateState((s) => { s.search.modelDue = true; s.search.round = (s.search.round || 0) + 1; s.search.roundAdded = 0; });
   }

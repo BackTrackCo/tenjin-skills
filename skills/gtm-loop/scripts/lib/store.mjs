@@ -14,6 +14,7 @@ export function emptyState() {
     leads: {},
     people: {},
     ids: {},
+    companies: {},
     suppress: { ids: {}, domains: {} },
     contacted: {},
     emails: { drafts: {}, sent: {}, connector: null, log: [] },

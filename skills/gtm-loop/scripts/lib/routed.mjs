@@ -18,7 +18,7 @@ export function fillNeed(kind, fields) {
   if (!t) throw new Error(`unknown need: ${kind}`);
   for (const f of t.fields) if (fields[f] === undefined || fields[f] === null || String(fields[f]).trim() === '') throw new Error(`the ${kind} need has no ${f}`);
   const text = t.text.replace(/\{(\w+)\}/g, (_, k) => String(fields[k] ?? ''));
-  return { kind, text, fields: { ...fields }, query: fields.query || fields.handle || fields.url || fields.domain || fields.email || null };
+  return { kind, text, fields: { ...fields }, query: fields.query || fields.handle || fields.url || fields.domain || fields.email || fields.industry || null };
 }
 
 export const sinceOf = (state, now, maxDays = graph().sweep.maxDaysBack) => {
@@ -41,13 +41,13 @@ export function postNeeds({ profile, overlay, state, now = Date.now() }) {
   return needs;
 }
 
-const heldKey = (need) => `need:${need.kind}:${need.query || ''}`;
-function recordHeld(state, need, r) {
+export const heldKey = (need) => `need:${need.kind}:${need.query || ''}`;
+export function recordHeld(state, need, r) {
   const key = heldKey(need);
   state.held = state.held.filter((h) => h.key !== key);
   state.held.push({ key, reason: 'need_held', status: r.status, detail: `${need.kind}${need.query ? ` (${need.query})` : ''}: ${r.reason}` });
 }
-const clearHeld = (state, need) => { state.held = state.held.filter((h) => h.key !== heldKey(need)); };
+export const clearHeld = (state, need) => { state.held = state.held.filter((h) => h.key !== heldKey(need)); };
 
 // A whole round of post searches: one process, the needs one at a time. A paid result is kept at once, before the next need starts.
 export async function runPostRound({ profile, overlay, client = new RouterClient(), now = Date.now(), save }) {
