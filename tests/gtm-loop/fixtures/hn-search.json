@@ -1,0 +1,65 @@
+{
+  "_note": "Synthetic, the shape of the HN Search API answer (hits[] with objectID, author, comment_text, story_text, title, story_title, url, created_at_i, _tags).",
+  "hits": [
+    {
+      "objectID": "41000001",
+      "_tags": [
+        "comment"
+      ],
+      "author": "hn_user_a",
+      "story_title": "Ask HN: How do agents pay for APIs?",
+      "comment_text": "I&#x27;m looking for a way to let my agent pay for APIs.<p>Any tips?",
+      "created_at_i": 1795596000
+    },
+    {
+      "objectID": "41000002",
+      "_tags": [
+        "story",
+        "ask_hn"
+      ],
+      "author": "hn_user_b",
+      "title": "Ask HN: How do agents pay for APIs?",
+      "story_text": "Keys everywhere. There must be a better way.",
+      "created_at_i": 1795597000
+    },
+    {
+      "objectID": "41000003",
+      "_tags": [
+        "comment"
+      ],
+      "author": "hn_user_c",
+      "story_title": "Some kernel release notes",
+      "comment_text": "agents pay no attention to the release notes at all",
+      "created_at_i": 1795598000
+    },
+    {
+      "objectID": "41000004",
+      "_tags": [
+        "comment"
+      ],
+      "author": "hn_user_d",
+      "story_title": "A blog post about billing",
+      "comment_text": "Anyone tried letting the agent pay apis per call? It works well for us.",
+      "created_at_i": 1795599000
+    },
+    {
+      "objectID": "41000005",
+      "_tags": [
+        "story"
+      ],
+      "author": "hn_user_e",
+      "title": "Show HN: Agents that pay for APIs",
+      "story_text": "A tool I built.",
+      "created_at_i": 1795600000
+    },
+    {
+      "objectID": "41000006",
+      "_tags": [
+        "comment"
+      ],
+      "author": "hn_user_f",
+      "story_title": "Ask HN: Anything",
+      "created_at_i": 1795601000
+    }
+  ]
+}

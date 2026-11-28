@@ -1,0 +1,576 @@
+[
+  {
+    "need": "x_posts",
+    "hosts": [
+      "glim.sh"
+    ],
+    "recorded": true,
+    "input": {
+      "query": "{query}[ since:{since}]",
+      "sort": "top"
+    },
+    "output": {
+      "list": [
+        "tweets"
+      ],
+      "linksFromText": false,
+      "fields": {
+        "url": "url",
+        "text": "text",
+        "author": "author.username",
+        "postedAt": "created_at",
+        "links": "entities.urls[].expanded_url"
+      }
+    }
+  },
+  {
+    "need": "x_posts",
+    "hosts": [
+      "api.getanyapi.com"
+    ],
+    "input": {
+      "query": "{query}[ since:{since}]",
+      "queryType": "Top"
+    },
+    "output": {
+      "list": [
+        "output.data.items",
+        "data.items"
+      ],
+      "fields": {
+        "url": "url",
+        "text": "text",
+        "author": "authorUsername",
+        "postedAt": "createdUtc"
+      }
+    }
+  },
+  {
+    "need": "reddit_posts",
+    "hosts": [
+      "glim.sh"
+    ],
+    "input": {
+      "query": "{query}",
+      "sort": "relevance",
+      "time": {
+        "byAge": [
+          "day",
+          "week",
+          "month",
+          "year"
+        ]
+      }
+    },
+    "output": {
+      "list": [
+        "posts",
+        "results",
+        "data.posts",
+        "data.children",
+        "items"
+      ],
+      "itemRoot": "data",
+      "urlBase": "https://www.reddit.com",
+      "fields": {
+        "url": [
+          "url",
+          "permalink",
+          "link"
+        ],
+        "author": [
+          "author",
+          "authorUsername",
+          "username"
+        ],
+        "postedAt": [
+          "created_utc",
+          "createdUtc",
+          "created_at",
+          "created"
+        ],
+        "subreddit": "subreddit",
+        "text": {
+          "join": [
+            "title",
+            [
+              "selftext",
+              "text",
+              "body",
+              "content"
+            ]
+          ]
+        }
+      }
+    }
+  },
+  {
+    "need": "reddit_posts",
+    "hosts": [
+      "api.getanyapi.com"
+    ],
+    "input": {
+      "query": "{query}",
+      "sort": "relevance",
+      "timeframe": {
+        "byAge": [
+          "day",
+          "week",
+          "month",
+          "year"
+        ]
+      }
+    },
+    "output": {
+      "list": [
+        "output.data.items",
+        "output.data.posts",
+        "output.items",
+        "data.items",
+        "data.posts",
+        "items"
+      ],
+      "itemRoot": "data",
+      "urlBase": "https://www.reddit.com",
+      "fields": {
+        "url": [
+          "url",
+          "permalink",
+          "link"
+        ],
+        "author": [
+          "author",
+          "authorUsername",
+          "username"
+        ],
+        "postedAt": [
+          "created_utc",
+          "createdUtc",
+          "created_at",
+          "created"
+        ],
+        "subreddit": "subreddit",
+        "text": {
+          "join": [
+            "title",
+            [
+              "selftext",
+              "text",
+              "body",
+              "content"
+            ]
+          ]
+        }
+      }
+    }
+  },
+  {
+    "need": "linkedin_posts",
+    "hosts": [
+      "api.getanyapi.com"
+    ],
+    "input": {
+      "query": "{query}",
+      "datePosted": {
+        "byAge": [
+          "last-day",
+          "last-week",
+          "last-month",
+          "last-year"
+        ]
+      }
+    },
+    "output": {
+      "list": [
+        "output.data.posts",
+        "data.posts"
+      ],
+      "fields": {
+        "url": "url",
+        "text": "text",
+        "authorUrl": "authorUrl",
+        "name": "authorName",
+        "postedAt": "createdUtc"
+      }
+    }
+  },
+  {
+    "need": "web_research",
+    "hosts": [
+      "api.exa.ai"
+    ],
+    "noCache": true,
+    "recorded": true,
+    "input": {
+      "query": "{query}",
+      "type": {
+        "if": {
+          "mode": "discussion"
+        },
+        "then": "auto",
+        "else": "lite"
+      },
+      "numResults": 10,
+      "includeDomains": {
+        "if": {
+          "mode": "discussion"
+        },
+        "then": "{hosts}"
+      }
+    },
+    "output": {
+      "list": [
+        "results",
+        "data.results",
+        "web.results",
+        "data.web.results",
+        ""
+      ],
+      "fields": {
+        "url": [
+          "url",
+          "link"
+        ],
+        "text": {
+          "join": [
+            "title",
+            [
+              "text",
+              "snippet",
+              "summary",
+              "description",
+              "highlights"
+            ]
+          ]
+        },
+        "author": "author",
+        "postedAt": [
+          "publishedDate",
+          "published_date",
+          "published",
+          "date"
+        ]
+      }
+    }
+  },
+  {
+    "need": "x_profile",
+    "hosts": [
+      "glim.sh"
+    ],
+    "input": {
+      "username": "{handle}"
+    },
+    "output": {
+      "root": [
+        "user",
+        "data",
+        "result",
+        ""
+      ],
+      "linksFromText": "bio",
+      "fields": {
+        "name": "name",
+        "bio": [
+          "description",
+          "bio"
+        ],
+        "location": "location",
+        "links": [
+          "entities.url.urls[].expanded_url",
+          "entities.description.urls[].expanded_url",
+          "url"
+        ]
+      }
+    }
+  },
+  {
+    "need": "x_timeline",
+    "hosts": [
+      "glim.sh"
+    ],
+    "input": {
+      "username": "{handle}",
+      "count": 10
+    },
+    "output": {
+      "list": [
+        "tweets",
+        "timeline",
+        "posts"
+      ],
+      "linksFromText": false,
+      "fields": {
+        "url": "url",
+        "text": "text",
+        "author": "author.username",
+        "postedAt": "created_at",
+        "links": "entities.urls[].expanded_url"
+      }
+    }
+  },
+  {
+    "need": "linkedin_profile",
+    "hosts": [
+      "x402.orthogonal.com"
+    ],
+    "recorded": true,
+    "input": {
+      "url": "{url}"
+    },
+    "output": {
+      "root": [
+        "result",
+        "data",
+        ""
+      ],
+      "fields": {
+        "name": "name",
+        "location": "location",
+        "company": "experience[0].name",
+        "about": "about"
+      }
+    }
+  },
+  {
+    "need": "linkedin_profile",
+    "hosts": [
+      "api.getanyapi.com"
+    ],
+    "input": {
+      "url": "{url}"
+    },
+    "output": {
+      "root": [
+        "output.data",
+        "output.result",
+        "data",
+        "result"
+      ],
+      "fields": {
+        "name": {
+          "join": [
+            "firstName",
+            "lastName"
+          ],
+          "sep": " "
+        },
+        "headline": "headline",
+        "location": "location",
+        "company": "currentPosition[0].companyName",
+        "about": "about"
+      }
+    }
+  },
+  {
+    "need": "linkedin_author_posts",
+    "hosts": [
+      "api.getanyapi.com"
+    ],
+    "input": {
+      "url": "{url}"
+    },
+    "output": {
+      "list": [
+        "output.data.items",
+        "data.items"
+      ],
+      "fields": {
+        "url": "url",
+        "text": {
+          "join": [
+            "text",
+            "repostText"
+          ]
+        },
+        "postedAt": "createdUtc",
+        "links": "articleUrl"
+      }
+    }
+  },
+  {
+    "need": "company_list",
+    "hosts": [
+      "stableenrich.dev"
+    ],
+    "input": {
+      "industry": "{industry}",
+      "employeeRange": "{size}",
+      "location": "{place}",
+      "limit": 25
+    },
+    "output": {
+      "list": [
+        "companies",
+        "results",
+        "data.companies",
+        "data",
+        "items",
+        "organizations"
+      ],
+      "fields": {
+        "name": [
+          "name",
+          "company_name"
+        ],
+        "domain": [
+          "domain",
+          "website",
+          "primary_domain",
+          "website_url"
+        ],
+        "linkedinUrl": [
+          "linkedin_url",
+          "linkedinUrl",
+          "socials.linkedin_url"
+        ],
+        "size": [
+          "employees",
+          "employee_count",
+          "size"
+        ],
+        "country": [
+          "country",
+          "countryCode"
+        ]
+      }
+    }
+  },
+  {
+    "need": "company_profile",
+    "hosts": [],
+    "any": true,
+    "noCache": true,
+    "input": {
+      "domain": "{domain}"
+    },
+    "output": {
+      "root": [
+        "organization",
+        "company",
+        "data",
+        ""
+      ],
+      "fields": {
+        "name": "name",
+        "domain": [
+          "domain",
+          "website",
+          "primary_domain"
+        ],
+        "linkedinUrl": [
+          "socials.linkedin_url",
+          "linkedin_url",
+          "linkedinUrl"
+        ],
+        "size": [
+          "employees",
+          "estimated_num_employees",
+          "size"
+        ],
+        "country": [
+          "country",
+          "location.country"
+        ]
+      }
+    }
+  },
+  {
+    "need": "people_search",
+    "hosts": [
+      "x402.orthogonal.com"
+    ],
+    "recorded": true,
+    "input": {
+      "query": {
+        "currentCompanyWebsite": {
+          "include": [
+            "{domain}"
+          ]
+        },
+        "currentJobTitle": {
+          "include": "{roles}"
+        }
+      },
+      "pagination": {
+        "size": 5
+      }
+    },
+    "output": {
+      "list": [
+        "leads"
+      ],
+      "fields": {
+        "name": {
+          "join": [
+            "firstname",
+            "lastname"
+          ],
+          "sep": " "
+        },
+        "title": "lastJobTitle",
+        "headline": "headline",
+        "profileUrl": "profileUrl",
+        "company": "lastCompanyName",
+        "address": "address",
+        "companyWebsite": "lastCompanyWebsite"
+      }
+    }
+  },
+  {
+    "need": "person_enrichment",
+    "hosts": [],
+    "any": true,
+    "noCache": true,
+    "input": {
+      "first_name": "{firstName}",
+      "last_name": "{lastName}",
+      "name": "{name}",
+      "domain": "{domain}"
+    },
+    "output": {
+      "root": [
+        "person",
+        "data",
+        "result",
+        ""
+      ],
+      "fields": {
+        "email": [
+          "email",
+          "work_email",
+          "emails[0].email",
+          "emails[0]"
+        ],
+        "status": [
+          "email_status",
+          "status",
+          "verification_status"
+        ]
+      }
+    }
+  },
+  {
+    "need": "email_check",
+    "hosts": [],
+    "any": true,
+    "noCache": true,
+    "input": {
+      "email": "{email}"
+    },
+    "output": {
+      "root": [
+        "data",
+        "result",
+        ""
+      ],
+      "fields": {
+        "status": [
+          "status",
+          "result",
+          "verdict"
+        ]
+      }
+    }
+  }
+]

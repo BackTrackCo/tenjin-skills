@@ -1,0 +1,11 @@
+{
+  "_note": "Synthetic. The shape of the people search answer recorded on 2026-11-24 (success, total, leads[] with firstname, lastname, headline, profileUrl, lastJobTitle, lastCompanyName, address); names and links are made up.",
+  "kind": "people_search",
+  "host": "x402.orthogonal.com",
+  "input": { "query": { "currentCompanyWebsite": { "include": ["acme-robotics.example"] }, "currentJobTitle": { "include": ["Head of platform", "CTO"] } }, "pagination": { "size": 5 } },
+  "result": { "success": true, "total": 3, "leads": [
+    { "firstname": "Pat", "lastname": "Lee", "headline": "Head of platform at Acme Robotics", "profileUrl": "https://www.linkedin.com/in/pat-lee-123", "lastJobTitle": "Head of platform", "lastCompanyName": "Acme Robotics", "lastCompanyWebsite": "https://acme-robotics.example", "address": "Toronto, Ontario, Canada" },
+    { "firstname": "Sam", "lastname": "Ito", "headline": "CTO", "profileUrl": "https://www.linkedin.com/in/sam-ito-9", "lastJobTitle": "CTO", "lastCompanyName": "Acme Robotics", "lastCompanyWebsite": "https://www.acme-robotics.example/about", "address": "Berlin, Germany" },
+    { "firstname": "Other", "lastname": "Person", "headline": "CTO elsewhere", "profileUrl": "https://www.linkedin.com/in/other-p", "lastJobTitle": "CTO", "lastCompanyName": "Elsewhere Inc", "lastCompanyWebsite": "https://elsewhere.example", "address": "Paris, France" }
+  ] }
+}

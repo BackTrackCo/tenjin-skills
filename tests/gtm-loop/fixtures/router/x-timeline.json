@@ -1,0 +1,7 @@
+{
+  "_note": "Synthetic, the X search shape for a user timeline.",
+  "kind": "x_timeline",
+  "host": "glim.sh",
+  "input": { "username": "dev_one", "count": 10 },
+  "result": { "tweets": [ { "url": "https://x.com/dev_one/status/1900000000000000050", "text": "Thinking about how my agent should pay for tools.", "created_at": "2026-11-25T20:00:00.000Z", "author": { "username": "dev_one" }, "entities": { "urls": [] } } ] }
+}

@@ -1,0 +1,9 @@
+{
+  "_note": "Synthetic, built from the catalog entry of the LinkedIn post search: {output: {found, data: {posts, nextCursor}}}.",
+  "kind": "linkedin_posts",
+  "host": "api.getanyapi.com",
+  "input": { "query": "agent pay for APIs", "datePosted": "last-week" },
+  "result": { "output": { "found": true, "data": { "posts": [
+    { "id": "7000000000000000001", "url": "https://www.linkedin.com/posts/pat-lee_agents-activity-7000000000000000001-abcd?utm_source=share", "text": "We are looking for a way for our agents to pay for APIs. Thoughts?", "authorName": "Pat Lee", "authorUrl": "https://www.linkedin.com/in/pat-lee-123/", "createdUtc": 1795598000, "reactionCount": 4, "commentCount": 1 }
+  ], "nextCursor": null } } }
+}
