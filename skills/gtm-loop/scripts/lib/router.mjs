@@ -141,7 +141,7 @@ const HOST_RE = /\b(?:[a-z0-9-]+\.)+[a-z]{2,10}\b/gi;
 // The service's host: today's spec text says "Request: GET https://<host>/...". Failing that, the first host the spec names.
 function sellerOf(spec, text) {
   const req = /Request:\s*[A-Z]+\s+https?:\/\/([^/\s{]+)/.exec(String(spec.__text || ''));
-  if (req) return req[1].toLowerCase();
+  if (req) return req[1].toLowerCase().replace(/[^a-z0-9.:-]/g, '');
   const m = (text.match(HOST_RE) || []).find((h) => !/^(www\.)?(example|tenjin)\./i.test(h));
   return m ? m.toLowerCase() : 'unknown';
 }
@@ -186,10 +186,10 @@ export async function runNeed(client, need, { save = saveResult } = {}) {
     const i = fillFromSpec(vars, specIn);
     if (i && Object.keys(i).length) { const f = fitsSpec(i, specIn); if (f.ok) input = i; else fit = fit || f; }
   }
-  const inputBreak = (why, attempted) => {
+  const inputBreak = (why, attempted, serviceSaid = null) => {
     const pend = pendingFor(need.kind, seller, 'input');
     if (pend) return held(need, 'repair_pending', `${why}. Nothing was paid. It waits for repair ${pend.id} (G repair show ${pend.id})`);
-    const rq = recordBreak({ side: 'input', need, seller, reason: why, specFields: specIn ? specIn.fields : null, attempted, missing: fit ? fit.missing : [], unknown: fit ? fit.unknown : [] });
+    const rq = recordBreak({ side: 'input', need, seller, reason: serviceSaid ? 'the service refused the input' : why, serviceSaid, specFields: specIn ? specIn.fields : null, attempted, missing: fit ? fit.missing : [], unknown: fit ? fit.unknown : [] });
     return held(need, 'input_break', `${why}. Nothing was paid. Repair request ${rq.id} is written (G repair show ${rq.id})`);
   };
   if (!input) {
@@ -210,7 +210,7 @@ export async function runNeed(client, need, { save = saveResult } = {}) {
   // The router (or the service) says the input does not fit: nothing was paid. It is an input break, never resent.
   if (env.status === 'needs_input' || (env.status === 'failed' && INPUT_REFUSAL.test(String(env.reason || '')))) {
     fit = null;
-    return inputBreak(`the service refused the input (${env.status}${env.reason ? `: ${String(env.reason).slice(0, 160)}` : ''})`, input);
+    return inputBreak(`the service refused the input (${env.status}${env.reason ? `: ${String(env.reason).slice(0, 160)}` : ''})`, input, env.reason ? String(env.reason).slice(0, 160) : null);
   }
   if (env.status !== 'fulfilled') return held(need, env.status || 'failed', env.reason ? `the router answered ${env.status}: ${env.reason}` : `the router answered ${env.status}`, env);
   let result;
