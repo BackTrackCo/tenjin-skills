@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { mkJob, runJobs, tmpHome } from './helpers/env.mjs';
+import { mkJob, runJobs, SKILL, tmpHome } from './helpers/env.mjs';
 
 const home = tmpHome();
 const store = await import('../../skills/job-search/scripts/lib/store.mjs');
@@ -135,4 +135,20 @@ test('profile set refuses a bad shape with the reason, and saves nothing', () =>
   assert.equal(fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null, before);
   const ok = runJobs(home, ['profile', 'set', JSON.stringify({ places: ['San Francisco'], remote: true, search: { role: 'software engineer', roleWords: ['developer'] }, watch: [{ url: 'https://boards.greenhouse.io/acme' }] })]);
   assert.equal(ok.code, 0);
+});
+
+test('the CLI runs from a folder whose path has a space in it, and through a symlink to the skill folder', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const os = await import('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jobs space '));
+  fs.cpSync(SKILL, path.join(dir, 'job-search'), { recursive: true });
+  const env = { ...process.env, HOME: home, TENJIN_SKILLS_DIR: path.join(home, '.tenjin-skills') };
+  const r = spawnSync(process.execPath, [path.join(dir, 'job-search', 'scripts', 'jobs.mjs'), 'gates'], { encoding: 'utf8', env });
+  assert.equal(r.status, 0);
+  assert.match(JSON.parse(r.stdout).gatesHash, /^[0-9a-f]{64}$/);
+  const link = path.join(dir, 'linked');
+  fs.symlinkSync(path.join(dir, 'job-search'), link);
+  const viaLink = spawnSync(process.execPath, [path.join(link, 'scripts', 'jobs.mjs'), 'gates'], { encoding: 'utf8', env });
+  assert.equal(viaLink.status, 0);
+  assert.match(JSON.parse(viaLink.stdout).gatesHash, /^[0-9a-f]{64}$/);
 });

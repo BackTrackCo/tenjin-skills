@@ -1526,5 +1526,7 @@ async function main() {
   }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) await main();
+// Run only when this file is the entry point. Both paths are resolved through symlinks: the installer links the skill folder.
+const real = (f) => { try { return fs.realpathSync(f); } catch { return path.resolve(f); } };
+if (process.argv[1] && real(process.argv[1]) === real(fileURLToPath(import.meta.url))) await main();
 export { commands };

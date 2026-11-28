@@ -18,10 +18,14 @@ test('SKILL.md has the Claude Code frontmatter and the gates come first', () => 
   assert.ok(md.indexOf('<!-- gates:end -->') > md.indexOf('<!-- gates:start -->'));
 });
 
-test('SKILL.md names no private repo, no home path and no em dash', () => {
-  for (const f of ['SKILL.md', ...fs.readdirSync(path.join(SKILL, 'references')).map((r) => `references/${r}`)]) {
-    const t = fs.readFileSync(path.join(SKILL, f), 'utf8');
-    assert.doesNotMatch(t, /tenjin-notes|tenjin-workspace|\/Users\/|\u2014/, f);
+const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]));
+const PRIVATE = new RegExp([['tenjin', 'notes'].join('-'), ['tenjin', 'workspace'].join('-'), ['BackTrackCo', 'tenjin(?![-\\w])'].join('/'), 'tenjin#\\d', ['tenjin', 'agent#\\d'].join('-')].join('|'));
+
+test('the skill ships no private repo or issue link, no home path and no em dash', () => {
+  for (const f of walk(SKILL).filter((x) => /\.(md|json|mjs)$/.test(x))) {
+    const t = fs.readFileSync(f, 'utf8');
+    assert.doesNotMatch(t, PRIVATE, f);
+    assert.doesNotMatch(t, /\/Users\/|\/home\/[a-z]|\u2014/, f);
   }
 });
 

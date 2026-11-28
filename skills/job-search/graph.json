@@ -156,7 +156,8 @@
     "email_due",
     "referral_list",
     "referral_pending",
-    "events_due"
+    "events_due",
+    "repair_due"
   ],
   "heldReasons": [
     "source_empty",
@@ -283,8 +284,16 @@
         "providerUsd": 0.02,
         "estimateCents": 2.3
       },
-    "event_posts_linkedin": { "via": "tool_id", "providerUsd": 0.0022, "estimateCents": 0.3 },
-    "event_posts_people": { "via": "tool_id", "providerUsd": 0.006, "estimateCents": 0.6 }
+      "event_posts_linkedin": {
+        "via": "tool_id",
+        "providerUsd": 0.0022,
+        "estimateCents": 0.3
+      },
+      "event_posts_people": {
+        "via": "tool_id",
+        "providerUsd": 0.006,
+        "estimateCents": 0.6
+      }
     }
   }
 }

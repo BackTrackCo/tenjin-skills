@@ -69,10 +69,17 @@ Every day, Job Search reads the public job boards of the companies you watch (Gr
 
 ### Install
 
-Claude Code only, for now. Global, because your state is per person. A release is pinned to a tag that a maintainer cuts after review; replace the version with the latest `job-search-v*` tag.
+Claude Code only, for now. Global, because your state is per person. Install from a branch or a release tag (`job-search-v*`):
 
 ```sh
-npx skills add BackTrackCo/tenjin-skills@job-search-v0.1.0 \
+npx skills add BackTrackCo/tenjin-skills#job-search-v0.1.0 \
+  --skill job-search --skill writing -a claude-code -g
+```
+
+From the development branch before the first release tag:
+
+```sh
+npx skills add BackTrackCo/tenjin-skills#A1igator/job-search-v0 \
   --skill job-search --skill writing -a claude-code -g
 ```
 
@@ -81,9 +88,7 @@ Then run `/job-search` in Claude Code. It asks you to share your resume (a file,
 ### What it does
 
 - **Watched companies, free.** There is no watch-list question and the skill never builds a list itself. When you ask for a company in your own message, by name or with a careers link, its board is added and stays until you remove it. Code reads each listed board every sweep, with no model tokens and no limit on the list.
-- **Daily search.** Each round runs free web searches of the three board hosts and X (also without Tenjin), then, with Tenjin, the router's job-posting and X searches; the next round uses a new role word (a synonym or a level) and stops when it finds nothing new. Hacker News "Who is hiring?" is read through its Algolia search API. Older postings stay only when their board confirms they are open.
-- **Searches in code.** With Tenjin, the job-posting search runs in code through the router at the router's price, with no Claude usage for the searches, and a held search is named in the report. A hiring post with no job posting becomes a reach-out lead ("People hiring") with an example intro you send yourself.
-- **Searches, through Tenjin.** With Tenjin the watcher runs each search round in code, at your search frequency: job postings that match your role, place and the days since the last search, hiring posts on X, and a direct search of company job boards. The skill names no seller; the router picks, prices and applies your spend limits. Code checks each result's shape, removes duplicates, and sends a posting to the apply queue only through the employer's own posting (an apply link on a company job board, or the employer's careers page). Every other posting comes back as an "apply yourself" item with its link. Without Tenjin, the watched boards still run and the report says the search did not run. Contacts also run only when you ask.
+- **Daily search.** At your search frequency, code reads watched boards, Hacker News "Who is hiring?" (through its Algolia search API and Firebase job stories) and public Y Combinator job pages (logged out, for discovery only). With Tenjin, the watcher also runs job-posting search, X hiring posts and a direct search of company job boards in code through the router at the router's price, with no Claude usage for the searches and your own spend limits applied; the skill names no seller, and a held search is named in the report. Without Tenjin, one Haiku step runs free web searches of the three board hosts and X. Each follow-up round tries a new role word (a synonym or a level) and stops when it finds nothing new. Code checks each result's shape, removes duplicates, keeps older postings only when their board confirms they are open, and sends a posting to the apply queue only through the employer's own posting (an apply link on a company job board, or the employer's careers page); every other posting comes back as an "apply yourself" item with its link. A hiring post with no job posting becomes a reach-out lead ("People hiring") with an example intro you send yourself. Contacts run only when you ask.
 - **Review.** A Haiku subagent checks that the work matches the title, adds warnings, and scores fit.
 - **Prepare and write.** Answers come from your profile and saved answers. Free-text answers and messages are written by an Opus subagent from your resume, the job text and your own writing rules. The `writing` skill keeps those rules in one Markdown file you can edit; it starts empty.
 - **Jobs found on platforms.** A job found on LinkedIn, Indeed, Glassdoor, ZipRecruiter or X is never automated, neither read, fetched nor filled, because their terms ban automated use; the Y Combinator job sites are never opened in the skill's browser or filled either, but code reads their public job pages, logged out, for discovery only (the role page, the company page and the job page, one request at a time, slowly, on paths that YC's robots.txt allows), and each job is then found on the employer's own board like any other; "Just open the pages" and the job-site apply option open the job's page in your own Chrome for you, and the skill does nothing on that site. The skill finds the employer's own posting instead: from an apply link, from a board that code confirms is the employer's and matches the job, or from the employer's careers page. If it cannot, the report says why and gives you the link. Hacker News "Who is hiring?" posts and YC job stories come in through Hacker News's official API only. On any other hiring system the skill reads the live form and applies the same way; it never makes an account, and a form that needs a sign-in stops.

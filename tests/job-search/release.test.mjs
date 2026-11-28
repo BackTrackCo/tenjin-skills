@@ -69,12 +69,12 @@ test('a new major version waits even with the same gates', async () => {
   assert.equal(r.status, 'update_waiting');
 });
 
-test('a release with the same gates installs at its tag, pinned installer, and reports a line', async () => {
+test('a release with the same gates installs at its tag with #tag (never @tag), pinned installer, and reports a line', async () => {
   const dir = copySkill();
   const calls = [];
   const runner = async (c, a) => {
     calls.push([c, ...a]);
-    if (a.includes('BackTrackCo/tenjin-skills@job-search-v0.1.1')) setManifest(dir, { version: '0.1.1', gatesHash: rel.gatesHash(dir) });
+    if (a.includes('BackTrackCo/tenjin-skills#job-search-v0.1.1')) setManifest(dir, { version: '0.1.1', gatesHash: rel.gatesHash(dir) });
     return { code: 0 };
   };
   const r = await rel.checkRelease({ fetchImpl: gh([R('job-search-v0.1.1', 3)], { version: '0.1.1', gatesHash: rel.gatesHash(dir), change: 'Fix a sweep bug.', writing: 'writing-v0.1.0' }), runner, now: NOW, skillDir: dir });
@@ -82,7 +82,8 @@ test('a release with the same gates installs at its tag, pinned installer, and r
   assert.equal(r.line, 'Updated Job Search to v0.1.1: Fix a sweep bug.');
   assert.deepEqual(calls[0].slice(0, 4), ['npx', '-y', 'skills@1.9.0', 'add']);
   assert.ok(calls[0].includes('-g') && calls[0].includes('claude-code'));
-  assert.ok(calls.some((c) => c.includes('BackTrackCo/tenjin-skills@writing-v0.1.0')));
+  assert.ok(calls.some((c) => c.includes('BackTrackCo/tenjin-skills#writing-v0.1.0')));
+  assert.ok(calls.every((c) => !c.some((x) => /tenjin-skills@/.test(x))));
 });
 
 test('a failed install, or files that do not match the manifest, roll back to the previous tag', async () => {
@@ -91,13 +92,13 @@ test('a failed install, or files that do not match the manifest, roll back to th
     const calls = [];
     const runner = async (c, a) => {
       calls.push(a.find((x) => x.startsWith('BackTrackCo/')));
-      if (mode === 'exit' && a.includes('BackTrackCo/tenjin-skills@job-search-v0.1.1')) return { code: 1 };
-      if (mode === 'mismatch' && a.includes('BackTrackCo/tenjin-skills@job-search-v0.1.1')) setManifest(dir, { version: '0.1.1', gatesHash: 'nope' });
+      if (mode === 'exit' && a.includes('BackTrackCo/tenjin-skills#job-search-v0.1.1')) return { code: 1 };
+      if (mode === 'mismatch' && a.includes('BackTrackCo/tenjin-skills#job-search-v0.1.1')) setManifest(dir, { version: '0.1.1', gatesHash: 'nope' });
       return { code: 0 };
     };
     const r = await rel.checkRelease({ fetchImpl: gh([R('job-search-v0.1.1', 3)], { version: '0.1.1', gatesHash: rel.gatesHash(dir), change: 'x' }), runner, now: NOW, skillDir: dir });
     assert.equal(r.status, 'update_failed', mode);
-    assert.ok(calls.slice(-2).includes('BackTrackCo/tenjin-skills@job-search-v0.1.0'), mode);
+    assert.ok(calls.slice(-2).includes('BackTrackCo/tenjin-skills#job-search-v0.1.0'), mode);
   }
 });
 
@@ -110,7 +111,7 @@ test('an update leaves rules.json, profile.json and the writing rules byte for b
   const files = [rulesFile, paths.writingRulesPath(), path.join(paths.stateDir(), 'profile.json')];
   const before = files.map((f) => fs.readFileSync(f));
   const dir = copySkill();
-  const runner = async (c, a) => { if (a.includes('BackTrackCo/tenjin-skills@job-search-v0.1.1')) setManifest(dir, { version: '0.1.1', gatesHash: rel.gatesHash(dir) }); return { code: 0 }; };
+  const runner = async (c, a) => { if (a.includes('BackTrackCo/tenjin-skills#job-search-v0.1.1')) setManifest(dir, { version: '0.1.1', gatesHash: rel.gatesHash(dir) }); return { code: 0 }; };
   await rel.checkRelease({ fetchImpl: gh([R('job-search-v0.1.1', 3)], { version: '0.1.1', gatesHash: rel.gatesHash(dir), change: 'x', writing: 'writing-v0.1.1' }), runner, now: NOW, skillDir: dir });
   assert.deepEqual(files.map((f) => fs.readFileSync(f)), before);
 });
