@@ -46,6 +46,13 @@ import { DEFAULT_BUDGET_MS, runHn } from './lib/hn.mjs';
 import { DEFAULT_YC_BUDGET_MS, runYc } from './lib/yc.mjs';
 import { fillRulesKey, isFillOnly, markFillReady, markSubmitted } from './lib/fillonly.mjs';
 
+function loopStatus(st, missing = [], now = Date.now()) {
+  const ws = watcherStatus(st, now);
+  if (ws.running) return { running: true, state: 'running', pid: ws.pid, detail: 'Loop is running in the background (J watch).' };
+  if (missing.length) return { running: false, state: 'setup_incomplete', why: ws.why, detail: `Loop is not running yet (setup still needs ${missing.join(', ')}).` };
+  return { running: false, state: 'stopped', why: ws.why, detail: 'Loop is not running yet (no background watcher active; start J watch in Claude Code, or run manual rounds / set up a recurring schedule).' };
+}
+
 // The sheets waiting for the person's yes, best fit first: the report lists them one line each.
 export function readySheets(st) {
   return Object.values(st.jobs).filter((j) => ((j.status === 'apply_ready' && j.sheet) || (j.status === 'prepared' && j.awaitingApproval && j.sheet)) && j.employerPosting && !st.approvals[j.key]).sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1)).map((j) => ({ key: j.key, company: j.company, title: j.title, fitLine: j.fitLine || '', missingFacts: j.awaitingApproval ? j.missingFacts || [] : [], newAnswers: (j.sheet.fields || []).filter((f) => f.tag === 'new_writing').map((f) => ({ label: f.label, value: f.value })) }));
@@ -991,12 +998,13 @@ const commands = {
       if (!profile.resumeText && !profile.resumePath) missing.push('resume');
       if (!profile.applyMode || !profile.frequency || !(st.start && st.start.positionsAt) || !(profile.apply && profile.apply.where)) missing.push('start_questions');
       const tenjin = (st.tenjin || {}).status || 'unknown';
+      const loop = loopStatus(st, missing);
       const afterStart = tenjin === 'ready'
-        ? 'run the routed search (J route, J hn, J yc) and the report (Tenjin is funded and ready; do not offer a free-only search first)'
+        ? 'run the routed search (J route, J hn, J yc) and the report (Tenjin is funded and ready; do not offer a free-only search first), start J watch last (or state manual / schedule loop status in Codex), and tell the person whether the loop is running'
         : ['missing', 'outdated', 'unfunded'].includes(tenjin)
-          ? 'before any free search, ask to set up, update or fund Tenjin via J search plan (ask: tenjin) and record J tenjin ask-done yes|no, then run the search and the report'
-          : 'run J tenjin, then run the routed search if ready (or ask to set up/fund Tenjin before free search) and the report';
-      return out({ missing, tenjin, next: missing[0] === 'resume' ? 'Job Search is set up and watching, and this is the first run, so I need one thing to start: can you share your resume? Drop the file here, paste a link, or paste the text. I\'ll take your role, location and remote preference from it, then ask four quick choices and one question about referrals, and run the first search.' : missing.length ? 'J ask start, then J start record' : afterStart, start: st.start || null });
+          ? 'before any free search, ask to set up, update or fund Tenjin via J search plan (ask: tenjin) and record J tenjin ask-done yes|no, then run the search and the report, and tell the person whether the loop is running'
+          : 'run J tenjin, then run the routed search if ready (or ask to set up/fund Tenjin before free search) and the report, and tell the person whether the loop is running';
+      return out({ missing, tenjin, loop, next: missing[0] === 'resume' ? 'Job Search is set up and watching, and this is the first run, so I need one thing to start: can you share your resume? Drop the file here, paste a link, or paste the text. I\'ll take your role, location and remote preference from it, then ask four quick choices and one question about referrals, and run the first search.' : missing.length ? 'Do not stop mid-setup: run J ask start, then J start record, and tell the person the loop is not running yet until setup finishes.' : afterStart, start: st.start || null });
     }
     if (sub !== 'record') return out({ error: 'start status | record --mode m --frequency f --catch-up n --per-day n|none (or --positions n|none|skip, or --no-limit) --where employer|site|ask [--words text]' }, 2);
     if (flags.where !== undefined && !['employer', 'site', 'ask'].includes(flags.where)) return out({ error: 'where must be employer, site or ask' }, 2);
@@ -1027,7 +1035,12 @@ const commands = {
     updateState((s) => {
       s.start = { ...(s.start || {}), modeAt: now, frequencyAt: now, positionsAt: now, whereAt: now, ...(askReferral ? { referralAskedAt: now } : {}) };
     });
-    return out({ recorded: { mode, frequency, positions, where }, ...(askReferral ? { referral: qs.referralQuestion().plain } : {}), reminder: qs.rcReminder({ rc: st.rc || 'unknown', pushSent: st.pushSent === true, settings: pushSettings() }), note: ['attended', 'fill_only', 'open_only'].includes(mode) ? 'no consent is needed for this mode' : 'an auto mode also needs the unattended rules shown back, a clear yes, then consent record (and consent record writing for Fully auto apply)' });
+    const stAfter = loadState();
+    const loop = loopStatus(stAfter, []);
+    const next = ['attended', 'fill_only', 'open_only'].includes(mode)
+      ? 'Do not stop after recording start choices: send any referral message, run the first search and J report, start J watch last (or state manual / schedule loop status in Codex), and end with an explicit Loop status line.'
+      : 'Do not stop after recording start choices: show the unattended rules back for consent, send any referral message, run the first search and J report, start J watch last (or state manual / schedule loop status in Codex), and end with an explicit Loop status line.';
+    return out({ recorded: { mode, frequency, positions, where }, ...(askReferral ? { referral: qs.referralQuestion().plain } : {}), reminder: qs.rcReminder({ rc: st.rc || 'unknown', pushSent: st.pushSent === true, settings: pushSettings() }), loop, next, note: ['attended', 'fill_only', 'open_only'].includes(mode) ? 'no consent is needed for this mode' : 'an auto mode also needs the unattended rules shown back, a clear yes, then consent record (and consent record writing for Fully auto apply)' });
   },
   // The payload for Claude Code's question tool, so the questions are asked as choices, never as a list in prose.
   async ask([kind], flags) {

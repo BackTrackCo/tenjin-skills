@@ -3,6 +3,7 @@ import { dmLink, emailConsentCurrent, handleIn, mailto, due as pendingEmails, em
 import { graph } from './graph.mjs';
 import { confirmedEvents, eventKind } from './events.mjs';
 import { REFERRAL_LIST_LINE, referralListWaiting, referralNote } from './referral.mjs';
+import { watcherStatus } from './lease.mjs';
 
 export const REASONS = {
   no_apply_link: 'no apply link in the posting',
@@ -55,6 +56,12 @@ const yesNeeded = (state, profile, j) => !state.approvals[j.key] && !j.fillOnly 
 const mailLine = (state, profile, overlay, n) => (emailConsentCurrent(state, profile || {}, overlay)
   ? `${n} intro email draft${n > 1 ? 's' : ''} will be sent to the addresses the posters published (you gave consent for that).`
   : `${n} intro email draft${n > 1 ? 's' : ''} wait${n > 1 ? '' : 's'} for your yes (addresses the posters published; none goes without it).`);
+const loopLine = (state, profile, now) => {
+  const ws = watcherStatus(state, now);
+  if (ws.running) return 'Loop: running in the background (J watch).';
+  if (!(state.start && state.start.modeAt) && !(profile && profile.applyMode)) return 'Loop: not running yet (setup is not complete; run J ask start and J start record).';
+  return 'Loop: not running (no background watcher active; start J watch in Claude Code, or run manual rounds / set up a schedule).';
+};
 
 function renderShort(state, overlay, { since, now, profile }) {
   const jobs = Object.values(state.jobs);
@@ -112,6 +119,7 @@ function renderShort(state, overlay, { since, now, profile }) {
   for (const u of state.uploadLines || []) L.push('', `Upload: ${u}.`);
   const consent = (state.consentLog || []).filter((c) => !c.acked);
   if (consent.length) { L.push('', '## Consent changes (check that each one was yours)'); for (const c of consent) L.push(`- ${c.at.slice(0, 16).replace('T', ' ')}: ${c.what}.`); }
+  L.push('', loopLine(state, profile, now));
   if (planned.length) L.push('', CONTACTS_LINE);
   L.push('', ALL_LINE);
   return L.join('\n');
@@ -293,6 +301,7 @@ export function renderReport(state, overlay, { since = null, now = Date.now(), p
       }
     }
   }
+  L.push('', loopLine(state, profile || {}, now));
   if (plannedJobs(state, profile || {}, overlay, now).length) L.push('', CONTACTS_LINE);
   return L.join('\n');
 }

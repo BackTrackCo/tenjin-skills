@@ -52,12 +52,27 @@ test('J search plan prints the ask in place of the free queries until the ask is
 
   // J start status steers to routed search when Tenjin is ready, and ask-first when missing/unfunded
   J('resume', 'set', '--text', 'Software Engineer in Berlin');
-  J('start', 'record', '--mode', 'attended', '--frequency', 'daily', '--no-limit', '--where', 'employer');
+  const stMid = J('start', 'status').json;
+  assert.equal(stMid.loop.running, false);
+  assert.equal(stMid.loop.state, 'setup_incomplete');
+  assert.match(stMid.next, /Do not stop mid-setup/);
+
+  const rec = J('start', 'record', '--mode', 'attended', '--frequency', 'daily', '--no-limit', '--where', 'employer').json;
+  assert.equal(rec.loop.running, false);
+  assert.equal(rec.loop.state, 'stopped');
+  assert.match(rec.next, /Do not stop after recording start choices/);
+  assert.match(rec.next, /Loop status/);
+
   const stReady = J('start', 'status').json;
   assert.equal(stReady.tenjin, 'ready');
+  assert.equal(stReady.loop.running, false);
+  assert.equal(stReady.loop.state, 'stopped');
   assert.match(stReady.next, /routed search \(J route/);
   assert.match(stReady.next, /do not offer a free-only search first/);
-  store.updateState((s) => { s.tenjin.status = 'unfunded'; });
+  assert.match(report.renderReport(store.loadState(), empty, { now: NOW, profile: { applyMode: 'attended' }, short: true }), /Loop: not running \(no background watcher active/);
+  store.updateState((s) => { s.lease = { holder: 't', pid: process.pid, heartbeat: new Date(NOW).toISOString(), alive: new Date(NOW).toISOString() }; });
+  assert.match(report.renderReport(store.loadState(), empty, { now: NOW, profile: { applyMode: 'attended' }, short: true }), /Loop: running in the background \(J watch\)\./);
+  store.updateState((s) => { s.lease = null; s.tenjin.status = 'unfunded'; });
   const stUnfunded = J('start', 'status').json;
   assert.equal(stUnfunded.tenjin, 'unfunded');
   assert.match(stUnfunded.next, /ask to set up, update or fund Tenjin/);
