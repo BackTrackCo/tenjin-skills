@@ -151,3 +151,35 @@ test('router.mjs is the only file that spawns tenjin mcp', () => {
   assert.deepEqual(spawners.map((f) => path.basename(f)), ['router.mjs']);
   assert.equal(home.length > 0, true);
 });
+
+test('concurrent runRound calls serialize on router.lock, reclaim stale dead-PID locks, and retry step-1 unpaid contention', async () => {
+  const events = [];
+  const f1 = fake({ answers: [J.spec, J.fulfilled] });
+  const f2 = fake({ answers: [J.spec, J.fulfilled] });
+  const c1 = client(f1);
+  const c2 = client(f2);
+  const origStart1 = c1.start.bind(c1);
+  const origClose1 = c1.close.bind(c1);
+  const origStart2 = c2.start.bind(c2);
+  const origClose2 = c2.close.bind(c2);
+  c1.start = async () => { events.push('start1'); await origStart1(); await new Promise((r) => setTimeout(r, 80)); };
+  c1.close = async () => { await origClose1(); events.push('close1'); };
+  c2.start = async () => { events.push('start2'); await origStart2(); };
+  c2.close = async () => { await origClose2(); events.push('close2'); };
+  const [a, b] = await Promise.all([
+    router.runRound([need], { client: c1 }),
+    (async () => { await new Promise((r) => setTimeout(r, 15)); return router.runRound([need], { client: c2 }); })(),
+  ]);
+  assert.equal(a[0].ok, true);
+  assert.equal(b[0].ok, true);
+  assert.deepEqual(events, ['start1', 'close1', 'start2', 'close2'], 'second round waits until first closes its tenjin mcp');
+
+  const lockFile = path.join(process.env.TENJIN_SKILLS_DIR, 'router.lock');
+  fs.writeFileSync(lockFile, JSON.stringify({ pid: 99999999, token: 'dead', at: Date.now() }));
+  const busy = { status: 'native', reason: 'Tenjin could not pay the routing fee in time for this call (another routing payment was in progress); the next call usually routes. Nothing was routed and no provider was paid.' };
+  const f3 = fake({ answers: [busy, J.spec, J.fulfilled] });
+  const [r3] = await router.runRound([need], { client: client(f3, { contentionRetry: 5 }) });
+  assert.equal(r3.ok, true);
+  assert.equal(f3.log().filter((l) => l.call).length, 3);
+  assert.equal(fs.existsSync(lockFile), false);
+});
