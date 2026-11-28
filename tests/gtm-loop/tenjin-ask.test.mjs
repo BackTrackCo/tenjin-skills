@@ -120,3 +120,51 @@ test('saying yes to Tenjin holds free search as tenjin_setup for this period unt
   store.updateState((x) => { x.tenjin.status = 'ready'; });
   assert.equal(work.setupActive(store.loadState(), { offers: OFFERS }, Date.now()), false);
 });
+
+test('mid-setup commands report remaining steps and explicit loop status; report shows whether the loop is running', () => {
+  fs.rmSync(path.join(process.env.TENJIN_SKILLS_DIR, 'gtm-loop', 'profile.json'), { force: true });
+  store.updateState((s) => { Object.assign(s, store.emptyState(), { tenjin: { status: 'ready' } }); });
+  const off = G('offers', 'set', '--json', JSON.stringify([{
+    id: 'main',
+    name: 'LoopA',
+    what: 'finds warm leads',
+    who: 'founders',
+    phrases: ['how did you get your first users'],
+    subreddits: ['SaaS'],
+    buyerAsked: true,
+  }])).json;
+  assert.equal(off.setupDone, false);
+  assert.equal(off.loop.running, false);
+  assert.equal(off.loop.state, 'setup_incomplete');
+  assert.match(off.next, /Do not stop here/);
+
+  const qset = G('queries', 'set', '--offer', 'main', '--json', JSON.stringify({
+    x: '("how did you" OR "looking for") first users lang:en -filter:retweets',
+  })).json;
+  assert.equal(qset.setupDone, false);
+  assert.ok(qset.missing.some((m) => /G ask start/.test(m)));
+  assert.equal(qset.loop.running, false);
+  assert.equal(qset.loop.state, 'setup_incomplete');
+  assert.match(qset.next, /Do not stop here/);
+  assert.match(qset.next, /G ask start/);
+
+  const rec = G('start', 'record', '--email-mode', 'drafts', '--frequency', 'daily', '--sources', 'all').json;
+  assert.equal(rec.setupDone, true);
+  assert.deepEqual(rec.missing, []);
+  assert.equal(rec.loop.running, false);
+  assert.equal(rec.loop.state, 'stopped');
+  assert.match(rec.next, /G search route/);
+  assert.match(rec.next, /whether the loop is running/);
+
+  const repStopped = G('report').json;
+  assert.equal(repStopped.loop.running, false);
+  assert.match(repStopped.text, /Loop: not running \(no background watcher active/);
+
+  store.updateState((s) => {
+    s.lease = { holder: 'test', pid: process.pid, heartbeat: new Date().toISOString(), alive: new Date().toISOString() };
+  });
+  const repRunning = G('report').json;
+  assert.equal(repRunning.loop.running, true);
+  assert.equal(repRunning.loop.state, 'running');
+  assert.match(repRunning.text, /Loop: running in the background \(G watch\)\./);
+});

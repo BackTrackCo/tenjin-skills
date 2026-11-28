@@ -3,6 +3,7 @@ import { draftsDir, parked, approvedReplies } from './drafts.mjs';
 import { querySetOf, outcomeOf, labelOf } from './queryset.mjs';
 import { REFUSED_BY_CODE as REFUSED } from './codeid.mjs';
 import { fmt, hintLines, outdatedLine, pricesCheckedAt } from './prices.mjs';
+import { watcherStatus } from './lease.mjs';
 
 // The short report: what is new, what waits for the person, what went out, what came back, what it cost. Built from state, never
 // from model text.
@@ -72,6 +73,12 @@ export function report(state, profile = {}, now = Date.now()) {
   }
   for (const h of liveHeld(state.held, profile)) lines.push(`${REFUSED.includes(h.status) ? `Held: ${h.detail || h.reason}. The skill's own request was refused: that is a defect in the skill to report, not something you fill in.` : `Held: ${h.detail || h.reason}.`}${h.reason === 'need_held' && h.key && !h.key.startsWith('need:query:') && h.status !== 'no_subreddits' && !['input_break', 'output_break', 'repair_pending'].includes(h.status) ? ` Retry only this search: G search route --need "${h.key}".` : ''}`);
   for (const l of state.updateLines || []) lines.push(l);
+  const ws = watcherStatus(state, now);
+  lines.push(ws.running
+    ? 'Loop: running in the background (G watch).'
+    : !state.start
+      ? 'Loop: not running yet (setup is not complete; run G ask start and G start record).'
+      : 'Loop: not running (no background watcher active; start G watch in Claude Code, or run manual rounds / set up a schedule).');
   const t = state.tenjin || {};
   if (t.status && t.status !== 'ready') lines.push(t.status === 'outdated' ? outdatedLine(t.version) : hintLines(profile).search);
   return { lines, text: lines.join('\n') };

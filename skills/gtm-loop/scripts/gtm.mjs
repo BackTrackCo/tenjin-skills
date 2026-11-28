@@ -9,6 +9,7 @@ import { readProfile, setProfile, validateProfile } from './lib/profile.mjs';
 import { hintState } from './lib/tenjin.mjs';
 import { isBatchDenied, batchMode, cleanupStale, isActive, touchBatch } from './lib/batch.mjs';
 import { runWatcher } from './lib/watcher.mjs';
+import { watcherStatus } from './lib/lease.mjs';
 import { workList, leave, askFirst } from './lib/work.mjs';
 import { frequencyOf, periodStart } from './lib/schedule.mjs';
 import { logRun } from './lib/runlog.mjs';
@@ -144,8 +145,11 @@ register('work', ({ flags }) => {
   updateState((s) => writeDrafts(s, readProfile()));
   const synced = updateState((s) => syncDrafts(s, readProfile()));
   const wl = workList({ commit: Boolean(flags.commit) });
+  const st = loadState();
+  const profile = readProfile();
+  const ss = startStatus(profile, st);
   updateState((s) => logRun(s, 'work', wl.items.length));
-  return { items: wl.items, handed: wl.handed.map((i) => i.key), notify: wl.notify, ...(staleHolds ? { note: staleHoldsLine(staleHolds) } : {}), ...(synced.synced || synced.notes ? { drafts_synced: synced } : {}) };
+  return { items: wl.items, handed: wl.handed.map((i) => i.key), notify: wl.notify, loop: ss.loop, ...(staleHolds ? { note: staleHoldsLine(staleHolds) } : {}), ...(synced.synced || synced.notes ? { drafts_synced: synced } : {}) };
 });
 register('leave', ({ args, flags }) => leave(args[0], flags.reason));
 
@@ -166,8 +170,38 @@ register('offers', ({ sub, flags }) => {
   const profile = readProfile();
   if (sub !== 'set') return { legacy: isLegacy(profile), offers: offersOf(profile) };
   const list = flags.json ? JSON.parse(flags.json) : flags.file ? readJsonFile(flags.file) : fail('offers set needs --json or --file: a list of offers');
-  return { profile: setProfile({ offers: list, offer: null, phrases: null, buyer: null, subreddits: null }) };
+  const nextProfile = setProfile({ offers: list, offer: null, phrases: null, buyer: null, subreddits: null });
+  return { profile: nextProfile, ...setupFollowup(nextProfile, loadState()) };
 });
+
+export function loopStatus(state, { done = true, missingCount = 0 } = {}, now = Date.now()) {
+  const ws = watcherStatus(state, now);
+  if (ws.running) {
+    return { running: true, state: 'running', pid: ws.pid, detail: 'Loop is running in the background (G watch).' };
+  }
+  if (!done) {
+    return {
+      running: false,
+      state: 'setup_incomplete',
+      why: ws.why,
+      detail: `Loop is not running yet (setup still needs ${missingCount} item${missingCount === 1 ? '' : 's'}).`,
+    };
+  }
+  return {
+    running: false,
+    state: 'stopped',
+    why: ws.why,
+    detail: 'Loop is not running yet (no background watcher active; start G watch in Claude Code, or run manual rounds / set up a recurring schedule).',
+  };
+}
+
+function setupFollowup(profile, state) {
+  const st = startStatus(profile, state);
+  const next = st.done
+    ? st.next || 'Setup is complete. Run the first search round, G report, and start G watch last (or state plainly that the loop is ready for manual rounds with no recurring schedule running yet).'
+    : `Do not stop here: setup is not complete yet (${st.missing.length} remaining). Continue immediately with the next missing step (${st.missing[0]}), and tell the person the loop is not running yet until setup finishes.`;
+  return { setupDone: st.done, missing: st.missing, loop: st.loop, next };
+}
 
 // What still needs setup. A profile from an older run still loads; the new fields are proposed once.
 export function startStatus(profile, state) {
@@ -187,21 +221,23 @@ export function startStatus(profile, state) {
     if (o.who && !o.buyer && !o.buyerAsked) missing.push(`a buyer for "${o.name || o.id}": propose a role, company type and place from "${o.who}" and ask once whether, alongside finding public posts asking for "${o.name || o.id}", they also want outbound company and role lookup for matching buyers who have not posted (${hintLines(profile).fit.replace(/^With Tenjin, I can also find people who fit your buyer: /, '').replace(/\.$/, '')}), or start with public asks only (save as buyer, or buyerAsked: true if declined)`);
   }
   if (!state.start) missing.push('the start question (G ask start, then G start record)');
+  const done = missing.length === 0;
+  const loop = loopStatus(state, { done, missingCount: missing.length });
   const tenjinStatus = (state.tenjin && state.tenjin.status) || 'unknown';
   const next = needsOffer
     ? 'Use the product or source the person already gave. If you need a source, briefly explain that you find leads and draft a first message for review. Offer the current workspace, a repo path or link, or a product link. Then use the chosen source to propose the offer and buyer signals. See references/setup.md.'
-    : missing.length
+    : !done
       ? tenjinStatus === 'ready'
-        ? 'Continue with the outstanding offer and search setup in references/setup.md. Tenjin is funded and ready: run live G query test and routed searches (G hn, G search route, G fit route); do not offer a free-only search round first.'
+        ? 'Continue with the outstanding offer and search setup in references/setup.md (do not stop mid-setup before G ask start and G start record). Tenjin is funded and ready: run live G query test and routed searches (G hn, G search route, G fit route); do not offer a free-only search round first. State plainly that the loop is not running yet until setup finishes.'
         : ['missing', 'outdated', 'unfunded'].includes(tenjinStatus)
-          ? 'Continue with setup in references/setup.md. Tenjin is not ready: before any query test, routed search or free fallback, ask the person to set up, update or fund Tenjin via G ask tenjin (naming its benefits and estimated costs) and record G tenjin ask-done yes|no.'
-          : 'Continue with the outstanding offer and search setup in references/setup.md.'
+          ? 'Continue with setup in references/setup.md (do not stop mid-setup before G ask start and G start record). Tenjin is not ready: before any query test, routed search or free fallback, ask the person to set up, update or fund Tenjin via G ask tenjin (naming its benefits and estimated costs) and record G tenjin ask-done yes|no. State plainly that the loop is not running yet until setup finishes.'
+          : 'Continue with the outstanding offer and search setup in references/setup.md (do not stop mid-setup before G ask start and G start record), and state plainly that the loop is not running yet until setup finishes.'
       : tenjinStatus === 'ready'
-        ? 'Setup is complete and Tenjin is funded and ready. Run the routed round (G hn, G search route, G fit route if buyer is set), then G review next and G report; do not offer a free-only search round first.'
+        ? 'Setup is complete and Tenjin is funded and ready. Run the routed round (G hn, G search route, G fit route if buyer is set), then G review next and G report; do not offer a free-only search round first. Start G watch last (or state manual / schedule loop status in Codex) and tell the person whether the loop is running.'
         : ['missing', 'outdated', 'unfunded'].includes(tenjinStatus)
-          ? 'Setup is complete and Tenjin is not ready. Before falling back to free search, ask the person to set up, update or fund Tenjin via G ask tenjin (naming its benefits and estimated costs) and record G tenjin ask-done yes|no.'
+          ? 'Setup is complete and Tenjin is not ready. Before falling back to free search, ask the person to set up, update or fund Tenjin via G ask tenjin (naming its benefits and estimated costs) and record G tenjin ask-done yes|no. Tell the person whether the loop is running.'
           : null;
-  return { done: missing.length === 0, missing, legacy: isLegacy(profile), tenjin: tenjinStatus, next };
+  return { done, missing, legacy: isLegacy(profile), tenjin: tenjinStatus, loop, next };
 }
 register('start', ({ sub, flags }) => {
   const profile = readProfile();
@@ -214,13 +250,18 @@ register('start', ({ sub, flags }) => {
       if (!(v === 'all' || /^[1-9]\d*$/.test(v))) return fail('searches-per-round is all or a whole number');
       for (const r of loadOverlay().rules.filter((x) => x.effect === 'searches_per_round')) removeRule(r.id);
       if (v !== 'all') addRule({ effect: 'searches_per_round', value: Number(v), words: `chosen at the start: at most ${v} searches a round` });
-      if (!Object.keys(patch).length) { updateState((s) => { s.start = { ...(s.start || {}), at: (s.start && s.start.at) || new Date().toISOString(), searchesPerRound: v }; }); return { recorded: loadState().start }; }
+      if (!Object.keys(patch).length) {
+        updateState((s) => { s.start = { ...(s.start || {}), at: (s.start && s.start.at) || new Date().toISOString(), searchesPerRound: v }; });
+        const st = loadState();
+        return { recorded: st.start, ...setupFollowup(readProfile(), st) };
+      }
     }
     if (flags.sources) patch.sources = flags.sources === 'all' ? ['x', 'reddit', 'linkedin', 'hn', 'web'] : flags.sources === 'social' ? ['x', 'reddit', 'linkedin'] : flags.sources === 'free' ? ['hn', 'web'] : fail('sources is all, social or free');
     if (!Object.keys(patch).length) return fail('start record needs --email-mode, --frequency or --sources');
     const next = setProfile(patch);
     updateState((s) => { s.start = { at: new Date().toISOString(), emailMode: next.emailMode || null, frequency: next.frequency || null, sources: next.sources || null }; });
-    return { recorded: loadState().start };
+    const st = loadState();
+    return { recorded: st.start, ...setupFollowup(next, st) };
   }
   const stale = updateState((s) => dropStaleHolds(s));
   updateState((s) => writeDrafts(s, profile));
@@ -490,12 +531,13 @@ register('queries', ({ sub, args, flags }) => {
     const bad = checkQueries(given, offer);
     if (bad.length) return fail(`refused, rewrite: ${bad.join('; ')}`);
     if (!Array.isArray(profile.offers)) return fail('save the offers list first (G offers set): queries are kept per offer');
-    return { queries: setProfile({ offers: profile.offers.map((o) => (o.id === offerId ? { ...o, queries: { ...(o.queries || {}), ...given } } : o)) }).offers.find((o) => o.id === offerId).queries };
+    const nextProfile = setProfile({ offers: profile.offers.map((o) => (o.id === offerId ? { ...o, queries: { ...(o.queries || {}), ...given } } : o)) });
+    return { queries: nextProfile.offers.find((o) => o.id === offerId).queries, ...setupFollowup(nextProfile, loadState()) };
   }
   if (sub === 'decline') {
     if (!Array.isArray(profile.offers) || !profile.offers.some((o) => o.id === offerId)) return fail('queries decline --offer <id>');
-    setProfile({ offers: profile.offers.map((o) => (o.id === offerId ? { ...o, queriesAsked: true } : o)) });
-    return { declined: offerId, note: 'the queries code builds are used for this offer' };
+    const nextProfile = setProfile({ offers: profile.offers.map((o) => (o.id === offerId ? { ...o, queriesAsked: true } : o)) });
+    return { declined: offerId, note: 'the queries code builds are used for this offer', ...setupFollowup(nextProfile, loadState()) };
   }
   if (sub === 'add') {
     const author = flags.author === 'person' ? 'person' : 'model';
@@ -565,8 +607,11 @@ register('review', ({ sub, flags }) => {
   return fail('review next, review ingest --file <file>');
 });
 register('report', ({ flags }) => {
-  const r = report(loadState(), readProfile());
-  return flags.all ? { ...r, held: loadState().held } : r;
+  const st = loadState();
+  const profile = readProfile();
+  const r = report(st, profile);
+  const loop = startStatus(profile, st).loop;
+  return flags.all ? { ...r, loop, held: st.held } : { ...r, loop };
 });
 // A need whose service changed its input or its answer: the request, then the agent's mapping (data), checked against the saved answer.
 register('repair', ({ sub, args, flags }) => {
