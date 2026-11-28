@@ -3,7 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { findTenjin } from './tenjin.mjs';
 import { ensureDir, stateDir } from './paths.mjs';
-import { pickSupplier, pickTool } from './suppliers/index.mjs';
+import { pickSupplier, pickTool, canonSupplier } from './suppliers/index.mjs';
+import { kindOf, buildInput, toCanon, genericCanon, specInput, fitsSpec, fillFromSpec, skeleton } from './reader.mjs';
+import { storedMapping, pendingFor, recordBreak, takeReplay, loopVars } from './repairs.mjs';
 
 // The one file that spawns `tenjin mcp`: a small JSON-RPC client over stdio, no dependency. Each need goes to the
 // router's own `request` tool in two steps: the need as text (the answer is a spec that names a supplier), then the
@@ -133,55 +135,129 @@ export class RouterError extends Error {
   }
 }
 
+// What `{id, input}` answers when the service refused the input before any payment.
+const INPUT_REFUSAL = /\b(invalid|missing|unknown|rejected|unrecognized)\b[^.]{0,40}\b(input|field|parameter)s?\b|\b(input|field|parameter)s?\b[^.]{0,40}\b(invalid|missing|required|unknown|rejected|not allowed)\b/i;
+// The service's host: today's spec text says "Request: GET https://<host>/...".
+const sellerOf = (spec) => ((/Request:\s*[A-Z]+\s+https?:\/\/([^/\s{]+)/.exec(String(spec.__text || '')) || [])[1] || 'unknown').toLowerCase();
+
+// Reads one answer. The shipped reader of the service comes first (it knows today's services); a repaired mapping, then the generic reader,
+// build the answer in the need's canonical shape for the need's first reader, which is the check. Returns {ok, adapted, via} or {ok:false, reason}.
+function readAnswer(need, sup, stored, result) {
+  const k = kindOf(need.kind);
+  const canon = k ? canonSupplier(need.kind, k.canonHost) : null;
+  const viaCanon = (output) => {
+    const c = toCanon(need.kind, output, result);
+    if (!c.ok) return { ok: false, notFound: c.notFound, reason: c.reason };
+    try { return { ok: true, adapted: canon.adapter(c.canon, need.fields) }; } catch (e) { return { ok: false, reason: e.message }; }
+  };
+  let why = null;
+  if (stored && stored.output && canon) { const r = viaCanon(stored.output); if (r.ok) return { ...r, via: 'repaired' }; why = r.reason; if (r.notFound) return r; }
+  if (sup && !(stored && stored.output)) {
+    try { return { ok: true, adapted: sup.adapter(result, need.fields), via: 'reader' }; } catch (e) { why = e.message; }
+  }
+  const g = canon && k ? genericCanon(need.kind, result) : null;
+  if (g) { try { return { ok: true, adapted: canon.adapter(g.canon, need.fields), via: 'generic' }; } catch (e) { why = why || e.message; } }
+  return { ok: false, reason: why || 'no list of items or object that holds what the loop needs was found' };
+}
+
 // Runs one need. Returns {ok, status, ingest, cost, reason}. Never sends the same request twice; never retries.
+// A service the loop has a reader for works as before. A need whose input does not fit the service's required fields (found before anything
+// is paid), or whose answer fails the loop's check, is held with ONE repair request, and the paid answer is saved: see repairs.mjs.
 export async function runNeed(client, need, { save = saveResult } = {}) {
-  // A need that names a catalog tool by id (the board search) asks `{tool}` for a fresh spec and offer id: no routing decision,
-  // so no `native` answer and no other seller. Every other need goes as text and the router picks the seller.
-  let spec;
-  try {
-    spec = await client.request(need.tool ? { tool: need.tool } : { query: need.text }, client.timeouts.query);
-  } catch (e) {
-    return held(need, e.code || 'failed', e.message);
-  }
-  if (spec.status !== 'spec') return held(need, spec.status || 'no_spec', spec.reason || `the router answered ${spec.status || 'nothing'} to the need`, spec);
-  const offer = spec.id; // the spec answer carries the offer id at the top level; it pays once
-  const text = JSON.stringify(spec);
-  const sup = need.tool ? pickTool(need.tool, need.kind) : pickSupplier(text, need.kind);
-  if (!offer || !sup) return held(need, 'no_adapter', 'no known supplier in the spec; the next attended turn runs this search as the Haiku step');
-  let input;
-  try {
-    input = sup.mapper(need.fields);
-  } catch (e) {
-    return held(need, 'no_input', e.message);
-  }
-  let env;
-  try {
-    env = await client.request({ id: offer, input }, client.timeouts.run);
-  } catch (e) {
-    // A timed-out run is never sent again in this round: the payment may have settled.
-    return held(need, e.code || 'failed', e.message);
-  }
-  // A paid answer that is still running is asked for with the free `{job}` check until it settles; it is never paid for twice.
-  if (env.status === 'running' && env.job) env = await collect(client, env);
-  // A `failed` answer that says the provider rejected the input before any payment is the mapper's bug: hold it, never resend.
-  if (env.status !== 'fulfilled') return held(need, env.status || 'failed', env.reason ? `the router answered ${env.status}: ${env.reason}` : `the router answered ${env.status}`, env);
-  if (!sup.any && String(env.supplier || '').toLowerCase() !== sup.host) return held(need, 'supplier_mismatch', 'the envelope names a different supplier than the spec');
+  const cached = takeReplay(need); // a saved answer a repaired mapping now reads: no new call
+  let spec = null;
+  let env = null;
+  let sup = null;
+  let seller;
   let result;
-  try {
-    result = typeof env.result === 'string' ? JSON.parse(env.result) : env.result;
-  } catch {
-    return held(need, 'parse_failure', 'the result does not parse');
+  let cost = null;
+  let fullResultPath = null;
+  let noSave = false;
+  if (cached) {
+    seller = cached.seller;
+    sup = need.tool ? pickTool(need.tool, need.kind) : null;
+    result = cached.result;
+    cost = cached.cost;
+    fullResultPath = cached.rawPath;
+  } else {
+    // A need that names a catalog tool by id (the board search) asks `{tool}` for a fresh spec and offer id: no routing decision,
+    // so no `native` answer and no other seller. Every other need goes as text and the router picks the seller.
+    try {
+      spec = await client.request(need.tool ? { tool: need.tool } : { query: need.text }, client.timeouts.query);
+    } catch (e) {
+      return held(need, e.code || 'failed', e.message);
+    }
+    if (spec.status !== 'spec') return held(need, spec.status || 'no_spec', spec.reason || `the router answered ${spec.status || 'nothing'} to the need`, spec);
+    const offer = spec.id; // the spec answer carries the offer id at the top level; it pays once
+    const text = JSON.stringify(spec);
+    sup = need.tool ? pickTool(need.tool, need.kind) : pickSupplier(text, need.kind);
+    if (!offer) return held(need, 'no_adapter', 'no offer in the spec; the next attended turn runs this search as the Haiku step');
+    if (!sup && !kindOf(need.kind)) return held(need, 'no_adapter', 'no known supplier in the spec; the next attended turn runs this search as the Haiku step');
+    seller = sup && sup.host ? sup.host : sellerOf(spec);
+    const stored = storedMapping(need.kind, seller);
+    // The input: a repaired mapping, else the reader's own mapper, else the spec's own field names. The reader's mapper also checks the need's fields.
+    let input = null;
+    let specIn = null;
+    let vars = null;
+    try {
+      vars = loopVars(need.kind, need.fields); // throws when a field the need must have is missing
+      if (sup) input = sup.mapper(need.fields);
+      if (stored && stored.input) input = buildInput(stored.input, vars);
+    } catch (e) {
+      return held(need, 'no_input', e.message);
+    }
+    specIn = specInput(spec);
+    let fit = input ? fitsSpec(input, specIn) : { ok: false, missing: [] };
+    if (!input) {
+      const f = fillFromSpec(vars, specIn);
+      if (f && Object.keys(f).length) { input = f; fit = fitsSpec(f, specIn); }
+    }
+    if (!input || !fit.ok) {
+      const why = !specIn && !input ? `the service lists no input fields and the loop has no mapping for ${need.kind} from ${seller}` : `the loop's input does not hold the fields ${need.kind} from ${seller} requires${fit.missing.length ? ` (${fit.missing.join(', ')})` : ''}`;
+      const pend = pendingFor(need.kind, seller, 'input');
+      if (pend) return held(need, 'repair_pending', `${why}. Nothing was paid. It waits for repair ${pend.id} (J repair show ${pend.id})`);
+      const rq = recordBreak({ side: 'input', need, seller, reason: why, specFields: specIn ? specIn.fields : null, attempted: input, missing: fit.missing });
+      return held(need, 'input_break', `${why}. Nothing was paid. Repair request ${rq.id} is written (J repair show ${rq.id})`);
+    }
+    const waiting = pendingFor(need.kind, seller, 'output');
+    if (waiting) return held(need, 'repair_pending', `the answer of ${need.kind} from ${seller} could not be read before; nothing was paid again. It waits for repair ${waiting.id} (J repair show ${waiting.id})`);
+    try {
+      env = await client.request({ id: offer, input }, client.timeouts.run);
+    } catch (e) {
+      // A timed-out run is never sent again in this round: the payment may have settled.
+      return held(need, e.code || 'failed', e.message);
+    }
+    // A paid answer that is still running is asked for with the free `{job}` check until it settles; it is never paid for twice.
+    if (env.status === 'running' && env.job) env = await collect(client, env);
+    // The router (or the service) says the input does not fit: nothing was paid. It is an input break, never resent.
+    if (env.status === 'needs_input' || (env.status === 'failed' && INPUT_REFUSAL.test(String(env.reason || '')))) {
+      const why = `the service refused the input (${env.status}${env.reason ? `: ${String(env.reason).slice(0, 160)}` : ''})`;
+      const pend = pendingFor(need.kind, seller, 'input');
+      if (pend) return held(need, 'repair_pending', `${why}. Nothing was paid. It waits for repair ${pend.id} (J repair show ${pend.id})`);
+      const rq = recordBreak({ side: 'input', need, seller, reason: why, specFields: specIn ? specIn.fields : null, attempted: input });
+      return held(need, 'input_break', `${why}. Nothing was paid. Repair request ${rq.id} is written (J repair show ${rq.id})`);
+    }
+    if (env.status !== 'fulfilled') return held(need, env.status || 'failed', env.reason ? `the router answered ${env.status}: ${env.reason}` : `the router answered ${env.status}`, env);
+    if (sup && !sup.any && !stored && String(env.supplier || '').toLowerCase() !== sup.host) return held(need, 'supplier_mismatch', 'the envelope names a different supplier than the spec');
+    try {
+      result = typeof env.result === 'string' ? JSON.parse(env.result) : env.result;
+    } catch {
+      return held(need, 'parse_failure', 'the result does not parse');
+    }
+    // A supplier whose terms allow immediate use only is never saved: the result stays in memory and goes to the reader.
+    const csup = sup || canonSupplier(need.kind, (kindOf(need.kind) || {}).canonHost);
+    noSave = Boolean(csup && csup.noCache);
+    fullResultPath = noSave ? null : save(need.kind, typeof env.result === 'string' ? env.result : JSON.stringify(env.result));
+    cost = Array.isArray(env.cost) ? env.cost.join('; ') : env.cost === undefined ? null : env.cost; // e.g. ["provider price 0.003 USD"]
   }
-  // A supplier whose terms allow immediate use only is never saved: the result stays in memory and goes to the adapter.
-  const fullResultPath = sup.noCache ? null : save(need.kind, typeof env.result === 'string' ? env.result : JSON.stringify(env.result));
-  let adapted;
-  try {
-    adapted = sup.adapter(result, need.fields);
-  } catch (e) {
-    return held(need, 'schema_failure', e.message);
+  const read = readAnswer(need, sup, storedMapping(need.kind, seller), result);
+  if (!read.ok) {
+    if (read.notFound) return held(need, 'not_found', `${need.kind} from ${seller}: ${read.reason}`);
+    const why = `the answer of ${need.kind} from ${seller} could not be read: ${read.reason}`;
+    const rq = recordBreak({ side: 'output', need, seller, reason: why, rawPath: fullResultPath, noSave, shapeOf: JSON.stringify(skeleton(result)).slice(0, 1500), cost });
+    return held(need, 'output_break', `${why}. It is paid${fullResultPath ? ' and saved' : ', and its terms do not allow saving it, so the next run reads it with the repaired mapping'}. ${rq.created ? 'Repair request' : 'Repair request (already written)'} ${rq.id} (J repair show ${rq.id})`, env || undefined);
   }
-  const cost = Array.isArray(env.cost) ? env.cost.join('; ') : env.cost === undefined ? null : env.cost; // e.g. ["provider price 0.003 USD"]
-  return { ok: true, status: 'fulfilled', cost, ingest: { need: need.kind, query: need.query, status: 'fulfilled', fullResultPath, cost, ...adapted } };
+  return { ok: true, status: 'fulfilled', cost, via: read.via, ingest: { need: need.kind, query: need.query, status: 'fulfilled', fullResultPath, cost, ...read.adapted } };
 }
 
 const held = (need, status, reason, env) => ({ ok: false, status, reason: status === 'running' && env && env.job ? `${reason} (job ${env.job}: check it with tenjin, it is already paid)` : reason, need: need.kind, jobId: env && env.job, cost: null });

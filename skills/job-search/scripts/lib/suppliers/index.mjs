@@ -34,3 +34,14 @@ export function pickSupplier(specText, kind) {
   if (any) return { ...any };
   return null;
 }
+
+// The reader a need's canonical shape goes through: the need's first reader (reads.json names its host). A repaired or generic mapping builds
+// the answer in that shape, and this reader is the check: it throws when the answer does not hold what the loop needs.
+export const canonSupplier = (kind, canonHost) => SUPPLIERS.find((x) => x.kind === kind && (canonHost ? x.host === canonHost : x.any)) || null;
+export const canonAdapter = (kind, canonHost) => (canonSupplier(kind, canonHost) || {}).adapter || null;
+// What the need's first mapper builds for the need's own fields (it throws when a field the need must have is missing). A repaired or generic
+// mapping may use its plain values, such as the query text, as inputs of its own.
+export function canonInput(kind, fields) {
+  const s = SUPPLIERS.find((x) => x.kind === kind);
+  return s ? s.mapper(fields) : {};
+}

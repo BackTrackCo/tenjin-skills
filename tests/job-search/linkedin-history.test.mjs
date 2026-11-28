@@ -70,10 +70,10 @@ test('through the router: the new host is picked, the titles give a role hint, a
   assert.deepEqual(profileLib.validateProfile({ search: { role: 'software engineer', sources: { role: 'linkedin' } } }), []);
 });
 
-test('an unknown host still holds as no_adapter with nothing paid', async () => {
+test('an unknown host with no input fields to fill is held before payment as an input break', async () => {
   const f = fake({ answers: [spec('unknown-profiles.example'), fulfilled('unknown-profiles.example')] });
   const [r] = await router.runRound([{ kind: 'linkedin_profile', text: 'read the profile', fields: { url: URL_IN }, query: { url: URL_IN } }], { client: client(f) });
   assert.equal(r.ok, false);
-  assert.equal(r.status, 'no_adapter');
+  assert.equal(r.status, 'input_break');
   assert.equal(f.log().filter((l) => l.call).length, 1, 'only the free spec step ran: no payment');
 });

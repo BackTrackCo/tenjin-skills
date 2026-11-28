@@ -124,7 +124,7 @@ test('a rejected input is the mapper\'s bug: that search is held with the reason
   const f = fake({ answers: [sp('careers-page'), rej] });
   const [r] = await router.runRound([needOf('careers_page', { jobKey: 'k', website: 'anthropic.com' })], { client: client(f) });
   assert.equal(r.ok, false);
-  assert.equal(r.status, 'failed');
+  assert.equal(r.status, 'input_break');
   assert.match(r.reason, /rejected this input before any payment/);
   assert.equal(f.log().filter((l) => l.call).length, 2, 'the run was sent once, never again');
   assert.deepEqual(careers.mapper({ website: FX['careers-page'].step2_rejected.input.url }), { url: 'https://anthropic.com' }, 'the fixed mapper no longer sends the bare domain');

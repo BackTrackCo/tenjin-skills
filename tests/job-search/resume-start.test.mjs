@@ -234,7 +234,7 @@ test('each offer id pays once: two searches fetch two specs, and a used id answe
   const need = { kind: 'web_search', tool: 'exa-search', text: null, fields: { role: 'software engineer', place: 'New York' }, query: { role: 'software engineer', place: 'New York', remote: false, since: null, variant: null, round: 0 } };
   const out = await router.runRound([need, need], { client: new router.RouterClient({ bin: f.bin, timeouts: { ...router.TIMEOUTS, shutdown: 300 } }) });
   assert.deepEqual(out.map((r) => r.ok), [true, false]);
-  assert.equal(out[1].status, 'needs_input');
+  assert.equal(out[1].status, 'input_break', 'needs_input is an input break: nothing paid, one repair request');
   const calls = f.log().filter((l) => l.call).map((l) => l.call);
   assert.deepEqual(calls.map((c) => (c.tool ? 'spec' : 'run')), ['spec', 'run', 'spec', 'run'], 'a fresh spec before every search');
   assert.notEqual(calls[1].id, calls[3].id);

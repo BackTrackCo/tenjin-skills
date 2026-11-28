@@ -21,6 +21,7 @@ export function emptyState() {
     contacts: {},
     signals: { counts: {}, observations: [] },
     held: [],
+    repairs: { seq: 0, requests: {}, replays: {} },
     lease: null,
     update: { lastCheckAt: null, status: null, installed: null, waiting: null },
     consent: { unattended: null, writing: null, dryRun: { records: [], confirmedAt: null } },

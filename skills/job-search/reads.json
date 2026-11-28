@@ -1,0 +1,35 @@
+{
+  "note": "What each routed need must read from a service answer, in the shape its existing reader takes (the canonical keys), and the usual names a generic reader tries when no mapping fits. No seller appears here.",
+  "minShare": 0.8,
+  "inputNames": {
+    "query": ["query", "q", "keywords", "keyword", "search", "searchQuery", "term"],
+    "url": ["url", "link", "profileUrl", "profile_url"],
+    "name": ["name", "company", "companyName"],
+    "website": ["website", "domain", "url"],
+    "since": ["since", "from", "startDate", "start_date", "after"]
+  },
+  "needs": {
+    "job_postings": { "shape": "list", "wrap": "data.jobs", "canonHost": "x402.openwebninja.com", "required": ["job_title", "employer_name"], "inputs": ["role", "place", "remote", "since", "days", "query"], "loop": "each posting: the job title and the employer, and if present the employer website, the place, remote, the date posted, the salary, the description and the apply link",
+      "keys": { "job_title": "text", "employer_name": "string", "employer_website": "string", "job_city": "string", "job_state": "string", "job_country": "string", "job_is_remote": "bool", "job_posted_at_datetime_utc": "date", "job_employment_type": "string", "job_min_salary": "number", "job_max_salary": "number", "job_salary_currency": "string", "job_salary_period": "string", "job_description": "text", "job_apply_link": "url", "job_publisher": "string", "job_google_link": "url" } },
+    "x_hiring_posts": { "shape": "list", "wrap": "tweets", "canonHost": "glim.sh", "required": ["url", "text"], "inputs": ["role", "place", "since", "query"], "loop": "each post: its link and its text, and if present the author handle, the date and the links in it",
+      "keys": { "url": "url", "text": "text", "author.username": "string", "created_at": "date", "entities.urls": "urlobjs" }, "names": { "url": ["url", "link", "permalink", "tweetUrl"], "text": ["text", "fullText", "content", "body"], "author.username": ["authorUsername", "username", "screenName", "handle"], "created_at": ["createdAt", "created_at", "createdUtc", "date", "timestamp"] } },
+    "event_posts_x": { "shape": "list", "wrap": "tweets", "canonHost": "glim.sh", "required": ["url", "text"], "inputs": ["company", "place", "since", "query"], "loop": "each post: its link and its text, and if present the author handle, the date and the links in it",
+      "keys": { "url": "url", "text": "text", "author.username": "string", "created_at": "date", "entities.urls": "urlobjs" }, "names": { "url": ["url", "link", "permalink", "tweetUrl"], "text": ["text", "fullText", "content", "body"], "author.username": ["authorUsername", "username", "screenName", "handle"], "created_at": ["createdAt", "created_at", "createdUtc", "date", "timestamp"] } },
+    "event_posts_linkedin": { "shape": "list", "wrap": "data.posts", "canonHost": "api.getanyapi.com", "required": ["url", "text"], "inputs": ["company", "query"], "loop": "each post: its link and its text, and if present the author profile link and the date",
+      "keys": { "url": "url", "text": "text", "authorUrl": "url", "createdUtc": "unix" }, "names": { "text": ["text", "content", "body"], "createdUtc": ["createdUtc", "createdAt", "date", "timestamp"] } },
+    "event_posts_people": { "shape": "list", "wrap": "data.items", "canonHost": "api.getanyapi.com", "required": ["url"], "inputs": ["url"], "loop": "each post: its link and its text, and if present the date and a linked article",
+      "keys": { "url": "url", "text": "text", "repostText": "text", "createdUtc": "unix", "articleUrl": "url" }, "names": { "text": ["text", "content", "body"], "createdUtc": ["createdUtc", "createdAt", "date", "timestamp"] } },
+    "web_search": { "shape": "list", "wrap": "results", "canonHost": "api.exa.ai", "required": ["url"], "inputs": ["role", "place", "remote", "query"], "loop": "each result: its link and its title, and if present the date published",
+      "keys": { "url": "url", "title": "string", "publishedDate": "date" }, "names": { "publishedDate": ["publishedDate", "published_date", "published", "date"] } },
+    "event_web": { "shape": "list", "wrap": "results", "canonHost": "api.exa.ai", "required": ["url"], "inputs": ["company", "place", "query"], "loop": "each result: its link and its title",
+      "keys": { "url": "url", "title": "string" } },
+    "careers_page": { "shape": "object", "wrap": "result", "canonHost": "signal.halowerk.com", "requiredAny": ["found"], "inputs": ["website", "company", "url"], "loop": "whether the employer has a careers page (found, true or false), its link, and if present the job board vendor and the board name",
+      "keys": { "found": "bool", "careers_page.url": "url", "open_positions.vendor": "string", "open_positions.board": "string" } },
+    "company_lookup": { "shape": "object", "wrap": "", "canonHost": null, "requiredAny": ["name", "domain"], "inputs": ["company", "linkedinUrl", "name"], "loop": "the company name, its legal name, its web domain, its LinkedIn page and its employee range",
+      "keys": { "name": "string", "legalName": "string", "domain": "string", "socials.linkedin_url": "string", "employees": "string" } },
+    "people_search": { "shape": "list", "wrap": "leads", "fixed": { "success": true }, "canonHost": "x402.orthogonal.com", "required": ["profileUrl"], "oneOf": ["firstname", "lastname"], "minShare": 0.5, "inputs": ["website", "company", "titles", "city", "count", "pastCompany", "domain"], "loop": "each person: the first and last name and the profile link, and if present the headline, the job title, the company, the company website and the place",
+      "keys": { "firstname": "string", "lastname": "string", "headline": "string", "profileUrl": "url", "lastJobTitle": "string", "lastCompanyName": "string", "lastCompanyWebsite": "string", "lastCompanyUrl": "string", "address": "string" } },
+    "linkedin_profile": { "shape": "object", "wrap": "", "canonHost": "x402.orthogonal.com", "requiredAny": ["name", "about"], "inputs": ["url"], "loop": "the name, the place and the about text of one profile (a repaired profile has no employer list, so the target role is confirmed with the person)",
+      "keys": { "name": "string", "location": "string", "about": "text" } }
+  }
+}

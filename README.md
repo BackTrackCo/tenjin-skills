@@ -96,6 +96,12 @@ Then run `/job-search` in Claude Code. It asks you to share your resume (a file,
 - **Notifications.** One line, under 200 characters, when something waits for you. With Remote Control on and both push settings in `/config` turned on ("Push when actions required" and "Push when Claude decides"), it reaches your phone.
 - **No default limits.** There is no application cap or usage budget unless you set one as a rule, for example "at most 5 a day".
 
+### When a service changes
+
+The Tenjin router picks the service behind each routed search and passes that service's own input fields and answer straight through. Job Search keeps a reader for each service it has seen. A service it has no reader for is filled and read by the usual field names, and a check on the parsed result decides if that worked. No model reads a normal answer.
+
+When the check fails, or the input lacks a field the service requires (found before anything is paid), the loop holds that one search, keeps the paid answer, and writes one repair request. The next Claude Code step is told once, writes a small mapping file (data, never a script), and the loop checks it against the saved answer and stores it. The saved answer is read the next time that search runs, so nothing is paid twice, and later runs use the mapping with no model step. Measured on a changed answer of nine posts, one repair reads about 700 tokens of request, writes about 30 tokens of mapping, and the apply call adds about 150. Limits: an answer that parses but means something else is not detected, a service whose terms allow immediate use only is paid once and not saved, and a run with no Claude Code session holds the broken search until the next session. This works with the router as it answers today: the service's required input fields are read from the spec answer's text. What waits for the router's coming operation calls is reading those fields as data and calling an operation by name.
+
 ### Where your data goes
 
 Your resume, profile, rules, saved answers and application records stay in `~/.tenjin-skills/` on your computer. Searches send only search terms (your role and place), through Tenjin. To write, the skill gives your resume, the job text, your answers and your writing rules to a Claude Opus subagent, so they go to your Claude model provider, as all Claude Code work does. Each application sends what the form asks for to that employer. With Remote Control on, the session transcript is stored on Anthropic's servers to sync your devices.

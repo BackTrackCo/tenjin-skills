@@ -35,6 +35,7 @@ import * as qs from './lib/questions.mjs';
 import { FREQUENCIES, frequencyOf, periodStart } from './lib/schedule.mjs';
 import { ingest, joinLeads, leadKey } from './lib/ingest.mjs';
 import { addWatch, removeWatch } from './lib/watchlist.mjs';
+import { showRepair, applyRepair, listRepairs } from './lib/repairs.mjs';
 import { candidateEvents, confirmedEvents, filterEvents, dedupeEvents, matchTargets, planTargets, runEvents, saveEvents, windowDays } from './lib/events.mjs';
 import { followUpQuestion, parseReferralList, recordOf, referralKey, referralListAnswered, referralNote, referralWaiting } from './lib/referral.mjs';
 import { applyFactAnswer, buildFactQuestions, collectFacts, splitByOptions } from './lib/facts.mjs';
@@ -1067,6 +1068,13 @@ const commands = {
     return out({ frequency: f });
   },
   // A form fact the person gave: kept in the profile, and the jobs that waited for it go back in the queue.
+  // A routed need whose service changed its input or its answer: the request, then the agent's mapping (data), checked against the saved answer.
+  async repair([sub, id], flags) {
+    if (!sub || sub === 'list') return out({ repairs: listRepairs() });
+    if (sub === 'show') return id ? out(showRepair(id)) : out({ error: 'repair show <id>' }, 2);
+    if (sub === 'apply') return id && flags.file ? out(applyRepair(id, String(flags.file))) : out({ error: 'repair apply <id> --file <mapping file>' }, 2);
+    return out({ error: 'repair list, repair show <id>, repair apply <id> --file <file>' }, 2);
+  },
   // Events by the companies the person wants to work at. Read-only on the event sites: nothing registers, RSVPs, signs in or fills.
   async events([sub, id, ...rest], flags) {
     const profile = readProfile();

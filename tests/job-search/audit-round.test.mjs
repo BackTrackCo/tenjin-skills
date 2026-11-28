@@ -46,7 +46,7 @@ const sp = (name) => ({ ...FX[name].step1.json, __text: FX[name].step1.text });
 const noPosting = (i, over = {}) => mkJob({ key: `https://www.example-jobs.test/view/${i}`, status: 'reviewed', employerPosting: null, openConfirmed: false, unresolved: 'no_board', company: `Co${i}`, title: `Engineer ${i}`, employerWebsite: `co${i}.test`, v: 1, ...over });
 
 // ---- item 2: per need, no all-or-nothing --------------------------------------------------
-test('routed needs run one by one: a need with an unknown supplier becomes one Haiku item, the others still run', async () => {
+test('routed needs run one by one: a need whose service the loop cannot fill is held before payment with a repair request, the others still run', async () => {
   reset();
   const J = FX['job-postings'];
   const jrun = { ...J.step2.envelope, result: JSON.stringify(J.step2.envelope.result) };
@@ -55,19 +55,18 @@ test('routed needs run one by one: a need with an unknown supplier becomes one H
   const prof = { places: ['New York'], includeOld: true, search: { role: 'software engineer', place: 'New York City' } };
   const log = await routed.routedRounds({ profile: prof, fetch: fakeFetch({}), client: client(f), now: NOW });
   assert.ok(log.some((l) => l.need === 'job_postings' && l.ok), 'the covered need ran');
-  assert.ok(log.some((l) => l.need === 'x_hiring_posts' && l.status === 'model'), 'the uncovered need is left for the model');
+  assert.ok(log.some((l) => l.need === 'x_hiring_posts' && l.status === 'input_break'), 'the need is held before payment');
   const s = store.loadState();
-  assert.equal(s.held.some((h) => h.detail.includes('x_hiring_posts')), false, 'not a hold');
+  assert.equal(s.held.some((h) => h.detail.includes('x_hiring_posts') && /Repair request r1/.test(h.detail)), true, 'held with its repair request');
+  assert.equal(Object.values(s.repairs.requests).length, 1);
   assert.equal(f.log().filter((l) => l.call).length, 5, 'no payment step for the unknown supplier');
   const wl = work.buildWorkList(s, empty, NOW, prof);
-  const item = wl.items.find((i) => i.reason === 'need_due');
-  assert.equal(item.key, 'need:x_hiring_posts');
+  assert.equal(wl.items.some((i) => i.reason === 'need_due'), false, 'no Haiku web-search item: the repair step replaces it');
+  assert.equal(wl.items.filter((i) => i.reason === 'repair_due').length, 1);
   assert.ok(!wl.items.some((i) => i.reason === 'web_search_due'), 'with Tenjin the web search is never a model item');
   assert.ok(s.held.filter((h) => h.detail.startsWith('routed:web_search')).every((h) => /board .* unavailable/.test(h.detail)), 'the board search ran by tool id; only a board lookup may hold it');
   assert.deepEqual(f.log().filter((l) => l.call).map((l) => l.call).filter((c) => c.tool), [{ tool: 'exa-search' }], 'the board search asks the catalog tool by id, never a {query}');
-  // the item closes with its outcome command, and a left one comes back at the next period
-  assert.equal(runJobs(home, ['search', 'done', 'x_hiring_posts']).code, 0);
-  assert.equal(store.loadState().search.needPending.length, 0);
+  assert.equal((store.loadState().search.needPending || []).length, 0);
 });
 
 // ---- items 3 and 4: one wake per round, the notify line -------------------------------------

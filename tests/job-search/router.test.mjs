@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,6 +16,8 @@ const FX = Object.fromEntries(['job-postings', 'x-posts', 'careers-page', 'peopl
 const spec = (name) => ({ ...FX[name].step1.json, __text: FX[name].step1.text });
 const run = (name, key = 'step2') => ({ ...FX[name][key].envelope, result: JSON.stringify(FX[name][key].envelope.result) });
 const J = { spec: spec('job-postings'), fulfilled: run('job-postings') };
+// A repair request one test writes must not hold the next test's need.
+beforeEach(() => store.updateState((s) => { s.repairs = { seq: 0, requests: {}, replays: {} }; }));
 const need = { kind: 'job_postings', text: FX['job-postings'].step1.query, fields: { role: 'software engineer', place: 'New York City', remote: false, since: null, days: 3 }, query: { role: 'software engineer', place: 'New York City', remote: false, since: null, variant: null, round: 0 } };
 
 // A `tenjin` on PATH that is the fake MCP server. Nothing here calls the real Tenjin.
@@ -71,8 +73,8 @@ test('only fulfilled delivers: every other status holds that search with its rea
     const f = fake({ answers: [J.spec, { ...J.fulfilled, status, job: 'job-9' }] });
     const [r] = await router.runRound([need], { client: client(f, { collect: 40, poll: 10 }) });
     assert.equal(r.ok, false, status);
-    assert.equal(r.status, status);
-    assert.match(r.reason, new RegExp(status));
+    assert.equal(r.status, status === 'needs_input' ? 'input_break' : status, 'needs_input is an input break: nothing paid, one repair request');
+    assert.match(r.reason, new RegExp(status === 'needs_input' ? 'refused the input' : status));
     // a running answer is asked for again with the free {job} check; no other status is sent again
     const calls = f.log().filter((l) => l.call).map((l) => l.call);
     assert.equal(calls.filter((c) => !c.job).length, 2, `${status}: the run was sent once, never retried`);
@@ -87,8 +89,8 @@ test('only fulfilled delivers: every other status holds that search with its rea
 test('an offer id only at the top level counts: a spec with offers[] or offer.id is not read, and a spec with no known supplier host, or an envelope from another supplier, holds only that search', async () => {
   const unknown = fake({ answers: [{ status: 'spec', id: 'o', nextStep: 'Request: GET https://someone-else.test/x' }] });
   const [a] = await router.runRound([need], { client: client(unknown) });
-  assert.equal(a.status, 'no_adapter');
-  assert.match(a.reason, /next attended turn runs this search as the Haiku step/);
+  assert.equal(a.status, 'input_break');
+  assert.match(a.reason, /Nothing was paid\. Repair request r\d+/);
   const mismatch = fake({ answers: [J.spec, { ...J.fulfilled, supplier: 'another.example.test' }] });
   const [b] = await router.runRound([need], { client: client(mismatch) });
   assert.equal(b.status, 'supplier_mismatch');
@@ -98,7 +100,7 @@ test('an offer id only at the top level counts: a spec with offers[] or offer.id
   assert.equal((await router.runRound([need], { client: client(bad) }))[0].status, 'parse_failure');
   const schema = fake({ answers: [J.spec, { ...J.fulfilled, result: JSON.stringify({ data: { nope: 1 } }) }] });
   const [c] = await router.runRound([need], { client: client(schema) });
-  assert.equal(c.status, 'schema_failure');
+  assert.equal(c.status, 'output_break', 'an answer that fails the loop\'s reader is an output break with a repair request');
   assert.match(c.reason, /no data\.jobs list/);
 });
 

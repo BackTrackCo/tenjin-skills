@@ -17,6 +17,7 @@ import { emailConsentCurrent, due as pendingEmails } from './email.mjs';
 import { collectFacts, splitByOptions } from './facts.mjs';
 import { referralListWaiting, referralWaiting } from './referral.mjs';
 import { candidateEvents, eventsDue, unseenEvents } from './events.mjs';
+import { repairItems } from './repairs.mjs';
 import path from 'node:path';
 
 export const POST_BATCH = 25;
@@ -101,8 +102,8 @@ export function advanceSearch(state, profile) {
 export const LEAVE_REASONS = ['low_score', 'no_match', 'no_careers_page', 'sign_in', 'other_system', 'not_a_job', 'duplicate'];
 // The other work-list keys take their own reasons. A search item (the round, the free web search, a need code could not
 // run) comes back at the next period; a contacts item comes back on news about its job. A post batch is never left.
-export const ITEM_LEAVE_REASONS = { search: ['no_web_search'], contacts: ['none_found'], email: ['not_sending'] };
-export const itemKind = (key) => (key === 'search' || key === 'web' || String(key).startsWith('need:') ? 'search' : String(key).startsWith('contacts:') ? 'contacts' : key === 'email' ? 'email' : String(key).startsWith('posts:') ? 'posts' : 'job');
+export const ITEM_LEAVE_REASONS = { search: ['no_web_search'], contacts: ['none_found'], email: ['not_sending'], repair: ['other'] };
+export const itemKind = (key) => (key === 'search' || key === 'web' || String(key).startsWith('need:') ? 'search' : String(key).startsWith('contacts:') ? 'contacts' : key === 'email' ? 'email' : String(key).startsWith('posts:') ? 'posts' : String(key).startsWith('repair:') ? 'repair' : 'job');
 const RULE_EFFECTS = ['exclude_company', 'exclude_term', 'require_term', 'min_pay', 'place', 'remote', 'employment_type'];
 export const rulesVersion = (overlay) => (overlay.rules || []).filter((r) => RULE_EFFECTS.includes(r.effect)).map((r) => `${r.effect}=${r.value}`).sort().join('|');
 const hostOf = (u) => { try { return new URL(/^https?:/i.test(u) ? u : `https://${u}`).hostname.replace(/^www\./, '').toLowerCase(); } catch { return ''; } };
@@ -374,6 +375,8 @@ export function buildWorkList(state, overlay, now = Date.now(), profile = {}, op
     if (referralListWaiting(profile)) items.push({ key: 'referral:list', reason: 'referral_list', title: 'Which companies can you get a referral at?', company: '', gate: GATES.referral_list, rv: 'list' }); }
   { const cand = candidateEvents(state);
     if (profile.events === true && (eventsDue(state, profile, now) || cand.length)) items.push({ key: 'events', reason: 'events_due', title: 'Events by your target companies', company: '', gate: GATES.events_due, rv: `${(state.events || {}).lastAt || 'new'}:${cand.map((c) => c.event.id).sort().join(',').length}:${cand.length}`, candidates: cand.map((c) => ({ id: c.event.id, name: c.event.name, url: c.event.url, start: c.event.start, place: c.event.place, organizers: c.event.organizers, companies: c.matches.map((m) => m.company), quote: c.event.quote || null })), hint: tenjinHint(state, 'events') }); }
+  // A routed need whose service changed its input or its answer: the agent is told once (references/repair.md).
+  items.push(...repairItems(state));
   const mail = pendingEmails(state);
   if (mail.length && !itemStillLeft(state, 'email', profile, now)) items.push({ key: 'email', reason: 'email_due', title: `${mail.length} intro email${mail.length > 1 ? 's' : ''} to published addresses`, company: '', gate: GATES.email_due, count: mail.length });
   for (const key of state.contactsRequested || []) {
