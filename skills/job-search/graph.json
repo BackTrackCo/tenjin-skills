@@ -157,6 +157,9 @@
     "referral_list",
     "referral_pending",
     "events_due",
+    "open_ready",
+    "site_ready",
+    "site_applied",
     "repair_due"
   ],
   "heldReasons": [

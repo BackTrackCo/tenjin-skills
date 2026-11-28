@@ -7,7 +7,7 @@ allowed-tools: Bash(node ${CLAUDE_SKILL_DIR}/scripts/jobs.mjs *) TaskCreate Task
 
 # Job Search
 
-J means `node ${CLAUDE_SKILL_DIR}/scripts/jobs.mjs`. Always write it out in full, never through a variable. Every J command prints JSON. State, rules and profile live in `~/.tenjin-skills/`; never read or edit them whole.
+J means `node ${CLAUDE_SKILL_DIR}/scripts/jobs.mjs`. Always write it out in full, never through a variable. Every J command prints JSON. State, rules and profile live in `~/.tenjin-skills/`; never read or edit them whole. Write temporary JSON/reply files to the OS temp folder, never the working repo.
 
 <!-- gates:start -->
 ## Gates (hard, first)
@@ -39,11 +39,11 @@ On wake or user request, run `J work --commit` (add `--unattended` on wake), han
 | --- | --- | --- |
 | `search_due`, `need_due` | With Tenjin, watcher runs searches in code (or `J route`); without it, one Agent `model: "haiku"` step runs `J search plan`. End with `J search done <kind>` / `J search next`. | `references/search.md` |
 | `post_review` | Up to 25 hiring posts, Agent `model: "haiku"`, one ingest file; `J leads mark <url> done\|not_interested`. Never leave a post batch. | `references/search.md` |
-| `employer_page`, `reverify` | Agent `model: "haiku"` reads employer's careers page and ingests listings. | `references/search.md` |
+| `employer_page` (or `reverify: true`) | Agent `model: "haiku"` reads employer's careers page and ingests listings. | `references/search.md` |
 | `new_job`, `review_due` | Agent `model: "haiku"` scores fit, adds warnings, returns ops JSON. | `references/review.md` |
 | `prepare_due` | New writing or browser-read forms. One Agent `model: "opus"` call per round: `J write-prompt --round`, `J write-result --round --result <file>`. | `references/prepare.md` |
-| `apply_ready` | Approve (`J ask approval --key <job>` or `J ask approve`, then `J approve <key> [--fill-only\|--via employer\|site]`), then browser subagents fill and submit, one job per host at a time (`J apply next --all`). Fill-only: `J fill done <key>` -> `J submitted <key>`. | `references/apply.md` |
-| `open_ready`, `site_ready` | Attended: `J open <key...>` (show sheets) or `J site show <key>` (opens job site in Chrome, shows link + answers); record `J submitted <key>`. Woken turns open nothing (`open_ready`). | `references/apply.md` |
+| `apply_ready`, `fill_ready` | Approve (`J ask approval --key <job>` or `J ask approve`, `J approve <key> [--fill-only\|--submit-now\|--via employer\|site]`), then browser subagents fill/submit, one job per host at a time (`J apply next --all`). Fill-only: `J fill done <key>` -> `J submitted <key>`. | `references/apply.md` |
+| `open_ready`, `site_ready`, `site_applied` | Attended: `J open <key...>` (show sheets) or `J site show <key>` (opens job site in Chrome, shows link + answers); record `J submitted <key>`. On `site_applied`: `J ask applied --key <key>` -> `J site applied <key> yes\|not_yet\|skip`. Woken turns open nothing (`open_ready`). | `references/apply.md` |
 | `referral_pending`, `referral_list` | `J ask referral` (attended). | `references/questions.md` |
 | `contacts_requested`, `events_due` | First time: `J ask contacts` (`J contacts count <n\|all>`). With Tenjin `J contacts route` first; Agent `model: "haiku"` runs free ways (`J leave contacts:<key> --reason none_found` if none). | `references/contacts.md`, `references/events.md` |
 | `email_due` | Published addresses only; send only what `J email next` handed out via Gmail connector (or draft/`mailto:`), then `J email sent <id>`. | `references/contacts.md` |
@@ -62,4 +62,4 @@ Needs rules, consent (`references/setup.md`) and confirmed dry run (`J dryrun co
 
 - `J report` is the short report (`J report --all` for everything); when it ends with a Contacts line, ask `J ask contacts` (5 first); Tenjin line last.
 - `J rules`, `J rules remove <id>`; writing rules live in the `writing` skill.
-- Data stays local in `~/.tenjin-skills/`; searches send terms, companies and place; writing sends resume, job text and answers to Opus; applications go to employers; email goes from your Gmail; Remote Control syncs the transcript.
+- Data stays local in `~/.tenjin-skills/`; the router gets LinkedIn links, past employers and candidates' profiles. Searches send terms, companies and place; writing sends resume, job text and answers to Opus; applications go to employers; email goes from your Gmail; Remote Control syncs the transcript.
