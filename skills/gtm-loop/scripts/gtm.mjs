@@ -155,7 +155,7 @@ export function startStatus(profile, state) {
   }
   if (!state.start) missing.push('the start question (G ask start, then G start record)');
   const next = needsOffer
-    ? 'Inspect the selected repository before asking about the offer. Name the repo and propose what it sells, who it helps, its link if known and a few buyer signals. If unclear, offer the current repo by name before asking for another repo or product link. See references/setup.md.'
+    ? 'Use the product or source the person already gave. If you still need a source, ask: Use the current workspace, or share a repo path or product link? Read the chosen source before proposing the offer and buyer signals. See references/setup.md.'
     : 'Continue with the outstanding offer and search setup in references/setup.md.';
   return { done: missing.length === 0, missing, legacy: isLegacy(profile), next: missing.length ? next : null };
 }

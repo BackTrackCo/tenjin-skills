@@ -11,10 +11,10 @@ const storeMod = await import('../../skills/gtm-loop/scripts/lib/store.mjs');
 const tmp = (name, obj) => { const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'gtmflow-')), name); fs.writeFileSync(f, JSON.stringify(obj)); return f; };
 const G = (...args) => runGtm(home, args);
 
-test('start reads the repo first and completes without a sender name, company, or handles', () => {
+test('start offers the current workspace and completes without a sender name, company, or handles', () => {
   const s = G('start', 'status');
   assert.equal(s.json.done, false);
-  assert.match(s.json.next, /^Inspect the selected repository before asking/);
+  assert.match(s.json.next, /Use the current workspace, or share a repo path or product link\?/);
   assert.ok(s.json.missing[0].startsWith('what you sell'));
   assert.equal(G('offers', 'set', '--json', JSON.stringify([{ id: 'main', name: 'Thing' }])).code, 0);
   assert.ok(G('start', 'status').json.missing.some((x) => x.startsWith('offer details for "Thing"')));
