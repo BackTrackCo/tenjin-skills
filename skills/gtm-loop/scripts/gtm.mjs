@@ -75,7 +75,15 @@ export const readJsonFile = (f) => {
 export const commands = {};
 export const register = (name, fn) => { commands[name] = fn; };
 
-register('gates', () => ({ gatesHash: gatesHash(SKILL_DIR) }));
+register('gates', ({ flags }) => {
+  const h = gatesHash(SKILL_DIR);
+  if (flags.write) {
+    const f = path.join(SKILL_DIR, 'manifest.json');
+    const m = readJsonFile(f);
+    fs.writeFileSync(f, `${JSON.stringify({ ...m, gatesHash: h }, null, 2)}\n`);
+  }
+  return { gatesHash: h };
+});
 register('tenjin', () => {
   const h = hintState();
   updateState((s) => { s.tenjin = { ...s.tenjin, status: h.status, version: h.version || null, checkedAt: new Date().toISOString() }; });

@@ -63,7 +63,9 @@ Posting status is unknown; check before replying.
 
 ## GTM Loop
 
-Every day, GTM Loop gives you a short list of people who want what you sell. Each one comes with the reason, the exact words that make them a lead, and a first message in your voice. You send the good ones with one yes.
+Every day, GTM Loop gives you a short list of people who want what you sell. Each one comes with the reason, the exact words that make them a lead, and a first message in your voice. Drafts are parked in a dated Markdown file; you edit them on your own time and tick `send` on the good ones.
+
+[![View the GTM Loop skill](https://img.shields.io/badge/Agent%20Skill-View%20SKILL.md-24292f?logo=github)](skills/gtm-loop/SKILL.md)
 
 ### Install
 
@@ -112,4 +114,12 @@ The skill holds no mail credential. It uses the Gmail tool you connected to Clau
 ### Where the data goes
 
 Your profile, rules, leads and records stay on your computer, in `~/.tenjin-skills/gtm-loop/`. Searches send your phrases to the Tenjin router. Writing sends the signal, your offer and your writing rules to the writer model. Email goes from your own Gmail.
+
+### Develop and test
+
+```sh
+node --test tests/gtm-loop/*.test.mjs
+```
+
+Tests use synthetic fixtures and a temporary `HOME`; they never touch real settings, state or Tenjin config.
 

@@ -8,8 +8,6 @@ import { readProfile } from './profile.mjs';
 // the model); a claimed item is in flight for CLAIM_MS. Items that wait for the person never wake the model: they feed one
 // notify line.
 export const CLAIM_MS = 30 * 60000;
-const MIN = 60000;
-void MIN;
 
 // Each step module adds its collector here, so work.mjs needs no knowledge of their state. A collector gets
 // {state, profile, overlay, now} and returns items.

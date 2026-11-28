@@ -16,6 +16,11 @@ jobs:
         with:
           node-version: 24
       - run: node --test tests/gtm-loop/*.test.mjs
+      - name: Gates hash matches the manifest
+        run: |
+          want=$(node -p "require('./skills/gtm-loop/manifest.json').gatesHash")
+          got=$(node skills/gtm-loop/scripts/gtm.mjs gates | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).gatesHash")
+          test "$want" = "$got"
       - name: The tag matches the manifest version
         run: |
           want="gtm-loop-v$(node -p "require('./skills/gtm-loop/manifest.json').version")"

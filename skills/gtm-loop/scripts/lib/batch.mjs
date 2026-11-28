@@ -9,9 +9,9 @@ export const STALE_MS = 2 * 60 * 60 * 1000;
 // Refused while a batch is open, whoever calls them: [command, sub-command or null for any]. A consent is recorded only in an
 // attended turn.
 export const BATCH_DENIED = [
-  ['rules', 'add'], ['rules', 'remove'], ['consent', 'record'], ['consent', 'revoke'], ['profile', 'set'], ['phrases', 'set'],
-  ['dryrun', 'confirm'], ['batch', 'open'], ['email', 'connector'], ['email', 'approve'], ['release', 'apply'],
-  ['suppress', 'remove'], ['reply', 'unknown'], ['queries', 'set'], ['queries', 'decline'], ['queries', 'remove'], ['queries', 'pin'], ['queries', 'unpin'], ['query', 'test'],
+  ['rules', 'add'], ['rules', 'remove'], ['consent', 'record'], ['consent', 'revoke'], ['profile', 'set'], ['offers', 'set'], ['phrases', 'set'],
+  ['start', 'record'], ['dryrun', 'confirm'], ['batch', 'open'], ['email', 'connector'], ['email', 'approve'], ['release', 'apply'],
+  ['queries', 'set'], ['queries', 'decline'], ['queries', 'remove'], ['queries', 'pin'], ['queries', 'unpin'], ['query', 'test'],
 ];
 // Also refused while an unattended batch is open: nobody is there to say yes.
 export const UNATTENDED_DENIED = [['query', null], ['pick', null], ['approve', null], ['ask', null], ['open', null], ['sent', null], ['follow-up', null], ['replied', null], ['email', 'unknown']];

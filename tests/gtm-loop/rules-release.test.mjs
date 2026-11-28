@@ -96,3 +96,11 @@ test('the release check returns update_waiting when the gates change, and never 
   assert.equal(r.status, 'update_waiting');
   assert.match(r.line, /GTM Loop 0\.1\.5 changes the gates/);
 });
+
+test('batch open refuses offers set and start record alongside profile and phrases changes', async () => {
+  const batch = await import('../../skills/gtm-loop/scripts/lib/batch.mjs');
+  for (const [cmd, sub] of [['offers', 'set'], ['start', 'record'], ['profile', 'set'], ['phrases', 'set']]) {
+    assert.equal(batch.isBatchDenied(cmd, sub, 'attended'), true, `${cmd} ${sub} denied in attended batch`);
+    assert.equal(batch.isBatchDenied(cmd, sub, 'unattended'), true, `${cmd} ${sub} denied in unattended batch`);
+  }
+});

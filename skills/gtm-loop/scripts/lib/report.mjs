@@ -18,7 +18,7 @@ export function report(state, profile = {}, now = Date.now()) {
   const optOuts = Object.values(state.suppress.ids).filter((x) => /opt_out|stop/.test(x.reason)).length;
   const lines = [
     `New leads in the last day: ${newLeads.length}. Waiting for review: ${count(state, 'new')}. Reviewed: ${count(state, 'reviewed')}.`,
-    `Drafts waiting for your pick: ${count(state, 'drafted')}. Picked: ${count(state, 'picked')}. Approved emails: ${count(state, 'approved')}.`,
+    `Drafts parked: ${count(state, 'drafted')}. Picked: ${count(state, 'picked')}. Approved emails: ${count(state, 'approved')}.`,
     `Sent: ${count(state, 'contacted')}. Replies: ${count(state, 'replied')}. Opt-outs and bounces: ${optOuts}. Suppressed: ${Object.keys(state.suppress.ids).length} identities, ${Object.keys(state.suppress.domains).length} domains.`,
   ];
   if (parked(state).length) lines.push(`${parked(state).length} draft${parked(state).length === 1 ? '' : 's'} in ${draftsDir(profile)}. Nothing waits on them.`);
