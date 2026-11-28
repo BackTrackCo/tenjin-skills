@@ -1,0 +1,297 @@
+import { canonical } from './overlay.mjs';
+import { eeoTextOf } from './profile.mjs';
+import { sha } from './dedupe.mjs';
+import { employerName } from './employer.mjs';
+import { EMPLOYEE_OPTION, REFERRED_BY } from './referral.mjs';
+import { normLabel } from './store.mjs';
+import { matchAnswer } from './answers.mjs';
+import { hasParts, matchParts } from './parts.mjs';
+
+// Labels that always stop a job: the profile has no field for these.
+const FORBIDDEN = /\b(ssn|social security|national id|government id|passport|driver'?s? licen[cs]e|date of birth|birth ?date|birthday|\bdob\b|bank|routing number|account number|iban|password|tax id)\b|\bid number\b|\bid card\b/i;
+const EEO = /\b(gender|race|ethnic|hispanic|latino|veteran|disability|sexual orientation|pronoun|transgender)\b/i;
+const FACTS = [
+  [/first name|given name/, 'first_name'], [/last name|surname|family name/, 'last_name'], [/^(full )?name$|your name/, 'full_name'],
+  [/e-?mail/, 'email'], [/phone|mobile/, 'phone'], [/linkedin/, 'linkedin'], [/github/, 'github'], [/website|portfolio/, 'website'],
+  [/current company|current employer/, 'current_company'], [/\bcity\b|\blocation\b|where are you based/, 'location'],
+  [/sponsorship|visa/, 'requires_sponsorship'], [/authori[sz]ed to work|work authori[sz]ation|legally authori/, 'authorized_to_work'],
+  [/salary|compensation expectation/, 'salary_expectation'],
+  [/citizen/, 'us_citizen'], [/clearance/, 'security_clearance'],
+  [/current (job )?title|current role|job title/, 'current_title'], [/\b(school|university|college)\b/, 'school'],
+  [/earliest start|start date|when can you start|available to start/, 'start_date'], [/notice period/, 'notice_period'],
+  [/\b(student|new grad|recent graduate)\b/, 'student_status'],
+];
+const PLACEHOLDER = /\[[^\]]*(path|insert|your|company|name|todo)[^\]]*\]|\bTODO\b|lorem ipsum|\{\{|<insert|\bXXX+\b|\[PATH TO/i;
+
+// A legal acknowledgment (an arbitration agreement, a privacy notice, terms) always needs the person's own yes. An attestation ("I
+// confirm the information is accurate") is covered by the approval in the submit modes; in the fill-only mode, which has no
+// per-job yes, it is asked with the acknowledgments, because the person may submit later, or from the phone, without rereading.
+const LEGAL = /\b(arbitration|privacy (notice|policy|statement)|terms (of (use|service)|and conditions)|data (processing|protection)|i (agree|accept|consent|acknowledge)|consent to|acknowledg)/i;
+const ATTEST = /\b(i (confirm|certify|attest|declare|affirm)|accurate and complete|true and (correct|complete)|information (provided |given )?is (true|accurate))/i;
+export const ackKind = (label) => (LEGAL.test(label) ? 'legal' : ATTEST.test(label) ? 'attest' : null);
+export const factKeyFor = (label) => { const hit = FACTS.find(([re]) => re.test(normLabel(label))); return hit ? hit[1] : null; };
+
+// Greenhouse's questions=true shape: questions, location_questions, compliance, demographic_questions.
+export function parseGreenhouseQuestions(json) {
+  const out = [];
+  const take = (q, group) => {
+    if (!q || !q.label) return;
+    const f = (q.fields && q.fields[0]) || {};
+    out.push({ label: q.label, required: q.required === true, type: f.type || q.type || 'input_text', group, options: (f.values || []).map((v) => v.label), maxLength: q.max_length || null });
+  };
+  for (const q of json.questions || []) take(q, 'application');
+  for (const q of json.location_questions || []) take(q, 'location');
+  for (const c of json.compliance || []) for (const q of c.questions || []) take(q, 'eeo');
+  for (const q of (json.demographic_questions && json.demographic_questions.questions) || []) take({ ...q, label: q.label || q.question }, 'eeo');
+  return out;
+}
+
+export function checkDraft(text, { limit = null, profile = {} } = {}) {
+  const problems = [];
+  const t = String(text || '');
+  if (!t.trim()) problems.push('empty');
+  if (limit && t.length > limit) problems.push(`over the ${limit} character limit`);
+  if (/https?:\/\/|www\./i.test(t)) problems.push('contains a link');
+  const f = profile.facts || {};
+  for (const m of t.match(/[\w.+-]+@[\w-]+\.[\w.-]+/g) || []) if (m.toLowerCase() !== String(f.email || '').toLowerCase()) problems.push('email not in the profile');
+  for (const m of t.match(/\+?\d[\d\s().-]{7,}\d/g) || []) if (m.replace(/\D/g, '') !== String(f.phone || '').replace(/\D/g, '')) problems.push('phone not in the profile');
+  if (PLACEHOLDER.test(t)) problems.push('placeholder text');
+  return problems;
+}
+
+export const TAGS = ['fact', 'upload', 'answer', 'record', 'ack', 'new_writing'];
+
+// Every field carries one source tag:
+//   fact: a profile value (a voluntary demographic answer matched from the person's own text included)
+//   upload: the resume file
+//   answer: an earlier answer that matches by the code-only rule (answers.mjs)
+//   record: a value from the skill's own records about this job (where it was found), mapped to the form's own option by code
+//   new_writing: drafted text the person has not approved for this exact question
+// ---- answers from the skill's own records ----------------------------------------------------------------
+// "Where did you hear about this role?" is answered from the source the search recorded for the job, mapped by code to one of
+// the form's own options, word for word, with a fixed word list per source. A saved answer for the same question comes first
+// (earlier answers are matched before this), and a free-text field gets a short phrase of the source, not new writing. With no
+// matching option the question stays a normal new question. "Referral" only on the person's word; an AI-assistant option is
+// never the default.
+const HEARD = /\b(hear|heard|find out|found out|learn|learned|come across|discover)\b.*\b(role|position|job|us|opportunity|company|vacancy)\b|\bhow did you (hear|find|learn)\b|\bsource\b.*\b(applicant|application)\b|\breferral source\b/i;
+const WORDS = {
+  employer: [['company website', 'careers page', 'company careers', 'career page', 'careers site', 'company site', 'corporate website', 'job board', 'job boards', 'other job boards', 'other']],
+  posting: [['job board', 'job boards', 'other job boards', 'online job board', 'other']],
+  linkedin: [['linkedin']],
+  x: [['x', 'twitter', 'x (twitter)', 'social media']],
+  hn: [['hacker news', 'developer communities', 'developer community', 'online community', 'online communities', 'community']],
+};
+const PHRASE = { linkedin: 'LinkedIn', x: 'X', hn: 'Hacker News', posting: 'Job board' };
+export function recordedSource(job) {
+  const from = String(job.fromPost || job.sourceUrl || '');
+  if (/(^|\/\/)(www\.)?(x|twitter)\.com\//i.test(from)) return 'x';
+  if (job.via === 'hn' || /ycombinator\.com|hacker-?news/i.test(from)) return 'hn';
+  if (/linkedin\.com/i.test(from)) return 'linkedin';
+  if (job.via === 'routed' || job.via === 'web') return 'posting';
+  return 'employer';
+}
+const lc = (t) => String(t).toLowerCase().replace(/\s+/g, ' ').trim();
+export function recordAnswer(job, q) {
+  if (!HEARD.test(q.label)) return null;
+  const src = recordedSource(job);
+  const options = (q.options || []).filter(Boolean);
+  if (!options.length) {
+    if (q.type && !/text/.test(q.type)) return null;
+    const ep = job.employerPosting;
+    return src === 'employer' ? (ep && ep.system ? `${ep.system[0].toUpperCase()}${ep.system.slice(1).replace(/_/g, ' ')} job board` : 'Company careers page') : PHRASE[src];
+  }
+  for (const list of WORDS[src]) {
+    for (const w of list) {
+      const hit = options.find((o) => lc(o) === w);
+      if (hit) return hit;
+    }
+    // a looser word: an option that contains it as a whole word (never the AI-assistant options, never Referral)
+    for (const w of list.filter((x) => x.length > 3)) {
+      const hit = options.find((o) => new RegExp(`\\b${w}\\b`).test(lc(o)) && !/referral|\bai\b|llm|assistant/.test(lc(o)));
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+export function buildSheet({ job, questions, profile, answers = [], drafts = {} }) {
+  const facts = profile.facts || {};
+  const fields = [];
+  const unanswered = [];
+  const forbidden = [];
+  let eeoMissing = false;
+  const eeoFields = [];
+  for (const q of questions) {
+    if (FORBIDDEN.test(q.label)) {
+      forbidden.push(q.label);
+      continue;
+    }
+    const nl = normLabel(q.label);
+    let value;
+    let tag;
+    if (q.type === 'input_file' && /resume|cv/.test(nl)) {
+      value = '<resume>';
+      tag = 'upload';
+    } else if (ackKind(q.label) && /check|boolean|bool/i.test(q.type || 'checkbox')) {
+      const kind = ackKind(q.label);
+      const needsAsk = kind === 'legal' || profile.applyMode === 'fill_only';
+      if (!needsAsk || (job.acks || {})[nl]) {
+        value = 'checked';
+        tag = 'ack';
+      } else {
+        unanswered.push({ label: q.label, why: kind === 'legal' ? 'a legal acknowledgment needs the person\'s own yes' : 'the attestation is asked in fill-only', ack: kind });
+        continue;
+      }
+    } else if (EEO.test(q.label)) {
+      // The person's own text (profile.eeoText) is kept in code; matching it to this form's own options is judgment in the skill,
+      // recorded per job and field with `J eeo answer`. A field the text does not answer is never guessed: it is asked again, as a
+      // plain question, before the fill.
+      const mine = (job.eeoAnswers || {})[nl];
+      // An optional field the person skipped stays empty and is not asked again on a later form; a required field is never skipped.
+      const skipped = q.required !== true && (profile.eeoSkipped || []).includes(nl);
+      const offered = !q.options || !q.options.length || q.options.includes(mine);
+      if (skipped) {
+        continue;
+      } else if (mine && offered && eeoTextOf(profile)) {
+        value = mine;
+        tag = 'fact';
+      } else {
+        eeoMissing = true;
+        eeoFields.push({ label: q.label, options: q.options || [], required: q.required === true, noText: !eeoTextOf(profile) });
+      }
+    } else {
+      const earlier = matchAnswer(q, answers);
+      const hit = FACTS.find(([re]) => re.test(nl));
+      // A referral field gets the referrer's name the person gave, never a guess; it wins over the where-you-heard mapping.
+      const rec = ((profile.referrals || {})[employerName(job.company)]) || {};
+      const referrer = rec.referrer && ['pending', 'in'].includes(rec.status) ? rec.referrer : null;
+      const employeeOption = referrer && HEARD.test(q.label) && Array.isArray(q.options) ? q.options.find((o) => EMPLOYEE_OPTION.test(o)) : null;
+      if (referrer && (REFERRED_BY.test(q.label) || employeeOption)) {
+        value = employeeOption || referrer;
+        tag = 'fact';
+      } else if (earlier) {
+        value = earlier.answer;
+        tag = 'answer';
+      } else if (recordAnswer(job, q)) {
+        value = recordAnswer(job, q);
+        tag = 'record';
+      } else if (hit && facts[hit[1]] !== undefined && facts[hit[1]] !== '') {
+        value = String(facts[hit[1]]);
+        tag = 'fact';
+      } else if (drafts[q.label] !== undefined) {
+        const problems = checkDraft(drafts[q.label], { limit: q.maxLength, profile });
+        if (!problems.length) {
+          value = drafts[q.label];
+          tag = 'new_writing';
+        } else if (q.required) {
+          unanswered.push({ label: q.label, why: `draft failed: ${problems.join(', ')}` });
+          continue;
+        }
+      }
+    }
+    if (value === undefined) {
+      if (q.required && !(EEO.test(q.label) && eeoMissing)) unanswered.push({ label: q.label, why: 'no fact, earlier answer or checked draft', factKey: factKeyFor(q.label), ...(hasParts(q) ? { type: q.type, parts: q.parts || null } : {}) });
+      continue;
+    }
+    // A field made of several controls carries each part's value, as the form spells it; an answer that does not match every part's own
+    // options is asked again, never guessed.
+    if (Array.isArray(q.parts) && q.parts.length && tag !== 'upload' && tag !== 'ack') {
+      const pv = matchParts(q.parts, value);
+      if (!pv) {
+        if (q.required) unanswered.push({ label: q.label, why: 'the answer does not match the form\'s own parts', factKey: factKeyFor(q.label), type: q.type, parts: q.parts });
+        continue;
+      }
+      fields.push({ label: q.label, value: pv.map((p) => p.value).join(' '), tag, required: q.required, parts: pv });
+      continue;
+    }
+    fields.push({ label: q.label, value, tag, required: q.required });
+  }
+  const sheet = { job: job.key, fields, unanswered, forbidden, eeoMissing, eeoFields };
+  sheet.hash = sha(canonical({ job: job.key, fields: fields.map((f) => [f.label, f.value]), open: [...unanswered.map((u) => u.label), ...forbidden].sort() })).slice(0, 16);
+  return sheet;
+}
+
+// sheet check: the sheet itself, then the live form against the sheet.
+export function checkSheet(sheet, live = null) {
+  const problems = [];
+  if (sheet.forbidden.length) problems.push(`form asks for something the profile never holds: ${sheet.forbidden.join(', ')}`);
+  if (sheet.unanswered.length) problems.push(`unanswered required fields: ${sheet.unanswered.map((u) => u.label).join(', ')}`);
+  if (sheet.eeoMissing) problems.push('a voluntary demographic field has no answer from the person\'s own text yet');
+  if (sheet.fields.some((f) => !TAGS.includes(f.tag))) problems.push('a field has no source tag');
+  if (live) {
+    const known = new Set(sheet.fields.map((f) => normLabel(f.label)));
+    for (const f of live) {
+      if (FORBIDDEN.test(f.label)) problems.push(`live form asks for ${f.label}`);
+      else if (!known.has(normLabel(f.label)) && f.required) problems.push(`live form has a required field the sheet lacks: ${f.label}`);
+      else if (!known.has(normLabel(f.label))) problems.push(`live form has a field the sheet lacks: ${f.label}`);
+    }
+  }
+  return { ok: problems.length === 0, problems };
+}
+
+// Before submit: the values read back from the page must equal the sheet.
+export function checkReadBack(sheet, read) {
+  const problems = [];
+  const fields = [];
+  const by = new Map(read.map((r) => [normLabel(r.label), String(r.value ?? '').trim()]));
+  for (const f of sheet.fields) {
+    if (f.value === '<resume>') continue;
+    if (Array.isArray(f.parts) && f.parts.length) {
+      // Each part's control is compared with its own value; a read of the whole field is compared with the parts joined.
+      const r = read.find((x) => x && normLabel(x.label) === normLabel(f.label));
+      const bad = f.parts.filter((p) => {
+        const mine = r && Array.isArray(r.parts) ? r.parts.find((x) => String(x.name).trim().toLowerCase() === String(p.name).trim().toLowerCase()) : null;
+        return !mine || String(mine.value ?? '').trim() !== String(p.value).trim();
+      });
+      const whole = r && !Array.isArray(r.parts) && String(r.value ?? '').trim() === String(f.value).trim();
+      if (!whole && bad.length) { for (const p of bad) problems.push(`read-back differs: ${f.label} (${p.name})`); fields.push({ label: f.label, value: r ? (Array.isArray(r.parts) ? r.parts.map((x) => `${x.name}: ${x.value ?? ''}`).join('; ') : String(r.value ?? '')) : null, parts: bad.map((p) => p.name) }); }
+      continue;
+    }
+    const got = by.get(normLabel(f.label));
+    if (got !== String(f.value).trim() && !(f.tag === 'ack' && /^(true|checked|yes|on)$/i.test(got || ''))) { problems.push(`read-back differs: ${f.label}`); fields.push({ label: f.label, value: got === undefined ? null : got }); }
+  }
+  // A field the form holds that is not on the sheet, with a value in it, was filled by something other than the sheet.
+  const known = new Set(sheet.fields.map((f) => normLabel(f.label)));
+  for (const r of read) if (r && !known.has(normLabel(r.label)) && String(r.value ?? '').trim() !== '') { problems.push(`a field the sheet does not hold has a value: ${r.label}`); fields.push({ label: r.label, value: String(r.value).trim(), extra: true }); }
+  return { ok: problems.length === 0, problems, fields };
+}
+
+// A complete sheet before any fill: every required field on the live form must have an answer on the sheet. A required field the
+// sheet lacks is added to `unanswered` (a legal acknowledgment, and in fill-only the attestation, as `ack`; anything else as `live`);
+// an attestation in a submit mode is covered by the approval, so the sheet gets a ticked field for it. Returns the labels added.
+export function completeFromLive(job, live, profile = {}) {
+  const sheet = job.sheet;
+  const known = new Set(sheet.fields.map((f) => normLabel(f.label)));
+  const asked = new Set((sheet.unanswered || []).map((u) => normLabel(u.label)));
+  const added = [];
+  let changed = false;
+  for (const f of live || []) {
+    const nl = normLabel(f.label);
+    if (!f.required || known.has(nl) || asked.has(nl) || FORBIDDEN.test(f.label)) continue;
+    // A required voluntary demographic field: asked in the session before the fill, as a plain question, never guessed.
+    if (EEO.test(f.label)) {
+      const mine = (job.eeoAnswers || {})[nl];
+      if (mine && eeoTextOf(profile) && (!(f.options || []).length || f.options.includes(mine))) {
+        sheet.fields.push({ label: f.label, value: mine, tag: 'fact', required: true });
+        changed = true;
+      } else {
+        (sheet.eeoFields ||= []).push({ label: f.label, options: f.options || [], required: true, noText: !eeoTextOf(profile) });
+        sheet.eeoMissing = true;
+      }
+      continue;
+    }
+    const kind = /check|bool/i.test(f.type || 'checkbox') ? ackKind(f.label) : null;
+    if (kind && (job.acks || {})[nl]) {
+      sheet.fields.push({ label: f.label, value: 'checked', tag: 'ack', required: true });
+      changed = true;
+    } else if (kind === 'attest' && profile.applyMode !== 'fill_only') {
+      sheet.fields.push({ label: f.label, value: 'checked', tag: 'ack', required: true });
+      changed = true;
+    } else {
+      sheet.unanswered.push(kind ? { label: f.label, why: 'needs the person\'s own yes', ack: kind, live: true } : { label: f.label, why: 'required on the live form with no answer on the sheet', live: true, options: f.options || [], ...(hasParts(f) ? { type: f.type, parts: f.parts || null } : {}) });
+      added.push(f.label);
+    }
+  }
+  if (changed) sheet.hash = sha(canonical({ job: job.key, fields: sheet.fields.map((f) => [f.label, f.value]) })).slice(0, 16);
+  return added;
+}

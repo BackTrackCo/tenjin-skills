@@ -1,0 +1,302 @@
+{
+  "name": "job-search",
+  "schemaVersion": 1,
+  "hosts": [
+    "greenhouse",
+    "lever",
+    "ashby"
+  ],
+  "applyHostNames": {
+    "greenhouse": [
+      "boards.greenhouse.io",
+      "job-boards.greenhouse.io",
+      "job-boards.eu.greenhouse.io"
+    ],
+    "lever": [
+      "jobs.lever.co",
+      "jobs.eu.lever.co"
+    ],
+    "ashby": [
+      "jobs.ashbyhq.com"
+    ]
+  },
+  "neverHosts": [
+    "linkedin.com",
+    "indeed.com",
+    "glassdoor.com",
+    "ziprecruiter.com",
+    "monster.com",
+    "simplyhired.com",
+    "careerbuilder.com",
+    "dice.com",
+    "wellfound.com",
+    "ycombinator.com",
+    "workatastartup.com",
+    "x.com",
+    "twitter.com"
+  ],
+  "events": {
+    "windowDays": 60,
+    "recheckDays": 7,
+    "paceMs": 5000,
+    "lumaHost": "luma.com",
+    "ycPath": "/events",
+    "domains": ["luma.com", "lu.ma", "eventbrite.com", "meetup.com", "ycombinator.com"]
+  },
+  "ycRead": {
+    "host": "www.ycombinator.com",
+    "paceMs": 5000
+  },
+  "statuses": [
+    "new",
+    "reviewed",
+    "shortlisted",
+    "prepared",
+    "apply_ready",
+    "submitted",
+    "confirmed",
+    "interview",
+    "offer",
+    "rejected",
+    "withdrawn",
+    "skipped",
+    "closed",
+    "stopped"
+  ],
+  "transitions": {
+    "new": [
+      "reviewed",
+      "skipped",
+      "closed",
+      "stopped"
+    ],
+    "reviewed": [
+      "shortlisted",
+      "skipped",
+      "closed",
+      "stopped"
+    ],
+    "shortlisted": [
+      "prepared",
+      "skipped",
+      "closed",
+      "stopped"
+    ],
+    "prepared": [
+      "apply_ready",
+      "stopped",
+      "closed",
+      "skipped"
+    ],
+    "apply_ready": [
+      "submitted",
+      "prepared",
+      "stopped",
+      "closed"
+    ],
+    "submitted": [
+      "confirmed",
+      "interview",
+      "rejected",
+      "withdrawn",
+      "closed"
+    ],
+    "confirmed": [
+      "interview",
+      "rejected",
+      "withdrawn",
+      "offer"
+    ],
+    "interview": [
+      "rejected",
+      "offer",
+      "withdrawn"
+    ],
+    "stopped": [
+      "prepared",
+      "closed",
+      "skipped"
+    ],
+    "skipped": [],
+    "closed": [],
+    "rejected": [],
+    "withdrawn": [],
+    "offer": []
+  },
+  "terminal": [
+    "skipped",
+    "closed",
+    "rejected",
+    "withdrawn",
+    "offer"
+  ],
+  "ops": [
+    "rank",
+    "warn",
+    "transition",
+    "contact",
+    "draft",
+    "approve",
+    "signal",
+    "intro"
+  ],
+  "workReasons": [
+    "search_due",
+    "post_review",
+    "employer_page",
+    "fill_ready",
+    "new_job",
+    "review_due",
+    "reverify_due",
+    "contacts_requested",
+    "prepare_due",
+    "apply_ready",
+    "follow_up_due",
+    "need_due",
+    "email_due",
+    "referral_list",
+    "referral_pending",
+    "events_due",
+    "open_ready",
+    "site_ready",
+    "site_applied",
+    "repair_due"
+  ],
+  "heldReasons": [
+    "source_empty",
+    "tenjin_missing",
+    "chrome_disconnected",
+    "no_chrome_tools",
+    "stopped",
+    "update_waiting",
+    "update_failed",
+    "tenjin_setup"
+  ],
+  "ruleEffects": [
+    "exclude_company",
+    "exclude_term",
+    "require_term",
+    "min_pay",
+    "place",
+    "remote",
+    "employment_type",
+    "period_max",
+    "contact_count",
+    "notify_quiet_hours",
+    "notify_off",
+    "note",
+    "fill_only",
+    "referral_delay_days",
+    "events_window_days"
+  ],
+  "lessonEffects": [
+    "host_last",
+    "host_attended",
+    "drop_query",
+    "company_attended",
+    "fewer_queries"
+  ],
+  "lessonTriggers": {
+    "captcha_stops_on_host": {
+      "count": 2,
+      "windowDays": 7,
+      "effect": "host_attended"
+    },
+    "query_no_new_jobs": {
+      "sweeps": 5,
+      "effect": "drop_query"
+    },
+    "form_broke_fill": {
+      "effect": "company_attended"
+    },
+    "step_over_time": {
+      "effect": "fewer_queries"
+    }
+  },
+  "lessonDays": [
+    14,
+    30,
+    60
+  ],
+  "sweep": {
+    "catchUpAfterHours": 20,
+    "maxCatchUpDays": 14,
+    "defaultHour": 7
+  },
+  "unattendedWindow": {
+    "verifiedHours": 24,
+    "duplicateDays": 90
+  },
+  "followUpDays": 14,
+  "staleListingDays": 60,
+  "needTemplates": {
+    "job_postings": "job postings for {role} roles in {place}, posted in the last {days} days",
+    "x_hiring_posts": "hiring posts on X for {role} roles in {place} from the last {days} days",
+    "careers_page": "find the careers page of {company} from its website {url} and the job board it uses",
+    "linkedin_profile": "read the public LinkedIn profile at {url}: return the profile as JSON",
+    "people_search": "people search: engineering leaders at {company} ({url}){where}",
+    "event_web": "coming events by {company} near {place}: meetups, talks, hackathons, office hours, demo days and recruiting events",
+    "event_posts_x": "posts on X that mention a meetup, talk or hackathon by {company} in the coming days",
+    "event_posts_linkedin": "public LinkedIn posts that mention an event by {company}",
+    "event_posts_people": "public LinkedIn posts of one key person at {company}, by their profile link"
+  },
+  "peopleTitles": [
+    "Engineering Manager",
+    "Head of Engineering",
+    "Director of Engineering",
+    "VP Engineering",
+    "CTO"
+  ],
+  "prices": {
+    "checkedAt": "2026-11-25",
+    "routingFeeShare": 0.15,
+    "note": "estimate = the recorded provider price, plus the 15% routing fee for a routed query only, rounded up to a tenth of a cent; a call by catalog tool id carries no routing fee (confirmed from the router's own call records, 2026-11-25)",
+    "needs": {
+      "board_search": {
+        "via": "tool_id",
+        "providerUsd": 0.004,
+        "estimateCents": 0.4
+      },
+      "job_postings": {
+        "via": "routed_query",
+        "providerUsd": 0.003,
+        "estimateCents": 0.4
+      },
+      "x_hiring_posts": {
+        "via": "routed_query",
+        "providerUsd": 0.005,
+        "estimateCents": 0.6
+      },
+      "careers_page": {
+        "via": "routed_query",
+        "providerUsd": 0.005,
+        "estimateCents": 0.6
+      },
+      "people_search": {
+        "via": "routed_query",
+        "providerUsd": 0.01,
+        "estimateCents": 1.2
+      },
+      "company_lookup": {
+        "via": "tool_id",
+        "providerUsd": 0.01225,
+        "estimateCents": 1.3
+      },
+      "linkedin_profile": {
+        "via": "routed_query",
+        "providerUsd": 0.02,
+        "estimateCents": 2.3
+      },
+      "event_posts_linkedin": {
+        "via": "tool_id",
+        "providerUsd": 0.0022,
+        "estimateCents": 0.3
+      },
+      "event_posts_people": {
+        "via": "tool_id",
+        "providerUsd": 0.006,
+        "estimateCents": 0.6
+      }
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "output": {
+    "found": true,
+    "data": {
+      "items": [
+        {
+          "id": "1",
+          "text": "Placeholder Co hackathon this Saturday https://luma.com/placeholder-hack and more",
+          "url": "https://x.com/placeholder_user/status/1",
+          "authorId": "1",
+          "authorName": "Placeholder User",
+          "authorUsername": "placeholder_user",
+          "authorFollowers": 10,
+          "authorVerified": false,
+          "createdUtc": 1795567571,
+          "isReply": false,
+          "likeCount": 1,
+          "retweetCount": 0,
+          "replyCount": 0,
+          "quoteCount": 0,
+          "viewCount": 10,
+          "media": []
+        },
+        {
+          "id": "2",
+          "text": "We are hiring a software engineer in San Francisco",
+          "url": "https://x.com/placeholder_user/status/2",
+          "authorUsername": "placeholder_user",
+          "createdUtc": 1795567511,
+          "media": []
+        }
+      ],
+      "nextCursor": "x-page-2"
+    }
+  }
+}

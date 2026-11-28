@@ -1,0 +1,4 @@
+{ "hits": [
+  { "objectID": "9105", "parent_id": 9002, "story_id": 9002, "author": "remoteco", "created_at_i": 1795000200, "comment_text": "RemoteCo | Senior Software Engineer | REMOTE (worldwide)" },
+  { "objectID": "9108", "parent_id": 9002, "story_id": 9002, "author": "berlinco", "created_at_i": 1795000400, "comment_text": "Berlinco (Berlin) | Platform Engineer | hybrid" }
+] }

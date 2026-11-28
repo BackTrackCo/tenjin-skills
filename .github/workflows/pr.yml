@@ -1,0 +1,32 @@
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm test
+      - run: npm run check:dashes
+      # the skills installer needs Node 22 or later, so this runs on the Node 24 job only
+      - name: Every SKILL.md parses (npx skills add must not skip it)
+        if: matrix.node == 24
+        run: npm run check:skills
+      - name: Gates hash matches the manifest
+        run: |
+          want=$(node -p "require('./skills/job-search/manifest.json').gatesHash")
+          got=$(node skills/job-search/scripts/jobs.mjs gates | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).gatesHash")
+          test "$want" = "$got"

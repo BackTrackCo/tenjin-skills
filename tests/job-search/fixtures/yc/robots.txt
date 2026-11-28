@@ -1,0 +1,10 @@
+User-Agent: *
+Disallow: /verify/*
+Disallow: /library?categories=*&*
+Allow: /library?categories=*
+Disallow: /library?*
+Disallow: /companies?*
+Allow: /
+
+User-Agent: facebookexternalhit
+Allow: /verify/*

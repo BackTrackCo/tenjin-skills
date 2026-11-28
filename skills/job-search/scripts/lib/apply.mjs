@@ -1,0 +1,265 @@
+import fs from 'node:fs';
+import { graph } from './graph.mjs';
+import { duplicateWithin, sha } from './dedupe.mjs';
+import { isFillOnly } from './fillonly.mjs';
+import { frequencyOf, periodStart } from './schedule.mjs';
+import { hostOf, isNeverAutomated } from './platforms.mjs';
+import { stagedPathFor } from './uploads.mjs';
+import { referralHold, referralListAnswered } from './referral.mjs';
+import { activeLessons, canonical, maxPay, rulesHash, ruleValue } from './overlay.mjs';
+
+export const WRITING_SCOPE = 'application_free_text';
+
+const HOUR = 3600000;
+
+// ---- unattended consent -------------------------------------------------
+// The positions rule: a number, or no limit. The person's words and date are kept with the rule.
+// The rule is a number (the daily number), 'none', or {catchUp, perDay, at}: a first-run catch-up, then a daily number. The
+// catch-up applies once, to the period the rule was recorded in, and is not carried over. The daily number is split across
+// a twice-a-day period (the first takes the odd one: 9 gives 5 and 4) and counts 7 days' worth for a weekly one. A most,
+// not a target.
+export function periodLimit(overlay, { profile = {}, now = Date.now(), ignoreCatchUp = false } = {}) {
+  const v = ruleValue(overlay, 'period_max');
+  if (v === undefined || v === 'none' || v === null) return null;
+  if (typeof v !== 'object') return Number(v); // a whole number of positions per period
+  const freq = frequencyOf(profile);
+  const obj = v;
+  const at = obj.at ? Date.parse(obj.at) : NaN;
+  if (!ignoreCatchUp && Number.isInteger(obj.catchUp) && !Number.isNaN(at) && periodStart(now, freq) === periodStart(at, freq)) return obj.catchUp;
+  if (obj.perDay === 'none' || obj.perDay === undefined || obj.perDay === null) return null;
+  const day = Number(obj.perDay);
+  if (freq === 'weekly') return day * 7;
+  if (freq === 'twice_daily') return new Date(now).getHours() < 12 ? Math.ceil(day / 2) : Math.floor(day / 2);
+  return day;
+}
+
+export function unattendedProblems(profile) {
+  const u = profile.unattended;
+  const p = [];
+  if (!u) return ['the unattended rules are not set'];
+  if (!Array.isArray(u.roles) || !u.roles.length) p.push('no role terms');
+  if (!Array.isArray(u.places) || !u.places.length) p.push('no place');
+  if (typeof u.minScore !== 'number') p.push('no lowest fit score');
+  if (!Array.isArray(u.hosts) || !u.hosts.length || u.hosts.some((h) => typeof h !== 'string' || !h.trim())) p.push('no hiring systems (a list, or "*" for any)');
+  return p;
+}
+
+// Only an attended yes records it, and only with the person's choice for optional writing fields:
+// skip leaves them out, wait holds the job for the person. There is no default.
+export function recordConsent(state, profile, overlay, now = Date.now(), optionalWriting) {
+  const problems = unattendedProblems(profile);
+  if (problems.length) throw new Error(`cannot record consent: ${problems.join('; ')}`);
+  if (!['skip', 'wait'].includes(optionalWriting)) throw new Error('the person picks skip or wait for optional writing fields; there is no default');
+  // Limits that only tighten stay out of the hash, but the consent remembers the limits it was given under: removing or
+  // raising the positions rule, or removing a fill-only rule, loosens an unattended run and needs a new consent.
+  state.consent.unattended = { rulesHash: rulesHash(profile, overlay), at: new Date(now).toISOString(), optionalWriting, limits: limitsOf(overlay) };
+  state.consent.dryRun = { records: [], confirmedAt: null, rulesHash: null };
+  return state.consent.unattended;
+}
+
+// Writing consent is separate from the unattended consent: it covers new writing in an unattended submit.
+// It is bound to the writing scope and the person's writing rules, so a changed rule makes it stale.
+export const writingHash = (rulesText = '') => sha(canonical({ scope: WRITING_SCOPE, rules: String(rulesText).trim() }));
+export function recordWritingConsent(state, rulesText = '', now = Date.now()) {
+  state.consent.writing = { at: new Date(now).toISOString(), hash: writingHash(rulesText) };
+  return state.consent.writing;
+}
+export function writingConsentCurrent(state, rulesText = '') {
+  return Boolean(state.consent.writing && state.consent.writing.hash === writingHash(rulesText));
+}
+export function revokeConsent(state, which) {
+  if (which === 'unattended') state.consent.unattended = null;
+  else if (which === 'writing') state.consent.writing = null;
+  else if (which === 'email') state.consent.email = null;
+  else throw new Error('revoke unattended, writing or email');
+}
+
+export function limitsOf(overlay) {
+  const fill = (overlay.rules || []).filter((r) => r.effect === 'fill_only').map((r) => (r.value === true || r.value === 'all' ? '*' : String(r.value).toLowerCase()));
+  const v = ruleValue(overlay, 'period_max');
+  const catchUp = v && typeof v === 'object' && Number.isInteger(v.catchUp) ? v.catchUp : null;
+  return { periodMax: periodLimit(overlay, { ignoreCatchUp: true }), catchUp, fillOnly: [...new Set(fill)] };
+}
+// The most one period may hold under these limits: the catch-up number in the first period, else the daily number.
+const firstCap = (l) => (l.catchUp !== null && l.catchUp !== undefined ? l.catchUp : l.periodMax === null || l.periodMax === undefined ? Infinity : l.periodMax);
+// True when the current limits are looser than the ones the consent was given under.
+export function loosened(was, now) {
+  if (!was) return false;
+  if (was.periodMax !== null && (now.periodMax === null || now.periodMax > was.periodMax)) return true;
+  if (firstCap(now) > firstCap({ catchUp: was.catchUp ?? null, periodMax: was.periodMax })) return true;
+  if (was.fillOnly.includes('*') && !now.fillOnly.includes('*')) return true;
+  return was.fillOnly.some((v) => v !== '*' && !now.fillOnly.includes(v) && !now.fillOnly.includes('*'));
+}
+
+export function consentStatus(state, profile, overlay) {
+  const c = state.consent.unattended;
+  if (!c) return { ok: false, reason: 'no_consent' };
+  if (c.rulesHash !== rulesHash(profile, overlay) || loosened(c.limits, limitsOf(overlay))) return { ok: false, reason: 'rules_changed' };
+  return { ok: true };
+}
+
+export function recordDryRun(state, record) {
+  state.consent.dryRun.records.push({ ...record, submitted: false });
+}
+export function confirmDryRun(state, profile, overlay, now = Date.now()) {
+  if (!consentStatus(state, profile, overlay).ok) throw new Error('record the unattended consent first');
+  if (!state.consent.dryRun.records.length) throw new Error('the dry run has no records to review');
+  state.consent.dryRun.confirmedAt = new Date(now).toISOString();
+  state.consent.dryRun.rulesHash = rulesHash(profile, overlay);
+}
+export const dryRunDone = (state, profile, overlay) => Boolean(state.consent.dryRun.confirmedAt && state.consent.dryRun.rulesHash === rulesHash(profile, overlay));
+
+// A company the person excluded, by an unattended rule or an exclude_company rule: no application, whatever the yes on file.
+export function companyExcluded(job, profile, overlay) {
+  const excluded = [...(((profile.unattended || {}).excludeCompanies) || []), ...((overlay && overlay.rules) || []).filter((r) => r.effect === 'exclude_company').map((r) => r.value)];
+  return excluded.some((c) => c && String(job.company).toLowerCase().includes(String(c).toLowerCase()));
+}
+
+// ---- the unattended rules against one job ---------------------------------
+export function unattendedRuleFailure(job, profile, overlay, now = Date.now()) {
+  const u = profile.unattended;
+  const title = job.title.toLowerCase();
+  if (!u.hosts.includes('*') && !u.hosts.includes(job.ats)) return 'host_not_in_rules';
+  if (!u.roles.some((r) => title.includes(String(r).toLowerCase()))) return 'role_not_in_rules';
+  const hay = `${job.city} ${job.region} ${job.country}`.toLowerCase();
+  if (!u.places.some((p) => hay.includes(String(p).toLowerCase())) && !(job.remote && u.remote === true)) return 'place_not_in_rules';
+  if ((u.excludeLevels || []).some((l) => title.includes(String(l).toLowerCase()))) return 'level_excluded';
+  const floor = u.minPay;
+  if (typeof floor === 'number') {
+    const top = maxPay(job.salary);
+    if (top !== null && top < floor) return 'below_pay_floor';
+  }
+  const excluded = [...(u.excludeCompanies || []), ...(overlay.rules || []).filter((r) => r.effect === 'exclude_company').map((r) => r.value)];
+  if (excluded.some((c) => c && String(job.company).toLowerCase().includes(String(c).toLowerCase()))) return 'company_excluded';
+  if (typeof job.fit !== 'number' || job.fit < u.minScore) return 'score_below_rule';
+  if ((job.warnings || []).some((w) => /layoff|stealth|recruiter|injection/i.test(w))) return 'warning_blocks_unattended';
+  for (const l of activeLessons(overlay, now)) {
+    if (l.effect === 'host_attended' && l.subject === job.ats) return 'lesson_host_attended';
+    if (l.effect === 'company_attended' && String(job.company).toLowerCase() === String(l.subject).toLowerCase()) return 'lesson_company_attended';
+  }
+  return null;
+}
+
+// ---- apply next -----------------------------------------------------------
+// Pure. ctx: {state, profile, overlay, mode, now, batchOpen}. A job is handed out only in an open batch.
+// Returns {handout} or {refused} plus the jobs that must wait, each with its reason.
+// A handed-out job counts as in flight for 20 minutes (a little longer than the slowest browser step) until it is submitted,
+// filled, stopped or withdrawn. `all` hands out the whole set, one job per host: two jobs on the same host wait for each other, so
+// no site sees many forms at once from one browser; each job keeps its own claim, its own `J may-submit` check and its own stops.
+export const AUTO_MODES = ['auto_no_new', 'auto_write'];
+export const IN_FLIGHT_MS = 20 * 60000;
+export const inFlight = (job, now = Date.now()) => Boolean(job.inFlight && now - Date.parse(job.inFlight.at) < IN_FLIGHT_MS);
+export function applyNext(ctx) {
+  const { state, profile, overlay, mode = 'attended', now = Date.now(), batchOpen, writingRulesText = '', all = false, workingFolder: folder } = ctx;
+  const writingOk = writingConsentCurrent(state, writingRulesText);
+  const queue = [];
+  const out = (o) => ({ handout: null, handouts: [], refused: null, queue, ...o });
+  if (!batchOpen) return out({ refused: 'no_batch' });
+  let dry = false;
+  if (mode === 'unattended') {
+    // Only an auto mode hands out for an unattended submit; a person who went back to an attended mode keeps their consent on file
+    // but nothing is submitted without a yes until they pick an auto mode again.
+    if (profile.applyMode && !AUTO_MODES.includes(profile.applyMode)) return out({ refused: 'not_auto_mode' });
+    // An auto mode waits, with no time limit, for the person's answer to the one referral question at the start (a list or none).
+    if (!referralListAnswered(profile)) return out({ refused: 'referral_list_unanswered' });
+    const cs = consentStatus(state, profile, overlay);
+    if (!cs.ok) return out({ refused: cs.reason });
+    dry = !dryRunDone(state, profile, overlay);
+  }
+  // Positions per period: how many applications an unattended run makes in one period. The rest stay ranked in the
+  // queue for the next period and none is dropped. No rule, or "none", means no limit.
+  const limit = periodLimit(overlay, { profile, now });
+  let room = Infinity;
+  if (mode === 'unattended' && limit !== null) {
+    const start = periodStart(now, frequencyOf(profile));
+    const done = (state.handouts || []).filter((h) => h.counted && Date.parse(h.at) >= start).length;
+    if (done >= limit) return out({ refused: 'period_max', limit, done });
+    room = limit - done;
+  }
+  const hostLast = new Set(activeLessons(overlay, now).filter((l) => l.effect === 'host_last').map((l) => l.subject));
+  const cands = Object.values(state.jobs)
+    .filter((j) => ['prepared', 'apply_ready'].includes(j.status) && (!j.fillReady || j.submitNow))
+    .sort((a, b) => Number(hostLast.has(a.ats)) - Number(hostLast.has(b.ats)));
+  const busy = new Set(cands.filter((j) => inFlight(j, now) && j.employerPosting).map((j) => hostOf(j.employerPosting.url)));
+  const handouts = [];
+  for (const job of cands) {
+    if (inFlight(job, now) || job.mayAt) continue; // already handed out and still running, or past its last check: never twice
+    const why = jobFailure({ job, state, profile, overlay, mode, now, writingOk });
+    if (why) {
+      queue.push({ key: job.key, reason: why });
+      continue;
+    }
+    const host = hostOf(job.employerPosting.url);
+    if (all && busy.has(host)) {
+      queue.push({ key: job.key, reason: 'host_busy' }); // waits for its host to free up; never parked
+      continue;
+    }
+    const skipFields = mode === 'unattended' && !writingOk && state.consent.unattended.optionalWriting === 'skip' ? (job.sheet.fields || []).filter((f) => f.tag === 'new_writing' && !f.required).map((f) => f.label) : [];
+    const fillOnly = isFillOnly(job, overlay, profile);
+    // The file a form takes is staged in the working folder just before the upload (`J uploads stage <key>`); the handout names that path.
+    const source = (job.sheet.fields || []).some((f) => f.tag === 'upload') ? (profile.resumeUploadPath || profile.resumePath || null) : null;
+    const resume = source ? stagedPathFor(source, folder) : null;
+    handouts.push({ key: job.key, url: job.employerPosting.url, host, sheetHash: job.sheet.hash, mode, dryRun: dry, fillOnly, submit: !dry && !fillOnly, skipFields, ...(resume ? { resume, stage: `J uploads stage ${job.key}`, unstage: `J uploads unstage ${job.key}` } : {}), ...(job.submitNow ? { fromFilled: true } : {}) });
+    busy.add(host);
+    if (!all || handouts.length >= room) break;
+  }
+  if (handouts.length) return out({ handout: handouts[0], handouts });
+  return out({});
+}
+
+// Where the person applies this job: 'employer' (the skill applies on the employer's page), 'site' (the person applies on the
+// job's own page on a job site, which the skill opens for them and does nothing on) or 'ask' (both exist and the person chose
+// to be asked). A job with no job-site link takes the employer site under the apply mode.
+export function applyPathOf(job, profile = {}) {
+  if (job.applyVia === 'employer' || job.applyVia === 'site') return job.applyVia;
+  if (!(job.siteLinks || []).length) return 'employer';
+  const where = (profile.apply && profile.apply.where) || 'employer';
+  if (where === 'site') return 'site';
+  if (where === 'ask') return job.employerPosting ? 'ask' : 'site';
+  return 'employer';
+}
+
+export function jobFailure({ job, state, profile, overlay, mode, now, writingOk = false }) {
+  if (profile.applyMode === 'open_only') return 'open_only_mode'; // the page is opened for the person, never filled or submitted
+  const path = applyPathOf(job, profile);
+  if (path === 'site') return 'site_path'; // opened for the person, who applies there
+  if (path === 'ask') return 'where_needs_answer'; // the choice joins the approval call; nothing is handed out before it
+  // Only the employer's own posting, found exactly or confirmed, on any host off the deny list, is ever handed out.
+  const ep = job.employerPosting;
+  if (!ep || !['exact', 'confirmed'].includes(ep.confidence)) return 'no_employer_posting';
+  if (job.openConfirmed !== true) return 'not_confirmed_open';
+  if (isNeverAutomated(ep.url)) return 'platform_url';
+  if (!/^https:\/\//.test(String(ep.url || ''))) return 'host_not_allowed';
+  if (job.parked) return 'parked';
+  if (job.noChromeTools) return 'no_chrome_tools';
+  if (!job.verifiedAt || now - Date.parse(job.verifiedAt) > graph().unattendedWindow.verifiedHours * HOUR) return 'not_verified_recently';
+  if (!job.sheet || !job.sheet.passed) return 'sheet_not_checked';
+  if (job.sheet.eeoMissing) return 'eeo_missing';
+  // A resume given as text only has no file: a form that requires one holds this job, which asks once for the file.
+  if (profile.resumeThin && [...(job.sheet.fields || []), ...(job.sheet.unanswered || [])].some((f) => /work history|employment history|job titles?|previous (employer|job|role)s?|current (title|role)/i.test(f.label))) return 'needs_resume_file';
+  if ((job.sheet.fields || []).some((f) => f.tag === 'upload') && profile.resumeSource && !((profile.resumeUploadPath || profile.resumePath) && fs.existsSync(profile.resumeUploadPath || profile.resumePath))) return 'needs_resume_file';
+  if (duplicateWithin(state, job, now, graph().unattendedWindow.duplicateDays)) return 'applied_to_company_title_within_90_days';
+  if (state.applications.some((a) => a.key === job.key)) return 'already_applied';
+  if (companyExcluded(job, profile, overlay)) return 'company_excluded';
+  if (mode === 'attended') {
+    if (isFillOnly(job, overlay, profile)) return null; // nothing is submitted, so no yes is needed
+    const a = state.approvals[job.key];
+    if (!a) return 'no_recorded_yes';
+    if (a.sheetHash !== job.sheet.hash) return 'sheet_changed_needs_new_yes';
+    return null;
+  }
+  const rule = unattendedRuleFailure(job, profile, overlay, now);
+  if (rule) return rule;
+  // No unattended submit while the company's referral is pending.
+  const held = referralHold(profile, job);
+  if (held) return held;
+  // New writing needs its own consent. Optional writing follows the recorded skip or wait.
+  if (profile.applyMode === 'auto_no_new' && (job.sheet.fields || []).some((f) => f.tag === 'new_writing')) return 'new_answer_needs_yes';
+  if (!writingOk) {
+    const nw = (job.sheet.fields || []).filter((f) => f.tag === 'new_writing');
+    const needs = nw.some((f) => f.required) || (nw.length > 0 && state.consent.unattended.optionalWriting === 'wait');
+    if (needs) return 'writing_needs_yes';
+  }
+  return null;
+}
+

@@ -1,0 +1,8 @@
+{
+  "name": "job-search",
+  "version": "0.1.0",
+  "minTenjin": "0.1.0-alpha.35",
+  "writing": "writing-v0.1.0",
+  "change": "First release.",
+  "gatesHash": "7020dc82b47b69ade82fbd723c219bd8332143f06b2d42fd5c890beb8a817456"
+}

@@ -1,0 +1,111 @@
+{
+ "_note": "Recorded 2026-11-25 through Tenjin alpha.110 request tool with {tool: \"icypeas-find-people\"} (the catalog tool by id), searched by company name with no website, then cleaned: the settlement hash is removed, the spec id is a placeholder, and each person's name, headline, description and profile link are placeholders. Field names, types, the order of keys, job titles, places and company fields are the real ones. In the real run envelope, `result` is a JSON string; here `result` holds the parsed object, so a test must JSON.stringify it to replay the real shape.",
+ "need": "people_search",
+ "step2": {
+  "input": {
+   "query": {
+    "currentCompanyName": {
+     "include": [
+      "Vercel"
+     ]
+    },
+    "currentJobTitle": {
+     "include": [
+      "Engineering Manager",
+      "Head of Engineering",
+      "Director of Engineering",
+      "VP Engineering",
+      "CTO"
+     ]
+    },
+    "location": {
+     "include": [
+      "New York"
+     ]
+    }
+   },
+   "pagination": {
+    "size": 5
+   }
+  },
+  "envelope": {
+   "status": "fulfilled",
+   "supplier": "x402.orthogonal.com",
+   "label": "Icypeas lead database",
+   "parameters": {
+    "query": {
+     "currentCompanyName": {
+      "include": [
+       "Vercel"
+      ]
+     },
+     "currentJobTitle": {
+      "include": [
+       "Engineering Manager",
+       "Head of Engineering",
+       "Director of Engineering",
+       "VP Engineering",
+       "CTO"
+      ]
+     },
+     "location": {
+      "include": [
+       "New York"
+      ]
+     }
+    },
+    "pagination": {
+     "size": 5
+    }
+   },
+   "cost": [
+    "provider price 0.01 USD"
+   ],
+   "result": {
+    "total": 2,
+    "success": true,
+    "leads": [
+     {
+      "firstname": "Person",
+      "lastname": "A",
+      "headline": "Solutions Engineering, Financial Services",
+      "description": "",
+      "profileUrl": "https://www.linkedin.com/in/person-a",
+      "lastJobTitle": "Field CTO",
+      "lastJobDescription": "",
+      "lastJobStartDate": "06-2026",
+      "address": "Fort Lee, New Jersey, United States",
+      "lastCompanyName": "Vercel",
+      "lastCompanyUrn": "urn:li:fs_salesCompany:16181286",
+      "lastCompanyUrl": "https://www.linkedin.com/company/vercel/",
+      "lastCompanyWebsite": "https://vercel.com/contact/sales",
+      "lastCompanyDescription": "<company text, cut>",
+      "lastCompanySize": 873,
+      "lastCompanyIndustry": "Software Development",
+      "lastCompanyAddress": "94133, San Francisco, California, United States of America"
+     },
+     {
+      "firstname": "Person",
+      "lastname": "B",
+      "headline": "Director of Engineering, <team> at <a different company>",
+      "description": "<about text, cut>",
+      "profileUrl": "https://www.linkedin.com/in/person-b",
+      "lastJobTitle": "Senior Director of Engineering",
+      "lastJobDescription": "",
+      "lastJobStartDate": "09-2025",
+      "address": "New York, United States",
+      "lastCompanyName": "Vercel",
+      "lastCompanyUrn": "urn:li:fs_salesCompany:16181286",
+      "lastCompanyUrl": "https://www.linkedin.com/company/vercel/",
+      "lastCompanyWebsite": "https://vercel.com/contact/sales",
+      "lastCompanyDescription": "<company text, cut>",
+      "lastCompanySize": 873,
+      "lastCompanyIndustry": "Software Development",
+      "lastCompanyAddress": "94133, San Francisco, California, United States of America"
+     }
+    ]
+   }
+  }
+ },
+ "observed": "The `currentCompanyName` filter works: both leads have `lastCompanyName` \"Vercel\", the same `lastCompanyUrn`, and `lastCompanyUrl` is the company's LinkedIn page, so a lead can be matched to the company by name and by that LinkedIn page even with no website. `lastCompanyWebsite` is a full URL with a path (\"https://vercel.com/contact/sales\"), not a bare domain: take its host before comparing. The `location` filter matches a metro area: a lead in Fort Lee, New Jersey came back for \"New York\", and the adapter's `inPlace` check (the address must name the city) drops that lead. The title filter is loose: \"CTO\" matched \"Field CTO\", a sales engineering role, not an engineering manager. The headline can be out of date: lead B's headline names a different company than `lastCompanyName`, so a lead whose headline names another company should be weak. `total` counts the leads returned. Cost 1 cent."
+}

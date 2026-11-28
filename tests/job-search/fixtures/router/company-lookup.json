@@ -1,0 +1,125 @@
+{
+ "_note": "Recorded 2026-11-25 through Tenjin alpha.110 request tool with {tool: \"companyenrich-properties\"} (the catalog tool by id, no routing decision), then cleaned: the settlement hash is removed, the spec id is a placeholder, the company id and logo id are placeholders, and the long lists and text are cut. Field names, types and the order of keys are the real ones. In the real run envelope, `result` is a JSON string; here `result` holds the parsed object, so a test must JSON.stringify it to replay the real shape.",
+ "need": "company_lookup",
+ "step1": {
+  "call": {
+   "tool": "companyenrich-properties"
+  },
+  "json": {
+   "status": "spec",
+   "id": "00000000-0000-4000-8000-000000000010",
+   "cost": [
+    "provider price 0 USD"
+   ]
+  },
+  "text": "CompanyEnrich: the best-matching company profile from its name or a social URL when the domain is unknown\nPrice: $0.01225 per call, paid by this machine's wallet straight to the provider.\nRequest: POST https://x402.orthogonal.com/company-enrich/companies/enrich\nInputs:\n- name (string); The name of the company to enrich\n- linkedinUrl (string); The LinkedIn URL of the company to enrich\n- linkedinId (string); The LinkedIn ID of the company to enrich\n- twitterUrl (string); The Twitter URL of the company to enrich\n- facebookUrl (string); The Facebook URL of the company to enrich\n- instagramUrl (string); The Instagram URL of the company to enrich\n- youTubeUrl (string); The YouTube URL of the company to enrich\nExample input: {\"name\":\"Stripe\"}"
+ },
+ "step2": {
+  "input": {
+   "name": "Vercel"
+  },
+  "envelope": {
+   "status": "fulfilled",
+   "supplier": "x402.orthogonal.com",
+   "label": "CompanyEnrich match",
+   "parameters": {
+    "name": "Vercel"
+   },
+   "cost": [
+    "provider price 0.01225 USD"
+   ],
+   "result": {
+    "id": "00000000-0000-4000-8000-000000000011",
+    "name": "Vercel",
+    "domain": "vercel.com",
+    "website": "https://vercel.com",
+    "type": "private",
+    "legalName": "Vercel Inc",
+    "industry": "Media & Internet",
+    "industries": [
+     "Media & Internet/Data Collection & Internet Portals",
+     "Software"
+    ],
+    "categories": [
+     "b2b",
+     "saas"
+    ],
+    "employees": "501-1K",
+    "reported_employees": "501-1K",
+    "revenue": "10m-50m",
+    "description": "Vercel provides developer infrastructure for building, deploying, scaling, and securing web applications and AI agents.",
+    "keywords": [
+     "developer infrastructure",
+     "web application deployment"
+    ],
+    "technologies": [
+     "Next-Js",
+     "React"
+    ],
+    "subsidiaries": null,
+    "founded_year": 2015,
+    "naics_codes": [
+     "518210",
+     "513210"
+    ],
+    "location": {
+     "country": {
+      "code": "US",
+      "name": "United States",
+      "latitude": 38,
+      "longitude": -97
+     },
+     "state": {
+      "id": 4845,
+      "name": "California",
+      "code": "CA",
+      "latitude": 36.77826,
+      "longitude": -119.41793
+     },
+     "city": {
+      "id": 131388,
+      "name": "Walnut",
+      "latitude": 34.02029,
+      "longitude": -117.86534
+     },
+     "address": "<company street address>",
+     "postal_code": "<postal code>",
+     "phone": "<company phone>"
+    },
+    "financial": {
+     "stock_symbol": null,
+     "stock_exchange": null,
+     "total_funding": 863000000,
+     "funding_stage": "series_f",
+     "funding_date": "2025-09-30T00:00:00",
+     "funding": [
+      {
+       "date": "2025-09-30T00:00:00",
+       "amount": "300000000 USD",
+       "type": "Series F",
+       "url": null,
+       "from": "<investors>"
+      }
+     ]
+    },
+    "socials": {
+     "linkedin_url": "https://www.linkedin.com/company/vercel",
+     "linkedin_id": "16181286",
+     "twitter_url": "https://x.com/vercel",
+     "facebook_url": "https://facebook.com/VercelHQ/",
+     "instagram_url": "https://instagram.com/vercel",
+     "angellist_url": null,
+     "crunchbase_url": "https://www.crunchbase.com/organization/vercel",
+     "youtube_url": "https://youtube.com/@VercelHQ",
+     "github_url": "https://github.com/vercel",
+     "g2_url": "https://www.g2.com/products/vercel/reviews"
+    },
+    "page_rank": 6.177504,
+    "logo_url": "https://api.companyenrich.com/companies/logo/00000000-0000-4000-8000-000000000011",
+    "seo_description": "<long text, cut>",
+    "updated_at": "2026-11-16T01:21:12.367085Z"
+   }
+  }
+ },
+ "observed": "The answer is one company object, not a list, and it carries no match score: the tool returns its best match for the name, so code must check that `name` (or `legalName`) matches the job's company name before it trusts `domain`. `domain` is a bare domain (\"vercel.com\") and `website` is a full URL; use `domain` for the people search. `socials.linkedin_url` is the company's LinkedIn page, which a later lookup can pass as `linkedinUrl`. `location` is the registered address and can differ from the headquarters city (here Walnut, CA for a San Francisco company), so code must not use it as the job's city. The envelope has a `label`. Cost 1.225 cents."
+}

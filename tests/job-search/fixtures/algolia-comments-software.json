@@ -1,0 +1,6 @@
+{ "hits": [
+  { "objectID": "9101", "parent_id": 9002, "story_id": 9002, "author": "acme", "created_at_i": 1795000000, "comment_text": "Acme (Berlin, ONSITE) | Software Engineer | Full-time<p>We build tools." },
+  { "objectID": "9106", "parent_id": 9101, "story_id": 9002, "author": "reply", "created_at_i": 1795000050, "comment_text": "A reply about software engineer in Berlin, not a top-level post" },
+  { "objectID": "9105", "parent_id": 9002, "story_id": 9002, "author": "remoteco", "created_at_i": 1795000200, "comment_text": "RemoteCo | Senior Software Engineer | REMOTE (worldwide)" },
+  { "objectID": "9107", "parent_id": 9002, "story_id": 9002, "author": "nowhere", "created_at_i": 1795000300, "comment_text": "Faraway (Tokyo, onsite) | Software Engineer" }
+] }

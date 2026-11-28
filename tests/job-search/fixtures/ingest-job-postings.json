@@ -1,0 +1,13 @@
+{
+  "need": "job_postings",
+  "query": { "role": "software engineer", "place": "Berlin", "remote": false, "since": "2026-11-16" },
+  "status": "fulfilled",
+  "fullResultPath": "/tmp/example-result.json",
+  "cost": "$0.01",
+  "postings": [
+    { "title": "Software Engineer", "employer": "Figma", "city": "Berlin", "region": "", "country": "DE", "remote": false, "postedAt": "2026-11-20T09:00:00Z", "employmentType": "Full-time", "salary": { "min": 90000, "max": 120000, "currency": "EUR", "period": "year" }, "applyLinks": [{ "url": "https://www.example-jobs.test/view/1", "publisher": "Example Jobs" }, { "url": "https://boards.greenhouse.io/figma/jobs/__JOBID__?gh_src=abc", "publisher": "Greenhouse" }], "description": "Build things in Berlin.", "sourceUrl": "https://www.example-jobs.test/view/1" },
+    { "title": "Backend Engineer", "employer": "Globex", "city": "Berlin", "region": "", "country": "DE", "remote": false, "postedAt": "2026-11-21T09:00:00Z", "employmentType": "Full-time", "salary": null, "applyLinks": [{ "url": "https://www.example-jobs.test/view/2", "publisher": "Example Jobs" }, { "url": "https://careers.globex.test/apply/2", "publisher": "Globex" }], "description": "Services work.", "sourceUrl": "https://www.example-jobs.test/view/2" },
+    { "title": "Platform Engineer", "employer": "Figma", "city": "Berlin", "region": "", "country": "DE", "remote": false, "postedAt": "2026-11-21T09:00:00Z", "employmentType": "Full-time", "salary": null, "applyLinks": [{ "url": "https://boards.greenhouse.io/figma/jobs/1111111", "publisher": "Greenhouse" }], "description": "Closed on its board.", "sourceUrl": "https://www.example-jobs.test/view/3" },
+    { "title": "Data Engineer", "employer": "Initech", "city": "Paris", "region": "", "country": "FR", "remote": false, "postedAt": "2026-11-21T09:00:00Z", "employmentType": "Full-time", "salary": null, "applyLinks": [{ "url": "https://careers.initech.test/4", "publisher": "Initech" }], "description": "Wrong place.", "sourceUrl": "https://www.example-jobs.test/view/4" }
+  ]
+}

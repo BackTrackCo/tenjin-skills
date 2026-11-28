@@ -1,0 +1,23 @@
+{
+ "9201": {
+  "id": 9201,
+  "type": "job",
+  "by": "ycstartup",
+  "time": 1795000300,
+  "title": "Widgets (YC W26) is hiring a software engineer in Berlin",
+  "text": "Join us."
+ },
+ "9202": {
+  "id": 9202,
+  "type": "job",
+  "by": "ycother",
+  "time": 1795000400,
+  "title": "Gadgets (YC S25) is hiring a designer",
+  "text": "Design things in Berlin."
+ },
+ "9203": {
+  "id": 9203,
+  "type": "job",
+  "dead": true
+ }
+}
