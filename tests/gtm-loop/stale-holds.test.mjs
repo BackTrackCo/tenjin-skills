@@ -21,7 +21,7 @@ test('a held line records the code that recorded it: the manifest version and a 
   const x = fixture('router/x-posts.json');
   const f = fake({ answers: [specAnswer(x.host), { status: 'needs_input', reason: 'the input has no field foo' }] });
   await routed.runPostRound({ profile, overlay: { rules: [] }, client: new router.RouterClient({ bin: f.bin, timeouts: { ...router.TIMEOUTS, shutdown: 300 } }), now: Date.now() });
-  const h = store.loadState().held.find((x2) => x2.status === 'needs_input');
+  const h = store.loadState().held.find((x2) => x2.status === 'input_break');
   assert.equal(h.codeId, id);
 });
 

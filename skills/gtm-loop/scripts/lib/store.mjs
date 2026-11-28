@@ -21,6 +21,7 @@ export function emptyState() {
     consent: { email: null, dryRun: { records: [], confirmedAt: null, rulesHash: null } },
     signals: { counts: {} },
     held: [],
+    repairs: { seq: 0, requests: {} },
     lease: null,
     update: { lastCheckAt: null, status: null, waiting: null },
     updateLines: [],

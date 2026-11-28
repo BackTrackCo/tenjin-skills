@@ -43,7 +43,7 @@ test('the enrichment and check adapters read their answers and refuse nonsense',
   const bad = seq(pair(ENRICH({ email: 'not an address' })));
   fitLead();
   const held = await lookup.resolveAddress({ leadKey: 'L', client: bad, now: NOW });
-  assert.equal(held.held.status, 'schema_failure');
+  assert.equal(held.held.status, 'output_break');
 });
 
 test('a post lead with a published address needs no lookup, and a lookup that finds nothing is not paid for twice', async () => {

@@ -180,7 +180,8 @@
     "update_waiting",
     "unknown_due",
     "open_due",
-    "queries_due"
+    "queries_due",
+    "repair_due"
   ],
   "waitsForPerson": [
     "approve_due",

@@ -90,6 +90,12 @@ A release tag installs the same way, for example `BackTrackCo/tenjin-skills#gtm-
 4. One writer call drafts a first message per lead, from the signal, your offer and your writing rules.
 5. The drafts are parked in a dated Markdown file (`drafts/YYYY-MM-DD.md` in the state folder, or a folder you set). Nothing waits on them: read and edit them on your own time, tick `send` or `skip` on each, change its channel if you like, and say you reviewed them. A reply on X, Reddit, LinkedIn or Hacker News then opens in your own Chrome, when you say so, with the text ready, and you press send. An email goes out through your Gmail connector only after your `send` on that email, which names its address.
 
+### When a service changes
+
+The Tenjin router picks the service behind each search and passes that service's own input fields and answer straight through. GTM Loop reads every answer in code, through a mapping that says where each field sits and how the loop's inputs fill the service's fields. Services it has seen ship as default mappings. A service it has not seen is read by the usual field names, and a check on the parsed result decides if that worked. No model reads a normal answer.
+
+When the check fails, or the input does not fit the service's fields (found before anything is paid), the loop holds that one search, keeps the paid answer, and writes one repair request. The next Claude Code step is told once, writes a small mapping file (data, never a script), and the loop checks it against the saved answer, stores it, and re-reads that answer, so nothing is paid twice. Later rounds use the mapping with no model step. Measured on a changed answer of nine posts, one repair reads about 560 tokens of request, writes about 30 tokens of mapping, and the apply call adds about 150. Limits: an answer that parses but means something else is not detected, a service whose terms allow immediate use only is paid once and not saved, and a run with no Claude Code session holds the broken search until the next session.
+
 ### Send by email
 
 The skill holds no mail credential. It uses the Gmail tool you connected to Claude. If the connected tool can send, an email goes only after your yes on that exact address and text. If it can only draft, the loop makes a Gmail draft and the send is yours. With no Gmail tool, it shows the text with a `mailto:` link. Unattended email is opt-in: your own rules, a recorded consent bound to those rules, and a dry run first.

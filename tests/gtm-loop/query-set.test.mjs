@@ -192,14 +192,15 @@ test('the report has a Queries section per source: the best, the variants added 
   assert.equal(JSON.parse(fs.readFileSync(path.join(SKILL, 'graph.json'), 'utf8')).workReasons.includes('rewrite_due'), false);
 });
 
-test('a need the router sends to another kind of seller is held naming the hosts the spec shows, and the web text names no other source', async () => {
+test('a need the router sends to another kind of seller, whose input fields the loop cannot fill, is held before payment with a repair request, and the web text names no other source', async () => {
   fresh();
   const reddit = fixture('router/reddit-anyapi.json');
   const need = routed.fillNeed('web_research', { query: 'A forum or community post where someone asks: how to get customers? They are a founder looking for help.', mode: 'discussion', since: '2026-11-20' });
   const f = fake({ answers: [specAnswer(reddit.host)] });
   const [r] = await rt.runRound([need], { client: client(f) });
-  assert.equal(r.status, 'no_adapter');
-  assert.match(r.reason, /no known supplier for web_research in the spec \(it names api\.getanyapi\.com\)/);
+  assert.equal(r.status, 'input_break');
+  assert.match(r.reason, /no input fields and the loop has no mapping for web_research from api\.getanyapi\.com/);
+  assert.equal(f.calls().length, 1, 'nothing was paid: only the spec call went out');
   assert.doesNotMatch(need.text, /reddit|twitter|linkedin/i, 'the need text names no other source');
   const q = await import('../../skills/gtm-loop/scripts/lib/queries.mjs');
   assert.doesNotMatch(q.webDescription({ who: 'founders' }, 'how did you get your first customers'), /reddit|twitter|linkedin/i);

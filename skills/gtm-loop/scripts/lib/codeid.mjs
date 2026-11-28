@@ -10,7 +10,7 @@ const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =
 export function codeId() {
   if (cached) return cached;
   const h = crypto.createHash('sha256');
-  for (const f of walk(path.join(SKILL_DIR, 'scripts')).filter((x) => x.endsWith('.mjs')).sort()) h.update(fs.readFileSync(f));
+  for (const f of walk(path.join(SKILL_DIR, 'scripts')).filter((x) => /\.(mjs|json)$/.test(x)).sort()) h.update(fs.readFileSync(f));
   h.update(fs.readFileSync(path.join(SKILL_DIR, 'graph.json')));
   let version = '0';
   try { version = JSON.parse(fs.readFileSync(path.join(SKILL_DIR, 'manifest.json'), 'utf8')).version; } catch {}

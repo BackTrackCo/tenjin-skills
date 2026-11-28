@@ -53,11 +53,11 @@ test('post details: X links, Reddit permalinks made absolute, LinkedIn author pr
   assert.deepEqual(r.ingest.posts.map((p) => p.source), ['web', 'x']);
 });
 
-test('an answer with no list, or a post with no text, is refused by its adapter', async () => {
+test('an answer with no list, or a post with no text, fails the check and is held', async () => {
   for (const [kind, fxn, bad] of [['reddit_posts', 'router/reddit-glim.json', { nope: 1 }], ['linkedin_posts', 'router/linkedin-posts.json', { output: { found: true, data: {} } }], ['web_research', 'router/web-research.json', { results: [{ url: 'nope' }] }], ['x_posts', 'router/x-search.json', { output: { data: { items: [{ url: 'https://x.com/a/status/1', text: '' }] } } }]]) {
     const fx = { ...fixture(fxn), result: bad };
     const { r } = await run(kind, fx, { query: 'a', since: '2026-11-20', subreddits: SUBS });
-    assert.equal(r.status, 'schema_failure', fxn);
+    assert.equal(r.status, 'output_break', fxn);
   }
 });
 
@@ -80,8 +80,7 @@ test('the identity reads: the X profile gives a country and a link, both LinkedI
 });
 
 test('a need names no seller, fills its template, and refuses a missing field', () => {
-  const g = JSON.parse(JSON.stringify(sup.SUPPLIERS.map((s) => s.host)));
-  assert.ok(g.length >= 8);
+  assert.ok(sup.defaults().length >= 8);
   const need = routed.fillNeed('x_posts', { query: 'agent pay for APIs', since: '2026-11-20' });
   assert.match(need.text, /agent pay for APIs/);
   assert.doesNotMatch(need.text, new RegExp(['glim', 'anyapi', 'exa', 'apollo'].join('|'), 'i'));

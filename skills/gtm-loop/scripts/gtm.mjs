@@ -41,6 +41,7 @@ import { checkQueries, checkQuery, SOURCES as QUERY_SOURCES } from './lib/queryc
 import { testQuery } from './lib/qtest.mjs';
 import { addQuery, removeQuery, pinQuery, queriesTable } from './lib/queryset.mjs';
 import { searchOptions } from './lib/searchopts.mjs';
+import { showRepair, applyRepair, listRepairs } from './lib/repairs.mjs';
 import { writeDrafts, syncDrafts, checkDraftsDir, draftsDir, parked, approvedReplies } from './lib/drafts.mjs';
 
 // G is this file. Every command prints one JSON object. State, rules and profile live in ~/.tenjin-skills/gtm-loop/.
@@ -474,6 +475,13 @@ register('review', ({ sub, flags }) => {
 register('report', ({ flags }) => {
   const r = report(loadState(), readProfile());
   return flags.all ? { ...r, held: loadState().held } : r;
+});
+// A need whose service changed its input or its answer: the request, then the agent's mapping (data), checked against the saved answer.
+register('repair', ({ sub, args, flags }) => {
+  if (sub === 'list' || !sub) return { repairs: listRepairs() };
+  if (sub === 'show') return args[1] ? showRepair(args[1]) : fail('repair show <id>');
+  if (sub === 'apply') return args[1] && flags.file ? applyRepair(args[1], String(flags.file)) : fail('repair apply <id> --file <mapping file>');
+  return fail('repair list, repair show <id>, repair apply <id> --file <file>');
 });
 register('hints', () => ({ ...hintLines(readProfile()), outdated: outdatedLine(loadState().tenjin.version) }));
 

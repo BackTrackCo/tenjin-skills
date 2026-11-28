@@ -70,7 +70,7 @@ export function report(state, profile = {}, now = Date.now()) {
     for (const l of skipped) why[l.skipReason || 'left'] = (why[l.skipReason || 'left'] || 0) + 1;
     lines.push(`Skipped: ${skipped.length} (${Object.entries(why).map(([k, n]) => `${k.replace(/_/g, ' ')} ${n}`).join(', ')}).`);
   }
-  for (const h of liveHeld(state.held, profile)) lines.push(`${REFUSED.includes(h.status) ? `Held: ${h.detail || h.reason}. The skill's own request was refused: that is a defect in the skill to report, not something you fill in.` : `Held: ${h.detail || h.reason}.`}${h.reason === 'need_held' && h.key && !h.key.startsWith('need:query:') && h.status !== 'no_subreddits' ? ` Retry only this search: G search route --need "${h.key}".` : ''}`);
+  for (const h of liveHeld(state.held, profile)) lines.push(`${REFUSED.includes(h.status) ? `Held: ${h.detail || h.reason}. The skill's own request was refused: that is a defect in the skill to report, not something you fill in.` : `Held: ${h.detail || h.reason}.`}${h.reason === 'need_held' && h.key && !h.key.startsWith('need:query:') && h.status !== 'no_subreddits' && !['input_break', 'output_break', 'repair_pending'].includes(h.status) ? ` Retry only this search: G search route --need "${h.key}".` : ''}`);
   for (const l of state.updateLines || []) lines.push(l);
   const t = state.tenjin || {};
   if (t.status && t.status !== 'ready') lines.push(hintLines(profile).search);

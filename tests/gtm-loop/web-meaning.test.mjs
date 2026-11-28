@@ -5,7 +5,7 @@ import { fake, runAnswer, specAnswer } from './helpers/fake-router.mjs';
 
 tmpHome();
 const q = await import('../../skills/gtm-loop/scripts/lib/queries.mjs');
-const web = await import('../../skills/gtm-loop/scripts/lib/suppliers/websearch.mjs');
+import { inputFor, readFor } from './helpers/mapping.mjs';
 const routed = await import('../../skills/gtm-loop/scripts/lib/routed.mjs');
 const router = await import('../../skills/gtm-loop/scripts/lib/router.mjs');
 const store = await import('../../skills/gtm-loop/scripts/lib/store.mjs');
@@ -29,11 +29,11 @@ test('a discussion need sends that description, the meaning-based tier and the d
   assert.equal(need.fields.query, q.webDescription(offer, 'how did you get your first customers'));
   assert.equal(need.fields.mode, 'discussion');
   assert.match(need.text, /the page described here: A forum, Q&A or community post where someone asks/);
-  const input = web.exa.mapper(need.fields);
+  const input = inputFor('web_research', 'api.exa.ai', need.fields);
   assert.equal(input.type, 'auto');
   assert.equal(input.query, need.fields.query);
   assert.ok(input.includeDomains.includes('news.ycombinator.com') && input.includeDomains.length <= 20);
-  assert.deepEqual(web.exa.mapper({ query: 'acme robotics funding' }), { query: 'acme robotics funding', type: 'lite', numResults: 10 });
+  assert.deepEqual(inputFor('web_research', 'api.exa.ai', { query: 'acme robotics funding' }), { query: 'acme robotics funding', type: 'lite', numResults: 10 });
 });
 
 const RESULTS = { results: [
@@ -44,15 +44,15 @@ const RESULTS = { results: [
 ] };
 
 test('a result older than the round\'s window is dropped, an undated one is kept as undated, and both are counted', () => {
-  const a = web.adapter(RESULTS, { mode: 'discussion', since: '2026-11-13' });
+  const a = readFor('web_research', 'api.exa.ai', RESULTS, { mode: 'discussion', since: '2026-11-13' });
   assert.deepEqual(a.posts.map((p) => p.url), ['https://forum.example.org/t/1', 'https://forum.example.org/t/3']);
   assert.equal(a.droppedOld, 2);
   assert.equal(a.undated, 1);
   assert.equal(a.posts[1].postedAt, null);
-  const research = web.adapter(RESULTS, { since: '2026-11-13' });
+  const research = readFor('web_research', 'api.exa.ai', RESULTS, { since: '2026-11-13' });
   assert.equal(research.posts.length, 4, 'company and fit research keeps every result');
   assert.equal(research.droppedOld, 0);
-  assert.equal(web.adapter(RESULTS, { mode: 'discussion' }).droppedOld, 0, 'no window, no drop');
+  assert.equal(readFor('web_research', 'api.exa.ai', RESULTS, { mode: 'discussion' }).droppedOld, 0, 'no window, no drop');
 });
 
 test('a routed round applies the window to the web result, tallies it and shows the cost per source in the report', async () => {

@@ -10,6 +10,7 @@ import { followUpItems } from './followup.mjs';
 import { prepUnattended } from './email-prep.mjs';
 import { readProfile } from './profile.mjs';
 import { loadState } from './store.mjs';
+import { repairItems } from './repairs.mjs';
 
 // Everything the CLI adds to the work list and the watcher tick. Imported by gtm.mjs, so a command and the watcher always agree.
 registerCollector(searchItems);
@@ -24,6 +25,8 @@ registerStep('reads', async ({ routerClient, now }) => {
 });
 registerCollector(emailItems);
 registerCollector(followUpItems);
+// A need whose service changed its input or its answer: the agent is told once, with the new fields and a small sample.
+registerCollector(repairItems);
 // After a round, where no query kept a lead, the main model writes variants from the offer, the phrases and the count table, with no yes.
 registerCollector(({ state, profile }) => {
   const n = needVariants(state, profile);

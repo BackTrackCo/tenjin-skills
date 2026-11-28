@@ -8,10 +8,7 @@ import { fake, runAnswer, specAnswer } from './helpers/fake-router.mjs';
 tmpHome();
 const q = await import('../../skills/gtm-loop/scripts/lib/queries.mjs');
 const offers = await import('../../skills/gtm-loop/scripts/lib/offers.mjs');
-const li = await import('../../skills/gtm-loop/scripts/lib/suppliers/linkedin-posts.mjs');
-const reddit = await import('../../skills/gtm-loop/scripts/lib/suppliers/reddit.mjs');
-const web = await import('../../skills/gtm-loop/scripts/lib/suppliers/websearch.mjs');
-const xs = await import('../../skills/gtm-loop/scripts/lib/suppliers/x.mjs');
+import { inputFor } from './helpers/mapping.mjs';
 const d = await import('../../skills/gtm-loop/scripts/lib/dedupe.mjs');
 const store = await import('../../skills/gtm-loop/scripts/lib/store.mjs');
 const routed = await import('../../skills/gtm-loop/scripts/lib/routed.mjs');
@@ -34,7 +31,7 @@ const profile = {
 
 test('LinkedIn: the date window is one the seller accepts, never past-week or past-24h', () => {
   const ago = (days) => new Date(Date.now() - days * 86400000).toISOString();
-  const win = (days) => li.mapper({ query: 'cold emails', since: days === null ? undefined : ago(days) }).datePosted;
+  const win = (days) => inputFor('linkedin_posts', 'api.getanyapi.com', { query: 'cold emails', since: days === null ? undefined : ago(days) }).datePosted;
   assert.equal(win(0.5), 'last-day');
   assert.equal(win(3), 'last-week');
   assert.equal(win(14), 'last-month');
@@ -54,8 +51,8 @@ test('a phrase becomes key words: first person and filler words go, the order st
 test('X: the fallback is loose (the markers OR the key words, English, no link-only posts); HN has no quotes', () => {
   const MARK = '"any recommendations" OR "looking for" OR "how do you" OR "has anyone" OR "struggling to"';
   assert.equal(q.xQuery('my cold emails get no replies'), `(${MARK} OR (cold emails replies)) lang:en -filter:links`);
-  assert.equal(xs.mapper({ query: q.xQuery('how did you get your first users'), since: '2026-11-20' }).query, `(${MARK} OR (first users)) lang:en -filter:links since:2026-11-20`);
-  assert.equal(xs.mapper({ query: 'a', since: '2026-11-20' }).sort, 'top', 'not plain latest');
+  assert.equal(inputFor('x_posts', 'glim.sh', { query: q.xQuery('how did you get your first users'), since: '2026-11-20' }).query, `(${MARK} OR (first users)) lang:en -filter:links since:2026-11-20`);
+  assert.equal(inputFor('x_posts', 'glim.sh', { query: 'a', since: '2026-11-20' }).sort, 'top', 'not plain latest');
   assert.equal(q.hnQuery('my cold emails get no replies'), 'cold emails replies');
   assert.doesNotMatch(q.hnQuery('how did you get your first users'), /"/);
 });
@@ -77,13 +74,13 @@ test('posts that are only links, or a title and a link, are dropped in code befo
 
 test('Reddit: the search is inside the offer\'s subreddits, most relevant first, in the time window; a post from outside the list is dropped', () => {
   const recent = new Date(Date.now() - 3 * 86400000).toISOString();
-  const input = reddit.glim.mapper({ query: 'cold emails replies', since: recent, subreddits: 'startups, saas' });
+  const input = inputFor('reddit_posts', 'glim.sh', { query: 'cold emails replies', since: recent, subreddits: 'startups, saas' });
   assert.deepEqual(input, { query: '(subreddit:startups OR subreddit:saas) cold emails replies', sort: 'relevance', time: 'week' }, 'the first seller has no subreddit field: the operator is in the query');
-  const second = reddit.anyapi.mapper({ query: 'a', since: new Date(Date.now() - 20 * 86400000).toISOString(), subreddits: 'x' });
+  const second = inputFor('reddit_posts', 'api.getanyapi.com', { query: 'a', since: new Date(Date.now() - 20 * 86400000).toISOString(), subreddits: 'x' });
   assert.equal(second.timeframe, 'month', 'the second seller names it timeframe');
   assert.equal(second.time, undefined);
   assert.equal(second.subreddit, undefined, 'the second seller refuses any field it does not know');
-  assert.throws(() => reddit.glim.mapper({ query: 'a', since: recent, subreddits: '' }), /no subreddits/);
+  assert.throws(() => inputFor('reddit_posts', 'glim.sh', { query: 'a', since: recent, subreddits: '' }), /no subreddits/);
   const posts = [
     { url: 'https://www.reddit.com/r/startups/comments/aaa/how_did_you_get_users/', source: 'reddit', author: 'u1', text: 'how did you get your first users? I have none yet', subreddit: 'startups' },
     { url: 'https://www.reddit.com/r/gardening/comments/bbb/my_tomatoes/', source: 'reddit', author: 'u2', text: 'how did you get your tomatoes to grow so well here', subreddit: 'gardening' },
@@ -97,8 +94,8 @@ test('Reddit: the search is inside the offer\'s subreddits, most relevant first,
 });
 
 test('Web: a lead from a post asks only for discussion pages, and a page that is not a discussion is dropped in code', () => {
-  assert.equal(web.exa.mapper({ query: 'cold emails replies', mode: 'discussion' }).includeDomains.includes('news.ycombinator.com'), true);
-  assert.equal(web.exa.mapper({ query: 'acme robotics funding' }).includeDomains, undefined, 'company and fit research asks the whole web');
+  assert.equal(inputFor('web_research', 'api.exa.ai', { query: 'cold emails replies', mode: 'discussion' }).includeDomains.includes('news.ycombinator.com'), true);
+  assert.equal(inputFor('web_research', 'api.exa.ai', { query: 'acme robotics funding' }).includeDomains, undefined, 'company and fit research asks the whole web');
   for (const u of ['https://news.ycombinator.com/item?id=1', 'https://www.reddit.com/r/startups/comments/a/b', 'https://www.indiehackers.com/post/x', 'https://forum.example.org/t/1', 'https://community.example.org/c/help/12', 'https://github.com/o/r/issues/12', 'https://example.org/questions/55/how']) assert.equal(q.isDiscussion(u), true, u);
   for (const u of ['https://vendor.example/blog/cold-email-guide', 'https://example.org/pricing', 'https://medium.com/@a/cold-email-tips', 'https://github.com/o/r', 'nope']) assert.equal(q.isDiscussion(u), false, u);
   const s = store.emptyState();

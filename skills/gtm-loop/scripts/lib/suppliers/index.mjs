@@ -1,32 +1,24 @@
-import * as x from './x.mjs';
-import * as xSearch from './x-search.mjs';
-import * as reddit from './reddit.mjs';
-import * as linkedinPosts from './linkedin-posts.mjs';
-import * as web from './websearch.mjs';
-import * as xProfile from './x-profile.mjs';
-import * as linkedin from './linkedin.mjs';
-import * as company from './company.mjs';
-import * as people from './people.mjs';
-import * as xTimeline from './x-timeline.mjs';
-import * as linkedinAuthor from './linkedin-author-posts.mjs';
-import * as enrich from './enrich.mjs';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-// One mapper and one adapter per supplier, picked by the host the router's spec text names. Until the router gives each task
-// fixed inputs and output shapes, this table is the only place a supplier host appears; it never appears in text people see.
-// A need with no mapper here is held for the round. A supplier marked unrecorded was built from the router's spec, not from a
-// recorded answer: its fixture is replaced after the first live round.
-export const SUPPLIERS = [x, xSearch, reddit.glim, reddit.anyapi, linkedinPosts, web.exa, xProfile, linkedin.profile, linkedin.history, company.list, company.profile, people, xTimeline, linkedinAuthor, enrich.enrichment, enrich.check].map((m) => ({ any: m.ANY_HOST === true, host: m.HOST, tool: m.TOOL || null, kind: m.KIND, mapper: m.mapper, adapter: m.adapter || web.adapter, recorded: m.RECORDED !== false, noCache: m.NO_CACHE === true }));
+// The default mappings: what each service the skill has seen answers and takes, as plain data (defaults.json). This is the only
+// place a service host appears; it never appears in text people see. A mapping is {need, hosts, input, output, noCache?, any?}.
+// A service with no entry here reads through the generic reader, and a person's repaired mappings (repairs.mjs) win over these.
+const FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'defaults.json');
+let DEFAULTS;
+export const defaults = () => (DEFAULTS ||= JSON.parse(fs.readFileSync(FILE, 'utf8')));
 
-// A need that names a catalog tool by id takes that tool's supplier; the spec text decides nothing.
-export function pickTool(tool, kind) {
-  const s = SUPPLIERS.find((y) => y.tool === tool && y.kind === kind);
-  return s ? { ...s } : null;
-}
-
-export function pickSupplier(specText, kind) {
+// The default for a need, by the host the router's spec names; an entry marked `any` is the fallback for a need whose service is not
+// listed (company and enrichment answers differ little between sellers). The seller id is the matched host, else null.
+export function defaultFor(kind, specText) {
   const lower = String(specText).toLowerCase();
-  for (const s of SUPPLIERS) if (s.kind === kind && !s.any && s.host && lower.includes(s.host)) return { ...s };
-  // A need with no known seller host: the router picks it, and the answer is checked in code.
-  const any = SUPPLIERS.find((s) => s.kind === kind && s.any);
-  return any ? { ...any } : null;
+  const rows = defaults().filter((d) => d.need === kind);
+  const hit = rows.find((d) => !d.any && d.hosts.some((h) => lower.includes(h)));
+  if (hit) return { ...hit, seller: hit.hosts.find((h) => lower.includes(h)) };
+  const any = rows.find((d) => d.any);
+  return any ? { ...any, seller: null } : null;
 }
+
+// Does any default of this need carry the no-cache flag for this seller: the answer is never saved.
+export const noCacheFor = (kind, seller) => defaults().some((d) => d.need === kind && d.noCache && (d.any || d.hosts.includes(seller)));

@@ -32,19 +32,20 @@ test('only fulfilled delivers: every other status holds that need with its reaso
     const f = fake({ answers: [specAnswer(X.host), { ...runAnswer(X.host, X.result), status, job: 'job-9' }] });
     const [r] = await router.runRound([need], { client: client(f, { collect: 40, poll: 10 }) });
     assert.equal(r.ok, false, status);
-    assert.equal(r.status, status);
+    assert.equal(r.status, status === 'needs_input' ? 'input_break' : status, 'needs_input is an input break: held, with a repair request');
     assert.equal(f.calls().filter((c) => !c.job).length, 2, `${status}: the run was sent once, never retried`);
     if (status === 'running') assert.match(r.reason, /job-9/);
   }
 });
 
-test('a supplier that differs from the spec holds; a spec with no known supplier holds as no_adapter', async () => {
+test('a seller the table does not know is read by the generic reader; one whose input fields cannot be filled is held before payment', async () => {
   let f = fake({ answers: [specAnswer(X.host), runAnswer('other.example', X.result)] });
   let [r] = await router.runRound([need], { client: client(f) });
-  assert.equal(r.status, 'supplier_mismatch');
+  assert.equal(r.ok, true, 'the envelope names another seller: the parsed result decides, not the name');
   f = fake({ answers: [specAnswer('unknown.example')] });
   [r] = await router.runRound([need], { client: client(f) });
-  assert.equal(r.status, 'no_adapter');
+  assert.equal(r.status, 'input_break', 'no mapping and no input fields in the spec: held before any payment');
+  assert.equal(f.calls().length, 1, 'only the free spec call went out');
 });
 
 test('a timed-out run is never sent again, and a result that does not parse holds', async () => {
@@ -58,10 +59,10 @@ test('a timed-out run is never sent again, and a result that does not parse hold
   assert.equal(r2.status, 'parse_failure');
 });
 
-test('a result that breaks the adapter shape holds as schema_failure', async () => {
+test('a result that fails the check on the parsed answer holds as output_break', async () => {
   const f = fake({ answers: [specAnswer(X.host), runAnswer(X.host, { tweets: [{ url: '', text: '' }] })] });
   const [r] = await router.runRound([need], { client: client(f) });
-  assert.equal(r.status, 'schema_failure');
+  assert.equal(r.status, 'output_break');
 });
 
 test('the process is closed at the end: stdin closes and a stubborn process is killed after the shutdown time', async () => {

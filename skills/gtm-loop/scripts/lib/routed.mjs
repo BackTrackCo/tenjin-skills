@@ -1,7 +1,9 @@
 import { graph } from './graph.mjs';
 import { RouterClient, runRound } from './router.mjs';
+import { registerReplay } from './repairs.mjs';
 import { loadState, updateState } from './store.mjs';
-import { capOf } from './overlay.mjs';
+import { capOf, loadOverlay } from './overlay.mjs';
+import { readProfile } from './profile.mjs';
 import { postNeedKinds, centsOf } from './prices.mjs';
 import { addPosts, linkIdentity } from './dedupe.mjs';
 import { countryFrom } from './geo.mjs';
@@ -123,6 +125,42 @@ export function funnelAdd(state, source, { returned = 0, dropped = [], repeated 
 // A paid post search that answers 404 is empty for that day: held with that reason, and not run again until the next day's round.
 const skippedToday = (state, need, now) => (state.held || []).some((h) => h.key === heldKey(need) && h.skipUntil && Date.parse(h.skipUntil) > now);
 
+// One post search's result, into state: a held need is recorded (a paid 404 counts as empty for the day), a good one is added, counted
+// and paid for. Used by the round and by a repair that re-reads a saved answer. Returns how many leads were added.
+export function ingestPostResult(state, need, r, { profile, overlay, now }) {
+  if (!r.ok) {
+    recordHeld(state, need, r);
+    if (is404(r)) {
+      const h = state.held.find((x) => x.key === heldKey(need));
+      Object.assign(h, { status: 'empty_404', skipUntil: nextDay(now), detail: `${need.kind} (${need.query}): the seller answered 404, counted as empty for today and not run again until the next round` });
+      recordYield(state, need, 0, 0, now);
+      funnelAdd(state, SRC_NAME[need.kind] || need.kind, {});
+    }
+    return 0;
+  }
+  clearHeld(state, need);
+  const res = addPosts(state, r.ingest.posts, { profile, overlay, phrase: need.query, offerId: need.fields.offerId || null, subreddits: subsOf(profile, need.fields.offerId), now, cap: capOf(overlay, 'leads_per_round') === null ? null : Math.max(0, capOf(overlay, 'leads_per_round') - state.search.roundAdded) });
+  state.search.roundAdded += res.added.length;
+  recordYield(state, need, r.ingest.posts.length + (r.ingest.droppedOld || 0), res.added.length, now, { dropped: res.dropped, repeated: res.repeated, tooOld: r.ingest.droppedOld || 0 });
+  funnelAdd(state, SRC_NAME[need.kind] || need.kind, { returned: r.ingest.posts.length + (r.ingest.droppedOld || 0), dropped: res.dropped, repeated: res.repeated, tooOld: r.ingest.droppedOld || 0, toReview: res.added.length });
+  const y = (state.phraseYield[need.query] ||= {});
+  for (const k of res.added) y[state.leads[k].source] = (y[state.leads[k].source] || 0) + 1;
+  state.spend.push({ at: new Date(now).toISOString(), kind: need.kind, cents: centsOf(r.cost), cost: r.cost, leads: res.added.length, search: true });
+  if (need.kind === 'web_research') {
+    const w = (state.webTally ||= { tooOld: 0, undated: 0 });
+    w.tooOld += r.ingest.droppedOld || 0;
+    w.undated += r.ingest.undated || 0;
+  }
+  return res.added.length;
+}
+// A repaired mapping re-reads the saved answer of a post search the round held: the same ingest, no new call.
+for (const kind of ['x_posts', 'reddit_posts', 'linkedin_posts', 'web_research']) {
+  registerReplay(kind, (state, need, r, { now }) => {
+    const n = ingestPostResult(state, need, r, { profile: readProfile(), overlay: loadOverlay(), now });
+    return `re-read the saved answer: ${r.ingest.posts.length} posts, ${n} new lead${n === 1 ? '' : 's'}`;
+  });
+}
+
 // `only`: the held key of one need (G search route --need "<key>"): that search only, whatever it was held for, and the round's
 // schedule is left alone.
 export async function runPostRound({ profile, overlay, client = new RouterClient(), now = Date.now(), save, only = null }) {
@@ -144,32 +182,7 @@ export async function runPostRound({ profile, overlay, client = new RouterClient
   let added = 0;
   const out = await runRound(needs, {
     client, save,
-    onResult: (need, r) => updateState((state) => {
-      if (!r.ok) {
-        recordHeld(state, need, r);
-        if (is404(r)) {
-          const h = state.held.find((x) => x.key === heldKey(need));
-          Object.assign(h, { status: 'empty_404', skipUntil: nextDay(now), detail: `${need.kind} (${need.query}): the seller answered 404, counted as empty for today and not run again until the next round` });
-          recordYield(state, need, 0, 0, now);
-          funnelAdd(state, SRC_NAME[need.kind] || need.kind, {});
-        }
-        return;
-      }
-      clearHeld(state, need);
-      const res = addPosts(state, r.ingest.posts, { profile, overlay, phrase: need.query, offerId: need.fields.offerId || null, subreddits: subsOf(profile, need.fields.offerId), now, cap: capOf(overlay, 'leads_per_round') === null ? null : Math.max(0, capOf(overlay, 'leads_per_round') - state.search.roundAdded) });
-      state.search.roundAdded += res.added.length;
-      added += res.added.length;
-      recordYield(state, need, r.ingest.posts.length + (r.ingest.droppedOld || 0), res.added.length, now, { dropped: res.dropped, repeated: res.repeated, tooOld: r.ingest.droppedOld || 0 });
-      funnelAdd(state, SRC_NAME[need.kind] || need.kind, { returned: r.ingest.posts.length + (r.ingest.droppedOld || 0), dropped: res.dropped, repeated: res.repeated, tooOld: r.ingest.droppedOld || 0, toReview: res.added.length });
-      const y = (state.phraseYield[need.query] ||= {});
-      for (const k of res.added) y[state.leads[k].source] = (y[state.leads[k].source] || 0) + 1;
-      state.spend.push({ at: new Date(now).toISOString(), kind: need.kind, cents: centsOf(r.cost), cost: r.cost, leads: res.added.length, search: true });
-      if (need.kind === 'web_research') {
-        const w = (state.webTally ||= { tooOld: 0, undated: 0 });
-        w.tooOld += r.ingest.droppedOld || 0;
-        w.undated += r.ingest.undated || 0;
-      }
-    }),
+    onResult: (need, r) => updateState((state) => { added += ingestPostResult(state, need, r, { profile, overlay, now }); }),
   });
   if (!only) {
     updateState((state) => {
@@ -210,6 +223,26 @@ export function applyIdentity(state, lead, result) {
   lead.identityRead = true;
 }
 
+// One profile read, into state: a held read marks the lead, a good one fills the person and is paid for.
+export function ingestIdentityResult(s, lead, need, r, now) {
+  if (!r.ok) {
+    lead.identityHeld = r.status;
+    return recordHeld(s, need, r);
+  }
+  clearHeld(s, need);
+  delete lead.identityHeld;
+  applyIdentity(s, lead, r.ingest);
+  s.spend.push({ at: new Date(now).toISOString(), kind: need.kind, cents: centsOf(r.cost), cost: r.cost, leads: 0 });
+}
+for (const kind of ['x_profile', 'linkedin_profile']) {
+  registerReplay(kind, (state, need, r, { now }) => {
+    const lead = Object.values(state.leads).find((l) => l.identityHeld && !l.identityRead && (identityNeed(state, l) || {}).text === need.text);
+    if (!lead) return 'the lead is gone: nothing to fill';
+    ingestIdentityResult(state, lead, need, r, now);
+    return 're-read the saved profile and filled the lead';
+  });
+}
+
 export async function runIdentityReads({ client = new RouterClient(), now = Date.now(), save } = {}) {
   const state = loadState();
   const todo = Object.values(state.leads).filter((l) => l.status === 'reviewed' && !l.identityRead && !l.identityHeld).map((l) => ({ lead: l, need: identityNeed(state, l) }));
@@ -221,14 +254,7 @@ export async function runIdentityReads({ client = new RouterClient(), now = Date
     client, save,
     onResult: (need, r) => updateState((s) => {
       const lead = s.leads[byNeed.get(need.text)];
-      if (!lead) return;
-      if (!r.ok) {
-        lead.identityHeld = r.status;
-        return recordHeld(s, need, r);
-      }
-      clearHeld(s, need);
-      applyIdentity(s, lead, r.ingest);
-      s.spend.push({ at: new Date(now).toISOString(), kind: need.kind, cents: centsOf(r.cost), cost: r.cost, leads: 0 });
+      if (lead) ingestIdentityResult(s, lead, need, r, now);
     }),
   });
   return { reads: out.length, ok: out.filter((r) => r.ok).length };
