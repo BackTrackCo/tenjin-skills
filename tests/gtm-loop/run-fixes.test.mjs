@@ -244,7 +244,7 @@ test('SKILL.md: every review batch is started in one message as parallel calls, 
   assert.match(setup, /first person/);
   assert.match(setup, /how did you get your first users/);
   assert.match(setup, /subreddits/);
-  assert.match(setup, /ask once/);
+  assert.match(setup, /ask once/i);
   assert.match(setup, /one message/);
 });
 

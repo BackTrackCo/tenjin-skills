@@ -144,9 +144,9 @@ export function startStatus(profile, state) {
   if (!offers.length) missing.push('what you sell: an offer name and what it does (G offers set)');
   if (isLegacy(profile)) missing.push('the new shape: show the person once that the old single offer, phrases and subreddits are replaced by offers (each with its own phrases, subreddits and buyer), propose them from the old ones, and save the confirmed list with G offers set');
   for (const o of offers) {
-    if (!o.name.trim() || !o.what.trim()) {
+    if (!o.name.trim() || (!o.what.trim() && !o.phrases.length)) {
       needsOffer = true;
-      missing.push(`offer details for "${o.name || o.id}": fill in the name and what it does (G offers set)`);
+      missing.push(`offer details for "${o.name || o.id}": add the offer name or enough detail to search (G offers set)`);
     }
     if (!o.phrases.length) missing.push(`phrases for "${o.name || o.id}": short, first person, as a buyer writes a post (G phrases set --offer ${o.id})`);
     if ((!profile.sources || profile.sources.includes('reddit')) && !o.subreddits.length) missing.push(`subreddits for "${o.name || o.id}": propose five to eight where its buyer asks, the person edits them`);
@@ -155,7 +155,7 @@ export function startStatus(profile, state) {
   }
   if (!state.start) missing.push('the start question (G ask start, then G start record)');
   const next = needsOffer
-    ? 'Use the product or source the person already gave. If you still need a source, ask: Use the current workspace, or share a repo path or product link? Read the chosen source before proposing the offer and buyer signals. See references/setup.md.'
+    ? 'Use the product or source the person already gave. If you need a source, briefly explain that you find leads and draft a first message for review. Offer the current workspace, a repo path or link, or a product link. Then use the chosen source to propose the offer and buyer signals. See references/setup.md.'
     : 'Continue with the outstanding offer and search setup in references/setup.md.';
   return { done: missing.length === 0, missing, legacy: isLegacy(profile), next: missing.length ? next : null };
 }
