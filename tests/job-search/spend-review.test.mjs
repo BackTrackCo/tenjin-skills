@@ -181,17 +181,17 @@ test('56: after tenjin mcp exits, the next calls fail at once instead of waiting
 });
 
 // ---- 57 ---------------------------------------------------------------------------------------------------------
-test('57: a need the router answered but code cannot fill is held with a repair request and never goes to the router again', async () => {
+test('57: a need the router answered but code cannot read does not go to the router again', async () => {
   reset();
   const unknown = { ...FX['x-posts'].step1.json, __text: 'Request: GET https://unknown-seller.example/search\n' };
   const J = FX['job-postings'];
   const f = fake({ answers: [{ ...J.step1.json, __text: J.step1.text }, env('job-postings'), unknown, sp('exa-search'), env('exa-search')] });
   await routed.routedRounds({ profile: prof, fetch: fakeFetch({}), client: client(f), now: NOW });
   const s = store.loadState();
-  assert.equal((s.search.needPending || []).some((n) => n.kind === 'x_hiring_posts'), false, 'no model search step for it');
-  const items = work.buildWorkList(s, empty, NOW, prof).items;
-  assert.equal(items.some((i) => i.key === 'need:x_hiring_posts'), false);
-  assert.match(items.find((i) => i.reason === 'repair_due').gate, /J repair show/);
+  const pending = s.search.needPending.find((n) => n.kind === 'x_hiring_posts');
+  assert.equal(pending.routerAnswered, true);
+  const item = work.buildWorkList(s, empty, NOW, prof).items.find((i) => i.key === 'need:x_hiring_posts');
+  assert.match(item.gate, /Do not send the need to the router again/);
 });
 
 // ---- 59 ---------------------------------------------------------------------------------------------------------

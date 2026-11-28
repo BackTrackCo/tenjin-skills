@@ -128,6 +128,8 @@ export async function routedRounds({ profile, fetch, client = new RouterClient()
             return;
           }
           updateState((s) => {
+            // A search the model step was left for is answered by the mapped read now: that step is no longer due.
+            if (s.search.needPending) s.search.needPending = s.search.needPending.filter((n) => n.kind !== need.kind);
             s.routed.lastCost = r.cost || s.routed.lastCost;
             if (need.jobKey && s.jobs[need.jobKey]) (s.jobs[need.jobKey].routedTried ||= {})[need.kind] = true;
             if (keep) s.routed.pendingIngest = (s.routed.pendingIngest || []).filter((x) => x.at !== mark.at);
@@ -137,6 +139,12 @@ export async function routedRounds({ profile, fetch, client = new RouterClient()
           // The router already answered (and charged its routing fee): the model step must not send it to the router again.
           leaveForModel(need, round, now, true);
           log.push({ round, need: need.kind, ok: false, status: 'model' });
+        } else if (r.noReader && ['input_break', 'output_break', 'repair_pending'].includes(r.status) && need.kind !== 'web_search') {
+          // A service the loop has no reader for: the repair request is written (and held in the report) AND the round still gets its
+          // result from the model's search step, as before. Once the repair is applied the mapped read answers and this step is not left.
+          hold(r, now);
+          leaveForModel(need, round, now, true);
+          log.push({ round, need: need.kind, ok: false, status: 'model', repair: r.status });
         } else {
           hold(r, now);
           if (need.jobKey) updateState((s) => { if (s.jobs[need.jobKey]) (s.jobs[need.jobKey].routedTried ||= {})[need.kind] = true; });

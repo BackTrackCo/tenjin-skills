@@ -230,11 +230,14 @@ export function inputProblems(kind, template) {
   const walk = (n, where) => {
     if (typeof n === 'string') {
       for (const m of n.matchAll(/\{(\w+)\}/g)) if (!known.has(m[1])) bad.push(`${where}: {${m[1]}} is not an input of ${kind} (use ${[...known].join(', ')})`);
+      // A constant is a short fixed word or operator, never free text, a command or a link: nothing the loop later sends can instruct.
+      const rest = n.replace(/\{\w+\}/g, '').replace(/[[\]]/g, '');
+      if (rest.includes('://') || rest.length > 40 || rest.trim().split(/\s+/).length > 3 || !/^[A-Za-z0-9 _.,:;+*/"'()|=<>@#-]*$/.test(rest)) bad.push(`${where}: a constant is a short word or operator (at most 3 words, 40 characters), no link and no sentence`);
     } else if (Array.isArray(n)) n.forEach((x, i) => walk(x, `${where}[${i}]`));
     else if (n && typeof n === 'object') {
       if ('byAge' in n && !(Array.isArray(n.byAge) && n.byAge.length >= 2 && n.byAge.length <= 4)) bad.push(`${where}: byAge is a list of 2 to 4 values`);
       for (const [key, x] of Object.entries(n)) {
-        if (BAD_KEY.has(key)) bad.push(`${where}: the key ${key} is not allowed`);
+        if (BAD_KEY.has(key) || !/^[A-Za-z_][\w.-]{0,40}$/.test(key)) bad.push(`${where}: the key ${key} is not a field name`);
         else if (key === 'if') { if (!x || typeof x !== 'object' || Array.isArray(x) || Object.keys(x).some((c) => !known.has(c))) bad.push(`${where}.if: name inputs of ${kind}`); } else if (key !== 'byAge') walk(x, `${where}.${key}`);
       }
     } else if (typeof n !== 'number' && typeof n !== 'boolean' && n !== null) bad.push(`${where}: only text, numbers, true, false and null`);

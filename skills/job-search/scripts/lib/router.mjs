@@ -138,7 +138,7 @@ export class RouterError extends Error {
 // What `{id, input}` answers when the service refused the input before any payment.
 const INPUT_REFUSAL = /\b(invalid|missing|unknown|rejected|unrecognized)\b[^.]{0,40}\b(input|field|parameter)s?\b|\b(input|field|parameter)s?\b[^.]{0,40}\b(invalid|missing|required|unknown|rejected|not allowed)\b/i;
 // The service's host: today's spec text says "Request: GET https://<host>/...".
-const sellerOf = (spec) => ((/Request:\s*[A-Z]+\s+https?:\/\/([^/\s{]+)/.exec(String(spec.__text || '')) || [])[1] || 'unknown').toLowerCase();
+const sellerOf = (spec) => ((/Request:\s*[A-Z]+\s+https?:\/\/([^/\s{]+)/.exec(String(spec.__text || '')) || [])[1] || 'unknown').toLowerCase().replace(/[^a-z0-9.:-]/g, '');
 
 // Reads one answer. The shipped reader of the service comes first (it knows today's services); a repaired mapping, then the generic reader,
 // build the answer in the need's canonical shape for the need's first reader, which is the check. Returns {ok, adapted, via} or {ok:false, reason}.
@@ -168,6 +168,8 @@ export async function runNeed(client, need, { save = saveResult } = {}) {
   let spec = null;
   let env = null;
   let sup = null;
+  let noReader = false;
+  const H = (...a) => Object.assign(held(...a), { noReader });
   let seller;
   let result;
   let cost = null;
@@ -193,6 +195,7 @@ export async function runNeed(client, need, { save = saveResult } = {}) {
     sup = need.tool ? pickTool(need.tool, need.kind) : pickSupplier(text, need.kind);
     if (!offer) return held(need, 'no_adapter', 'no offer in the spec; the next attended turn runs this search as the Haiku step');
     if (!sup && !kindOf(need.kind)) return held(need, 'no_adapter', 'no known supplier in the spec; the next attended turn runs this search as the Haiku step');
+    noReader = !sup; // the loop has no reader for this service: the model's search step stays as the fallback beside the repair
     seller = sup && sup.host ? sup.host : sellerOf(spec);
     const stored = storedMapping(need.kind, seller);
     // The input: a repaired mapping, else the reader's own mapper, else the spec's own field names. The reader's mapper also checks the need's fields.
@@ -204,7 +207,7 @@ export async function runNeed(client, need, { save = saveResult } = {}) {
       if (sup) input = sup.mapper(need.fields);
       if (stored && stored.input) input = buildInput(stored.input, vars);
     } catch (e) {
-      return held(need, 'no_input', e.message);
+      return H(need, 'no_input', e.message);
     }
     specIn = specInput(spec);
     let fit = input ? fitsSpec(input, specIn) : { ok: false, missing: [] };
@@ -215,17 +218,17 @@ export async function runNeed(client, need, { save = saveResult } = {}) {
     if (!input || !fit.ok) {
       const why = !specIn && !input ? `the service lists no input fields and the loop has no mapping for ${need.kind} from ${seller}` : `the loop's input does not hold the fields ${need.kind} from ${seller} requires${fit.missing.length ? ` (${fit.missing.join(', ')})` : ''}`;
       const pend = pendingFor(need.kind, seller, 'input');
-      if (pend) return held(need, 'repair_pending', `${why}. Nothing was paid. It waits for repair ${pend.id} (J repair show ${pend.id})`);
+      if (pend) return H(need, 'repair_pending', `${why}. Nothing was paid. It waits for repair ${pend.id} (J repair show ${pend.id})`);
       const rq = recordBreak({ side: 'input', need, seller, reason: why, specFields: specIn ? specIn.fields : null, attempted: input, missing: fit.missing });
-      return held(need, 'input_break', `${why}. Nothing was paid. Repair request ${rq.id} is written (J repair show ${rq.id})`);
+      return H(need, 'input_break', `${why}. Nothing was paid. Repair request ${rq.id} is written (J repair show ${rq.id})`);
     }
     const waiting = pendingFor(need.kind, seller, 'output');
-    if (waiting) return held(need, 'repair_pending', `the answer of ${need.kind} from ${seller} could not be read before; nothing was paid again. It waits for repair ${waiting.id} (J repair show ${waiting.id})`);
+    if (waiting) return H(need, 'repair_pending', `the answer of ${need.kind} from ${seller} could not be read before; nothing was paid again. It waits for repair ${waiting.id} (J repair show ${waiting.id})`);
     try {
       env = await client.request({ id: offer, input }, client.timeouts.run);
     } catch (e) {
       // A timed-out run is never sent again in this round: the payment may have settled.
-      return held(need, e.code || 'failed', e.message);
+      return H(need, e.code || 'failed', e.message);
     }
     // A paid answer that is still running is asked for with the free `{job}` check until it settles; it is never paid for twice.
     if (env.status === 'running' && env.job) env = await collect(client, env);
@@ -233,16 +236,16 @@ export async function runNeed(client, need, { save = saveResult } = {}) {
     if (env.status === 'needs_input' || (env.status === 'failed' && INPUT_REFUSAL.test(String(env.reason || '')))) {
       const why = `the service refused the input (${env.status}${env.reason ? `: ${String(env.reason).slice(0, 160)}` : ''})`;
       const pend = pendingFor(need.kind, seller, 'input');
-      if (pend) return held(need, 'repair_pending', `${why}. Nothing was paid. It waits for repair ${pend.id} (J repair show ${pend.id})`);
-      const rq = recordBreak({ side: 'input', need, seller, reason: why, specFields: specIn ? specIn.fields : null, attempted: input });
-      return held(need, 'input_break', `${why}. Nothing was paid. Repair request ${rq.id} is written (J repair show ${rq.id})`);
+      if (pend) return H(need, 'repair_pending', `${why}. Nothing was paid. It waits for repair ${pend.id} (J repair show ${pend.id})`);
+      const rq = recordBreak({ side: 'input', need, seller, reason: 'the service refused the input', serviceSaid: env.reason ? String(env.reason).slice(0, 160) : null, specFields: specIn ? specIn.fields : null, attempted: input });
+      return H(need, 'input_break', `${why}. Nothing was paid. Repair request ${rq.id} is written (J repair show ${rq.id})`);
     }
-    if (env.status !== 'fulfilled') return held(need, env.status || 'failed', env.reason ? `the router answered ${env.status}: ${env.reason}` : `the router answered ${env.status}`, env);
-    if (sup && !sup.any && !stored && String(env.supplier || '').toLowerCase() !== sup.host) return held(need, 'supplier_mismatch', 'the envelope names a different supplier than the spec');
+    if (env.status !== 'fulfilled') return H(need, env.status || 'failed', env.reason ? `the router answered ${env.status}: ${env.reason}` : `the router answered ${env.status}`, env);
+    if (sup && !sup.any && !stored && String(env.supplier || '').toLowerCase() !== sup.host) return H(need, 'supplier_mismatch', 'the envelope names a different supplier than the spec');
     try {
       result = typeof env.result === 'string' ? JSON.parse(env.result) : env.result;
     } catch {
-      return held(need, 'parse_failure', 'the result does not parse');
+      return H(need, 'parse_failure', 'the result does not parse');
     }
     // A supplier whose terms allow immediate use only is never saved: the result stays in memory and goes to the reader.
     const csup = sup || canonSupplier(need.kind, (kindOf(need.kind) || {}).canonHost);
@@ -250,12 +253,13 @@ export async function runNeed(client, need, { save = saveResult } = {}) {
     fullResultPath = noSave ? null : save(need.kind, typeof env.result === 'string' ? env.result : JSON.stringify(env.result));
     cost = Array.isArray(env.cost) ? env.cost.join('; ') : env.cost === undefined ? null : env.cost; // e.g. ["provider price 0.003 USD"]
   }
+  noReader = noReader || (!sup && !cached);
   const read = readAnswer(need, sup, storedMapping(need.kind, seller), result);
   if (!read.ok) {
-    if (read.notFound) return held(need, 'not_found', `${need.kind} from ${seller}: ${read.reason}`);
+    if (read.notFound) return H(need, 'not_found', `${need.kind} from ${seller}: ${read.reason}`);
     const why = `the answer of ${need.kind} from ${seller} could not be read: ${read.reason}`;
     const rq = recordBreak({ side: 'output', need, seller, reason: why, rawPath: fullResultPath, noSave, shapeOf: JSON.stringify(skeleton(result)).slice(0, 1500), cost });
-    return held(need, 'output_break', `${why}. It is paid${fullResultPath ? ' and saved' : ', and its terms do not allow saving it, so the next run reads it with the repaired mapping'}. ${rq.created ? 'Repair request' : 'Repair request (already written)'} ${rq.id} (J repair show ${rq.id})`, env || undefined);
+    return H(need, 'output_break', `${why}. It is paid${fullResultPath ? ' and saved' : ', and its terms do not allow saving it, so the next run reads it with the repaired mapping'}. ${rq.created ? 'Repair request' : 'Repair request (already written)'} ${rq.id} (J repair show ${rq.id})`, env || undefined);
   }
   return { ok: true, status: 'fulfilled', cost, via: read.via, ingest: { need: need.kind, query: need.query, status: 'fulfilled', fullResultPath, cost, ...read.adapted } };
 }

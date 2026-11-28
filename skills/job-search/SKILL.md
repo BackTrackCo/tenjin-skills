@@ -27,7 +27,7 @@ J means `node ${CLAUDE_SKILL_DIR}/scripts/jobs.mjs`. Always write it out in full
 ## Start and recover
 
 Every start, after a compaction or `/resume`: `J tenjin`, `J start status`, `J chrome set on|off`, `J rc set on|unknown`, `J arm`, then `J work --commit`, then `J watch` last (Bash tool, `run_in_background`; it exits when work is due, which wakes you; it refuses while due work is unclaimed; start it again after each round and on `watcher: stopped`; lease elsewhere: attended work).
-First run: say the `next` text of `J start status` as given, then wait for the resume; save it with `J resume set --file|--url|--text`. Read role, role words, place and remote from it into the profile (`J profile set`, `search.sources`: `resume`). If you have a task list tool, make the setup list with it; never write the steps as text. Then one AskUserQuestion call: `J ask start`, `J start record`; auto: `J ask auto`. Say its reminder, then its `referral` text as a plain message.
+First run: say the `next` text of `J start status` as given, then wait for the resume; save it with `J resume set --file|--url|--text`. Read role, role words, place and remote from it into the profile (`J profile set`, `search.sources`: `resume`). If you have a task list tool, make the setup list with it; never write the steps as text. Then one AskUserQuestion call: `J ask start`, `J start record`; auto: `J ask auto`. Say its reminder, then its `referral` text as a plain message. Then free search and report.
 Free paths: only from what `J search plan`, `J resume set --url` and `J work` printed; on `ask: tenjin`: `J ask tenjin`, `J tenjin ask-done yes|no`.
 Questions: references/questions.md has every rule (AskUserQuestion in an attended turn through `J ask <kind>`, never in an unattended turn: hold and notify). Form facts: `J ask facts` builds every question, merged across jobs; make its calls in order, send its plain message, record each answer with `J facts answer <id> <value>`; never write a question list yourself.
 Model: unless this is Fable 5.2, say once (attended only) it works best on Fable 5.2 at high effort (`/model fable`, `/effort high`).
@@ -39,18 +39,17 @@ When the watcher exits with a line, or the person asks, run `J work --commit` (a
 - `search_due`: references/search.md. With Tenjin the watcher runs every search in code (or `J route`), board search included, no model web search; without it one Agent `model: "haiku"` step with the `J search plan` queries. `need_due`: `J search done <kind>`; `J search next` ends it.
 - `post_review`: up to 25 hiring posts, Agent `model: "haiku"`, one ingest file (references/search.md); `J leads mark <url> done|not_interested`.
 - `employer_page`: Agent `model: "haiku"` reads the employer's careers page, ingests it with its listings (references/search.md); `reverify` rereads.
-- `repair_due`: references/repair.md. A routed need's service changed: `J repair show <id>`, write the mapping JSON, `J repair apply <id> --file <file>` (Agent `model: "haiku"`).
 - `new_job`, `review_due`: Agent `model: "haiku"` (review.md).
 - `prepare_due`: only for new writing, or a form that needs the browser first (references/prepare.md). One `model: "opus"` call per round: `J write-prompt --round`, `J write-result --round --result <file>`.
 - `apply_ready`: references/apply.md. Prepared with no question; the approval comes first (`J ask approval --key <job>`, `J approve <key> [--fill-only|--via employer|site]`; many: `J ask approve`). After the yes browser subagents fill and submit, one job per host at a time (`J apply next --all`); fill-only: `J fill done <key>`, then `J submitted <key>`.
 - `open_ready`: `J open <key...>` in an attended turn, show each sheet as text; the outcome is the person's word (`J submitted <key>`).
 - `referral_pending`, `referral_list`: `J ask referral` (questions.md).
 - `contacts_requested`, `events_due`: references/contacts.md, events.md. First: `J ask contacts` (`J contacts count <n|all>`). With Tenjin `J contacts route` first; Haiku does the free ways. None: `J leave contacts:<key> --reason none_found`.
-- `email_due`: references/contacts.md. Only to an address the poster published; send only what `J email next` handed out, with the Gmail connector, then `J email sent <id>`.
-- `site_ready`: `J site show <key>`; show the link, answers (references/apply.md). A woken turn opens nothing; the job holds as `open_ready`.
+- `email_due`: references/contacts.md. Only to an address the poster published; send only what `J email next` handed out, with the Gmail connector (its draft tool, or the mailto link), then `J email sent <id>`. An X DM is the person's.
+- `site_ready`: `J site show <key>` (attended: opens the job's page in the person's Chrome, no question); show the link, answers (references/apply.md). A woken turn opens nothing; the job holds as `open_ready`.
 - `follow_up_due` (never a wake), attended: `J ask follow_up --json '{"company","title"}'`, then `J outcome <key> --status reply|interview|rejected|offer|no_reply`.
 
-Every handled item ends with its J outcome command (`J ops`, `J ingest`, `J leave <key...> --reason <low_score|no_match|no_careers_page|sign_in|other_system|not_a_job|duplicate>`; others: references/setup.md), or the watcher shows it again.
+Every handled item ends with its J outcome command (`J ops`, `J ingest`, `J leave <key...> --reason <low_score|no_match|no_careers_page|sign_in|other_system|not_a_job|duplicate>`; others: references/setup.md), or the watcher shows it again. Never leave a post batch.
 
 Shown in a reply: `J shown <key>`. If `notify` is set, send it with PushNotification as given, then `J notify result sent|not_sent|unknown [--reason off|present|none]` and say its `say` line if any.
 
