@@ -7,7 +7,7 @@ allowed-tools: Bash(node ${CLAUDE_SKILL_DIR}/scripts/gtm.mjs *) TaskCreate TaskU
 
 # GTM Loop
 
-G means `node ${CLAUDE_SKILL_DIR}/scripts/gtm.mjs`. Always write it out in full, never through a variable. Every command prints JSON. State, rules and profile live in `~/.tenjin-skills/gtm-loop/`; never read or edit them whole.
+G means `node ${CLAUDE_SKILL_DIR}/scripts/gtm.mjs`. Always write it out in full, never through a variable. Every command prints JSON. State, rules and profile live in `~/.tenjin-skills/gtm-loop/`; never read or edit them whole. Write temporary JSON/reply files to the OS temp folder, never the working repo.
 
 <!-- gates:start -->
 ## Gates (hard, first)
@@ -15,7 +15,7 @@ G means `node ${CLAUDE_SKILL_DIR}/scripts/gtm.mjs`. Always write it out in full,
 1. **Email approval:** No email without the person's recorded yes for that exact address and text (`send` box in the drafts file or `G email approve`), unless unattended email consent is current and dry run is confirmed. Send only what `G email next` hands out via the connected Gmail tool, then record `G email sent <id> <message id>`. Never resend an unrecorded handout (`unknown`: confirm via `G email unknown`).
 2. **Contact once:** Never contact the same person twice on any channel unless the person's `follow_up` rule allows one attended follow-up; any reply ends it.
 3. **Suppression:** Opt-out, bounce or "not interested" suppresses that person permanently (`G reply`); a company-stop reply suppresses the domain.
-4. **Email footer:** Every email carries the code-built footer (sender name, company, postal address, lead source, one-time note, stop line). No postal address, no email. Never edit the footer.
+4. **Email footer:** Every email carries the code-built footer (sender name, company, postal address, lead source, one-time note, stop line). No sender name or postal address, no email. Never edit the footer.
 5. **Address quality:** Email only published addresses or verified (`valid`) company-domain lookups. Drop found free-mail addresses. Found addresses in Germany, Austria, Canada or Australia become Gmail drafts, never sends.
 6. **Grounded copy:** No facts beyond the offer and signal. State the sender's connection to the offer. Never tell a search-found lead that they asked.
 7. **No social automation:** Never fetch, script, click or use Claude in Chrome on x.com, twitter.com, linkedin.com or reddit.com. Open replies only via `G open` / `G open --approved` in an attended turn (person presses send, then `G sent <key>`). Reading those sites runs only through the router in code.
