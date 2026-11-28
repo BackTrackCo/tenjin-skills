@@ -169,6 +169,37 @@ test('a Hacker News query test is free and uses the stored key words as they are
   assert.ok(calls[0].includes('query=first%20customers&'));
 });
 
+test('batch query testing runs all paid draft queries sequentially in one tenjin mcp process alongside free HN', async () => {
+  store.updateState((s) => Object.assign(s, store.emptyState()));
+  const x = fixture('router/x-posts.json');
+  const rd = fixture('router/reddit-anyapi.json');
+  const f = fake({ answers: [
+    specAnswer(x.host), runAnswer(x.host, x.result, { cost: ['provider price 0.005 USD'] }),
+    specAnswer(rd.host), runAnswer(rd.host, rd.result, { cost: ['provider price 0.01 USD'] }),
+  ] });
+  const fetchImpl = async () => ({ ok: true, status: 200, json: async () => ({ hits: [{ objectID: '2', _tags: ['story', 'ask_hn'], title: 'Ask HN: how did you get your first customers?', author: 'x', created_at_i: 1795596000 }] }) });
+  const out = await qtest.testQueries({
+    profile: profileWith({}),
+    overlay: { rules: [] },
+    items: [
+      { offer: 'gtm', source: 'hn', query: 'first customers' },
+      { offer: 'gtm', source: 'x', query: X_OK },
+      { offer: 'gtm', source: 'reddit', query: RD_OK },
+      { offer: 'gtm', source: 'x', query: 'bad query missing operators' },
+    ],
+    client: client(f),
+    fetch: fetchImpl,
+    now: NOW,
+  });
+  assert.equal(out.results.length, 4);
+  assert.equal(out.results[0].cost, 'free');
+  assert.equal(out.results[1].ok, true);
+  assert.equal(out.results[2].ok, true);
+  assert.equal(out.results[3].ran, false);
+  assert.equal(out.totalCents, 1.5);
+  assert.equal(f.log().filter((l) => l.started).length, 1, 'both paid tests shared ONE tenjin mcp process');
+});
+
 test('the report shows the funnel per source and a Queries section; where no query kept a lead the model is due to write variants, with no yes', async () => {
   store.updateState((s) => Object.assign(s, store.emptyState()));
   const x = fixture('router/x-posts.json');

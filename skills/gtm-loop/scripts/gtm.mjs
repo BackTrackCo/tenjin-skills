@@ -39,7 +39,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dropStaleHolds, staleHoldsLine } from './lib/codeid.mjs';
 import { checkQueries, checkQuery, SOURCES as QUERY_SOURCES } from './lib/querycheck.mjs';
-import { testQuery } from './lib/qtest.mjs';
+import { testQuery, testQueries } from './lib/qtest.mjs';
 import { addQuery, removeQuery, pinQuery, queriesTable } from './lib/queryset.mjs';
 import { searchOptions } from './lib/searchopts.mjs';
 import { showRepair, applyRepair, listRepairs } from './lib/repairs.mjs';
@@ -508,13 +508,32 @@ register('queries', ({ sub, args, flags }) => {
   // The table: the query text and the counts, never a post. The model writes variants from this and the offer.
   const st = loadState();
   return { offers: queriesTable(st, profile), tests: st.queryTests || {} };});
-// One query, run once, in the attended turn: the count, what each filter drops, three sample lines, and the cost.
+// Query tests in the attended turn: one query (`query test <offer> <source> [--query "..."]`) or a whole batch in ONE router
+// process (`query test <offer>`, `query test --all`, or `query test --json|--file '[{"offer","source","query"}]'`).
 register('query', async ({ sub, args, flags }) => {
-  if (sub !== 'test') return fail('query test <offer id> <source> [--query "<draft text>"]');
+  if (sub !== 'test') return fail('query test <offer id> [<source>] [--query "<draft text>"] | query test --all | query test --json|--file <batch>');
+  const profile = readProfile();
+  const overlay = loadOverlay();
+  if (flags.json || flags.file || flags.all || (args[1] && !args[2])) {
+    let items;
+    if (flags.json || flags.file) {
+      items = flags.json ? JSON.parse(flags.json) : readJsonFile(flags.file);
+      if (!Array.isArray(items) || !items.length) return fail('query test --json|--file takes a non-empty JSON array of {offer, source, query?}');
+    } else {
+      const targetOffers = flags.all ? offersOf(profile) : offersOf(profile).filter((o) => o.id === args[1]);
+      if (!targetOffers.length) return fail(`no offer with id ${args[1]}`);
+      const allowed = profile.sources && profile.sources.length ? profile.sources : QUERY_SOURCES;
+      items = [];
+      for (const o of targetOffers) for (const s of QUERY_SOURCES) if (allowed.includes(s) && o.queries[s]) items.push({ offer: o.id, source: s });
+      if (!items.length) return fail('no stored queries to test: pass --json \'[{"offer","source","query"}]\' or save queries first (G queries set)');
+    }
+    if (items.some((x) => x && x.source !== 'hn') && loadState().tenjin.status !== 'ready') return fail('Tenjin is not ready: run G tenjin first; if missing, outdated or unfunded, ask via G ask tenjin and record G tenjin ask-done yes|no');
+    return testQueries({ profile, overlay, items, fetch: globalThis.fetch });
+  }
   const [offerId, source] = [args[1], args[2]];
   if (!offerId || !QUERY_SOURCES.includes(source)) return fail(`query test <offer id> <${QUERY_SOURCES.join('|')}>`);
   if (source !== 'hn' && loadState().tenjin.status !== 'ready') return fail('Tenjin is not ready: run G tenjin first; if missing, outdated or unfunded, ask via G ask tenjin and record G tenjin ask-done yes|no');
-  return testQuery({ profile: readProfile(), overlay: loadOverlay(), offerId, source, query: typeof flags.query === 'string' ? flags.query : null, fetch: globalThis.fetch });
+  return testQuery({ profile, overlay, offerId, source, query: typeof flags.query === 'string' ? flags.query : null, fetch: globalThis.fetch });
 });
 register('hn', async () => runHn({ fetch: globalThis.fetch, profile: readProfile(), overlay: loadOverlay() }));
 register('reads', async () => runIdentityReads({}));

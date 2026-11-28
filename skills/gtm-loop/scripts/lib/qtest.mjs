@@ -24,6 +24,22 @@ export function funnelOf(state, posts, { profile, overlay, offerId, subreddits, 
   return { sentToReview: r.added.length, dropped, samples: r.added.slice(0, 3).map((k) => clip(copy.leads[k].text)) };
 }
 
+function buildNeed(offer, source, text, since) {
+  const kind = KIND[source];
+  const base = { since, offerId: offer.id, phrase: queryLabel(offer.id, source), query: text };
+  return kind === 'reddit_posts'
+    ? fillNeed(kind, { ...base, subreddits: offer.subreddits.join(', ') })
+    : fillNeed(kind, { ...base, ...(kind === 'web_research' ? { mode: 'discussion' } : {}) });
+}
+
+function finalizeResult({ profile, overlay, offer, source, text, posts, cost, droppedOld, now }) {
+  const f = funnelOf(loadState(), posts, { profile, overlay, offerId: offer.id, subreddits: offer.subreddits, now });
+  f.dropped.too_old = droppedOld;
+  const outside = source === 'reddit' ? posts.filter((p) => !offer.subreddits.includes(String(p.subreddit || subredditOf(p.url) || '').toLowerCase())).length : 0;
+  updateState((s) => { s.queryTests[queryLabel(offer.id, source)] = { at: new Date(now).toISOString(), query: text, returned: posts.length + droppedOld, toReview: f.sentToReview, cost }; });
+  return { ran: true, ok: true, source, offer: offer.id, returned: posts.length + droppedOld, passFilters: f.sentToReview, dropped: f.dropped, outsideList: outside, samples: f.samples, cost, cents: cost === 'free' ? 0 : centsOf(cost), verdict: posts.length + droppedOld === 0 ? 'empty: rewrite it (looser: fewer words, fewer operators)' : f.sentToReview === 0 ? 'only noise: every result dropped by a filter; rewrite it' : 'results pass the filters' };
+}
+
 export async function testQuery({ profile, overlay, offerId, source, query = null, client = new RouterClient(), fetch = globalThis.fetch, now = Date.now(), save }) {
   const offer = offersOf(profile).find((o) => o.id === offerId);
   if (!offer) throw new Error(`no offer with id ${offerId}`);
@@ -33,29 +49,59 @@ export async function testQuery({ profile, overlay, offerId, source, query = nul
   if (bad.length) return { ran: false, refused: bad };
   const state = loadState();
   const since = sinceOf(state, now);
-  let posts;
-  let cost = null;
-  let droppedOld = 0;
   if (source === 'hn') {
-    posts = await searchHn({ fetch, phrase: text, query: text, sinceTs: Date.parse(since) / 1000 });
-    cost = 'free';
-  } else {
-    const kind = KIND[source];
-    const base = { since, offerId, phrase: queryLabel(offerId, source), query: text };
-    const need = kind === 'reddit_posts' ? fillNeed(kind, { ...base, subreddits: offer.subreddits.join(', ') }) : fillNeed(kind, { ...base, ...(kind === 'web_research' ? { mode: 'discussion' } : {}) });
-    const [r] = await runRound([need], { client, save });
-    if (!r.ok) {
-      updateState((s) => recordHeld(s, need, r));
-      return { ran: true, ok: false, status: r.status, reason: r.reason, cost: null };
-    }
-    updateState((s) => { clearHeld(s, need); s.spend.push({ at: new Date(now).toISOString(), kind: 'query_test', cents: centsOf(r.cost), cost: r.cost, leads: 0 }); });
-    posts = r.ingest.posts;
-    droppedOld = r.ingest.droppedOld || 0;
-    cost = r.cost;
+    const posts = await searchHn({ fetch, phrase: text, query: text, sinceTs: Date.parse(since) / 1000 });
+    return finalizeResult({ profile, overlay, offer, source, text, posts, cost: 'free', droppedOld: 0, now });
   }
-  const f = funnelOf(loadState(), posts, { profile, overlay, offerId, subreddits: offer.subreddits, now });
-  f.dropped.too_old = droppedOld;
-  const outside = source === 'reddit' ? posts.filter((p) => !offer.subreddits.includes(String(p.subreddit || subredditOf(p.url) || '').toLowerCase())).length : 0;
-  updateState((s) => { s.queryTests[queryLabel(offerId, source)] = { at: new Date(now).toISOString(), query: text, returned: posts.length + droppedOld, toReview: f.sentToReview, cost }; });
-  return { ran: true, ok: true, source, offer: offerId, returned: posts.length + droppedOld, passFilters: f.sentToReview, dropped: f.dropped, outsideList: outside, samples: f.samples, cost, cents: cost === 'free' ? 0 : centsOf(cost), verdict: posts.length + droppedOld === 0 ? 'empty: rewrite it (looser: fewer words, fewer operators)' : f.sentToReview === 0 ? 'only noise: every result dropped by a filter; rewrite it' : 'results pass the filters' };
+  const need = buildNeed(offer, source, text, since);
+  const [r] = await runRound([need], { client, save });
+  if (!r.ok) {
+    updateState((s) => recordHeld(s, need, r));
+    return { ran: true, ok: false, status: r.status, reason: r.reason, cost: null };
+  }
+  updateState((s) => { clearHeld(s, need); s.spend.push({ at: new Date(now).toISOString(), kind: 'query_test', cents: centsOf(r.cost), cost: r.cost, leads: 0 }); });
+  return finalizeResult({ profile, overlay, offer, source, text, posts: r.ingest.posts, cost: r.cost, droppedOld: r.ingest.droppedOld || 0, now });
+}
+
+// Batch test: runs all valid paid queries sequentially through ONE `tenjin mcp` process, so setup never spawns
+// overlapping router processes or hits wallet channel contention.
+export async function testQueries({ profile, overlay, items, client = new RouterClient(), fetch = globalThis.fetch, now = Date.now(), save }) {
+  const offers = offersOf(profile);
+  const since = sinceOf(loadState(), now);
+  const results = new Array(items.length);
+  const paid = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i] || {};
+    const offerId = item.offer || item.offerId;
+    const source = item.source;
+    const offer = offers.find((o) => o.id === offerId);
+    if (!offer) { results[i] = { ran: false, offer: offerId || null, source: source || null, refused: [`no offer with id ${offerId}`] }; continue; }
+    if (!source || !(source === 'hn' || KIND[source])) { results[i] = { ran: false, offer: offer.id, source: source || null, refused: [`unknown source: ${source}`] }; continue; }
+    const text = item.query === undefined || item.query === null ? offer.queries[source] : item.query;
+    if (!text) { results[i] = { ran: false, offer: offer.id, source, refused: [`the offer has no stored ${source} query`] }; continue; }
+    const bad = checkQuery(source, text, offer);
+    if (bad.length) { results[i] = { ran: false, offer: offer.id, source, refused: bad }; continue; }
+    if (source === 'hn') {
+      const posts = await searchHn({ fetch, phrase: text, query: text, sinceTs: Date.parse(since) / 1000 });
+      results[i] = finalizeResult({ profile, overlay, offer, source, text, posts, cost: 'free', droppedOld: 0, now });
+    } else {
+      paid.push({ i, offer, source, text, need: buildNeed(offer, source, text, since) });
+    }
+  }
+  if (paid.length) {
+    const out = await runRound(paid.map((p) => p.need), { client, save });
+    for (let k = 0; k < paid.length; k++) {
+      const { i, offer, source, text, need } = paid[k];
+      const r = out[k];
+      if (!r.ok) {
+        updateState((s) => recordHeld(s, need, r));
+        results[i] = { ran: true, ok: false, offer: offer.id, source, status: r.status, reason: r.reason, cost: null };
+      } else {
+        updateState((s) => { clearHeld(s, need); s.spend.push({ at: new Date(now).toISOString(), kind: 'query_test', cents: centsOf(r.cost), cost: r.cost, leads: 0 }); });
+        results[i] = finalizeResult({ profile, overlay, offer, source, text, posts: r.ingest.posts, cost: r.cost, droppedOld: r.ingest.droppedOld || 0, now });
+      }
+    }
+  }
+  const totalCents = Math.round(results.reduce((n, r) => n + ((r && r.cents) || 0), 0) * 100) / 100;
+  return { results, totalCents };
 }
