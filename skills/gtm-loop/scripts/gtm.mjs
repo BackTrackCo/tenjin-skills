@@ -184,7 +184,7 @@ export function startStatus(profile, state) {
     if (!o.phrases.length) missing.push(`phrases for "${o.name || o.id}": short, first person, as a buyer writes a post (G phrases set --offer ${o.id})`);
     if ((!profile.sources || profile.sources.includes('reddit')) && !o.subreddits.length) missing.push(`subreddits for "${o.name || o.id}": propose five to eight where its buyer asks, the person edits them`);
     if (o.phrases.length && !Object.keys(o.queries).length && !o.queriesAsked) missing.push(`queries for "${o.name || o.id}": the model writes one per source (X, Reddit, LinkedIn, web, Hacker News) in the same step as the phrases, tests each with G query test, shows them with their cost for the person's yes (G queries set); or G queries decline --offer ${o.id} to use the loose queries code builds`);
-    if (o.who && !o.buyer && !o.buyerAsked) missing.push(`a buyer for "${o.name || o.id}": propose a role, company type and place from "${o.who}" and ask once (buyer, or buyerAsked: true if declined)`);
+    if (o.who && !o.buyer && !o.buyerAsked) missing.push(`a buyer for "${o.name || o.id}": propose a role, company type and place from "${o.who}" and ask once whether, alongside finding public posts asking for "${o.name || o.id}", they also want outbound company and role lookup for matching buyers who have not posted (${hintLines(profile).fit.replace(/^With Tenjin, I can also find people who fit your buyer: /, '').replace(/\.$/, '')}), or start with public asks only (save as buyer, or buyerAsked: true if declined)`);
   }
   if (!state.start) missing.push('the start question (G ask start, then G start record)');
   const tenjinStatus = (state.tenjin && state.tenjin.status) || 'unknown';
