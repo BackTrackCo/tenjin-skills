@@ -43,9 +43,24 @@ test('J search plan prints the ask in place of the free queries until the ask is
   assert.equal(J('search', 'plan').json.ask, 'tenjin', 'still due until answered');
   J('tenjin', 'ask-done', 'no');
   assert.equal(J('search', 'plan').json.queries.length, 5, 'Not now: the free search runs, and no second ask');
-  // Tenjin ready: no ask
+  // Tenjin ready: no ask, steers to routed search rather than free-first
   reset({ status: 'ready' });
-  assert.equal(J('search', 'plan').json.queries.length, 5);
+  const readyPlan = J('search', 'plan').json;
+  assert.equal(readyPlan.queries.length, 5);
+  assert.equal(readyPlan.tenjinReady, true);
+  assert.match(readyPlan.note, /J route/);
+
+  // J start status steers to routed search when Tenjin is ready, and ask-first when missing/unfunded
+  J('resume', 'set', '--text', 'Software Engineer in Berlin');
+  J('start', 'record', '--mode', 'attended', '--frequency', 'daily', '--no-limit', '--where', 'employer');
+  const stReady = J('start', 'status').json;
+  assert.equal(stReady.tenjin, 'ready');
+  assert.match(stReady.next, /routed search \(J route/);
+  assert.match(stReady.next, /do not offer a free-only search first/);
+  store.updateState((s) => { s.tenjin.status = 'unfunded'; });
+  const stUnfunded = J('start', 'status').json;
+  assert.equal(stUnfunded.tenjin, 'unfunded');
+  assert.match(stUnfunded.next, /ask to set up, update or fund Tenjin/);
 });
 
 test('unattended: no ask that waits, the free path runs', () => {

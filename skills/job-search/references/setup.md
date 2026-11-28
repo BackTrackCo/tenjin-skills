@@ -1,6 +1,6 @@
 # Setup and the start
 
-Setup asks only what it needs now; the rest comes when it matters. Nothing here asks about Tenjin or stops for it: `J tenjin` only sets the hint state (`missing`, `outdated`, `unfunded`, `ready`), and Tenjin comes up as a recommendation at a hint moment (references/questions.md).
+Setup asks only what it needs now; the rest comes when it matters. `J tenjin` sets the state (`missing`, `outdated`, `unfunded`, `ready`): when `ready`, run routed search in code (`J route`) and never offer a free-only search first; without a funded Tenjin, ask to install, update or fund Tenjin (naming benefits and prices via `J search plan` / `J ask tenjin` -> `J tenjin ask-done yes|no`) before falling back to free search (references/questions.md).
 
 ## The first run, in order
 
@@ -18,7 +18,7 @@ Setup asks only what it needs now; the rest comes when it matters. Nothing here 
    - **Where to apply:** `"Employer's site (Recommended)"`, `"A job site, I apply"` (opens the job-site page in Chrome with answers, does nothing on the site), or `"Ask me each job"` (`--where employer|site|ask`, `apply.where`, references/apply.md).
    - Record with `J start record --mode attended|auto_no_new|auto_write --frequency daily|twice_daily|weekly --catch-up <n> --per-day <n>|none --words "<their words>"` (changeable later outside a batch via `J start record` or `J frequency set`). Say the reminder line `J start record` prints if any (built from `J rc set`, push history and read-only Claude Code push settings; never a question, at most once per start).
 4. **Auto mode extras (shown back for a clear yes):** unattended rules (`profile.unattended`: `roles`, `places`, `remote`, `minPay`, `excludeCompanies`, `excludeLevels`, `minScore`, `hosts`: hiring systems or `*`), then `J consent record unattended --optional-writing skip|wait` (`J ask optional-writing`), plus `J consent record writing` for fully auto. A dry run precedes the first unattended submit.
-5. **First search and report** in the same session (`J work`, references/search.md); the first report says what was searched and from where.
+5. **First search and report** in the same session (`J work`, references/search.md): with Tenjin `ready`, run routed search (`J route`, `J hn`, `J yc` and watched boards); without a funded Tenjin, ask to install, update or fund Tenjin first (`J search plan` -> `J ask tenjin` -> `J tenjin ask-done yes|no`) before falling back to free search. The first report says what was searched and from where.
 
 ## Later, at their trigger
 

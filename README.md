@@ -83,7 +83,7 @@ npx skills add BackTrackCo/tenjin-skills#A1igator/job-search-v0 \
   --skill job-search --skill writing -a claude-code -g
 ```
 
-Then run `/job-search` in Claude Code. It asks you to share your resume (a file, a link or the text), then four quick choices in one question: how applications go out (you approve each, auto, "Fill only, I submit" or "Just open the pages"), how often to search, how many positions to make ready per period, and where you prefer to apply. The free search and the first report follow in the same session. Tenjin is never required to start; it comes up as a recommendation where it would do better, and you decide. The install (the `skills` installer) needs Node 22.20 or later, and the skill itself runs on Node 20 or later.
+Then run `/job-search` in Claude Code. It asks you to share your resume (a file, a link or the text), then four quick choices in one question: how applications go out (you approve each, auto, "Fill only, I submit" or "Just open the pages"), how often to search, how many positions to make ready per period, and where you prefer to apply. The first search and report follow in the same session: with a funded Tenjin, routed search runs across job boards, X and company boards; without one, it first asks whether you want to install or fund Tenjin (naming what it adds and estimated costs) before falling back to free search. The install (the `skills` installer) needs Node 22.20 or later, and the skill itself runs on Node 20 or later.
 
 ### What it does
 

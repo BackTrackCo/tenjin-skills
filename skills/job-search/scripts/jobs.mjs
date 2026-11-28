@@ -94,7 +94,7 @@ function tenjinReady() {
   updateState((s) => { s.tenjin = { ...(s.tenjin || {}), status: r.status, version: r.version || null, checkedAt: new Date().toISOString() }; });
   if (r.status === 'ready') return null;
   const hint = tenjinHint(loadState(), 'daily_search', readProfile());
-  return { ran: false, tenjin: r.status, hint: hint ? hint.line : null, next: 'nothing was sent to the router; the free searches still run' };
+  return { ran: false, tenjin: r.status, hint: hint ? hint.line : null, next: 'nothing was sent to the router; before falling back to free search, ask to set up, update or fund Tenjin via J search plan / J ask tenjin and record J tenjin ask-done yes|no' };
 }
 
 // The staged copy is deleted when the last job that staged it is done with it: after its upload, and again at every later step
@@ -152,7 +152,12 @@ const commands = {
       if (r.status === 'missing') s.held.push({ reason: 'tenjin_missing', detail: 'missing' });
       s.tenjin = { ...(s.tenjin || {}), status: r.status, version: r.version || null, checkedAt: new Date().toISOString() };
     });
-    return out(r);
+    return out({
+      ...r,
+      next: r.status === 'ready'
+        ? 'Tenjin is funded and ready. Run routed searches (J route, J contacts route, J events route); do not offer a free-only search first.'
+        : 'Tenjin is not ready. Before any step that uses Tenjin or any free fallback, ask via J search plan / J ask tenjin (naming benefits and prices) and record J tenjin ask-done yes|no.',
+    });
   },
 
 
@@ -965,7 +970,11 @@ const commands = {
       if (ask) return out(ask);
       // a finished session starts again at round 0: its last round is not today's plan
       const round = st.search.session && !st.search.session.finished ? st.search.session.round : 0;
-      return out(webPlan(profile, round, st.routed.lastSearchAt));
+      const plan = webPlan(profile, round, st.routed.lastSearchAt);
+      if ((st.tenjin || {}).status === 'ready') {
+        return out({ ...plan, tenjinReady: true, note: 'Tenjin is funded and ready. Prefer routed search in code (J route, J hn, J yc, and watched boards) instead of free manual web search unless the person explicitly asked for free-only.' });
+      }
+      return out(plan);
     }
     if (sub === 'done') return out(updateState((s) => { s.search.needPending = (s.search.needPending || []).filter((n) => n.kind !== kind); return { done: kind }; }));
     if (sub !== 'next') return out({ error: 'search plan | next | done <need kind>' }, 2);
@@ -981,7 +990,13 @@ const commands = {
       const missing = [];
       if (!profile.resumeText && !profile.resumePath) missing.push('resume');
       if (!profile.applyMode || !profile.frequency || !(st.start && st.start.positionsAt) || !(profile.apply && profile.apply.where)) missing.push('start_questions');
-      return out({ missing, next: missing[0] === 'resume' ? 'Job Search is set up and watching, and this is the first run, so I need one thing to start: can you share your resume? Drop the file here, paste a link, or paste the text. I\'ll take your role, location and remote preference from it, then ask four quick choices and one question about referrals, and run the first search.' : missing.length ? 'J ask start, then J start record' : 'run the free search and the report', start: st.start || null });
+      const tenjin = (st.tenjin || {}).status || 'unknown';
+      const afterStart = tenjin === 'ready'
+        ? 'run the routed search (J route, J hn, J yc) and the report (Tenjin is funded and ready; do not offer a free-only search first)'
+        : ['missing', 'outdated', 'unfunded'].includes(tenjin)
+          ? 'before any free search, ask to set up, update or fund Tenjin via J search plan (ask: tenjin) and record J tenjin ask-done yes|no, then run the search and the report'
+          : 'run J tenjin, then run the routed search if ready (or ask to set up/fund Tenjin before free search) and the report';
+      return out({ missing, tenjin, next: missing[0] === 'resume' ? 'Job Search is set up and watching, and this is the first run, so I need one thing to start: can you share your resume? Drop the file here, paste a link, or paste the text. I\'ll take your role, location and remote preference from it, then ask four quick choices and one question about referrals, and run the first search.' : missing.length ? 'J ask start, then J start record' : afterStart, start: st.start || null });
     }
     if (sub !== 'record') return out({ error: 'start status | record --mode m --frequency f --catch-up n --per-day n|none (or --positions n|none|skip, or --no-limit) --where employer|site|ask [--words text]' }, 2);
     if (flags.where !== undefined && !['employer', 'site', 'ask'].includes(flags.where)) return out({ error: 'where must be employer, site or ask' }, 2);
