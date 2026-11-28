@@ -400,23 +400,28 @@ export function inputProblems(kind, template) {
 }
 
 // ---- the service's own input fields (its spec) -------------------------------------------------------------------------------
-// The spec the router returns carries the input as a JSON Schema: `properties`, `required`, and `pinned` fields Tenjin sets itself.
+// Today the router's spec answer carries the input fields as text: an "Inputs:" block of lines `- name (type, required); about`. This one
+// function reads them; when the router passes a service's own input fields in another form, only this function changes. An answer with
+// no such block gives null, and then nothing is checked before payment.
 export function specInput(spec) {
-  const s = spec && spec.spec && typeof spec.spec === 'object' ? spec.spec : spec || {};
-  const schema = s.input && typeof s.input === 'object' ? s.input : null;
-  if (!schema || !schema.properties || typeof schema.properties !== 'object') return null;
-  const pinned = s.pinned && typeof s.pinned === 'object' ? Object.keys(s.pinned) : [];
-  const props = Object.entries(schema.properties).filter(([n]) => !pinned.includes(n)).map(([n, p]) => ({ name: n, type: p && p.type ? String(p.type) : null, required: Array.isArray(schema.required) && schema.required.includes(n), ...(p && Array.isArray(p.enum) ? { enum: p.enum.slice(0, 12) } : {}), ...(p && typeof p.description === 'string' ? { about: p.description.slice(0, 120) } : {}) }));
-  return { fields: props, strict: schema.additionalProperties === false };
+  const text = [spec && spec.__text, spec && spec.text].filter((x) => typeof x === 'string').join('\n');
+  const block = /(?:^|\n)Inputs:[ \t]*\n((?:[ \t]*- .*(?:\n|$))+)/.exec(text);
+  if (!block) return null;
+  const fields = [];
+  for (const line of block[1].split('\n')) {
+    const m = /^\s*- ([A-Za-z_][\w.-]*) \((.*?)\)(?:;|$)/.exec(line);
+    if (!m) continue;
+    const kind = m[2].trim();
+    fields.push({ name: m[1], type: kind.replace(/\s*,\s*required\s*$/, '').replace(/\{.*$/, '').trim() || null, required: /(^|,)\s*required\s*$/.test(kind), about: line.split(';').slice(1).join(';').trim().slice(0, 120) });
+  }
+  return fields.length ? { fields } : null;
 }
 
-// Does `input` fit the spec: every required field present, and no field the spec does not list.
+// Does `input` fit the spec: every required field present. A field the spec text does not list is not a break: the text can be shorter than the service.
 export function fitsSpec(input, specIn) {
   if (!specIn) return { ok: true, missing: [], unknown: [] };
-  const names = new Set(specIn.fields.map((f) => f.name));
   const missing = specIn.fields.filter((f) => f.required && empty(input[f.name])).map((f) => f.name);
-  const unknown = Object.keys(input).filter((k) => !names.has(k));
-  return { ok: !missing.length && !unknown.length, missing, unknown };
+  return { ok: !missing.length, missing, unknown: [] };
 }
 
 // The generic filler: each input field of the spec that a loop input matches by its usual name.

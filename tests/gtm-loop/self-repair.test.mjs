@@ -25,8 +25,8 @@ const fresh = () => { store.updateState((s) => Object.assign(s, store.emptyState
 const round = (f) => routed.runPostRound({ profile, overlay: { rules: [] }, client: client(f), now: NOW });
 const X = fixture('router/x-posts.json');
 const NEW_HOST = 'newsearch.example.com';
-const withInput = (spec, input) => ({ ...spec, input });
-const specFor = (host, properties, required) => withInput(specAnswer(host), { type: 'object', properties, required });
+// The spec answer as today's router sends it: JSON plus a text block with "Request:" and an "Inputs:" list.
+const specFor = (host, properties, required) => ({ ...specAnswer(host), __text: `A service.\nPrice: $0.005 per call.\nRequest: POST https://${host}/search\nInputs:\n${Object.entries(properties).map(([n, p]) => `- ${n} (${p.type}${required.includes(n) ? ', required' : ''}); ${p.description || 'a field'}`).join('\n')}\nReturns: JSON.` });
 const QUERY_SPEC = (host) => specFor(host, { q: { type: 'string' }, since: { type: 'string' } }, ['q']);
 // A changed answer: a list under `data.hits`, each hit with `link`, `body`, `username` and `created`.
 const SHAPE_A = { data: { hits: [{ link: 'https://x.com/ann/status/1900000000000000101', body: 'Anyone know how to get my first users without ads? I have none.', username: 'ann', created: '2026-11-26T09:00:00Z' }, { link: 'https://x.com/bo/status/1900000000000000102', body: 'How did you get your first users for a dev tool? Asking for real.', username: 'bo', created: '2026-11-26T10:00:00Z' }] } };
@@ -153,12 +153,12 @@ test('an input break is held before payment with the service\'s new fields, the 
   assert.equal(f.calls().filter((c) => c.id).length, 1, 'only the LinkedIn run was paid');
   const r = requests()[0];
   assert.equal(r.side, 'input');
-  assert.deepEqual(r.specFields.map((x) => [x.name, x.required]), [['searchPhrase', true], ['limit', false]]);
+  assert.deepEqual(r.specFields.map((x) => [x.name, x.type, x.required]), [['searchPhrase', 'string', true], ['limit', 'integer', false]]);
   const shown = rp.showRepair(r.id);
   assert.equal(shown.serviceInputFields[0].name, 'searchPhrase');
   assert.match(JSON.stringify(shown.loopInputs), /query/);
   assert.throws(() => rp.applyRepair(r.id, tmpFile({ input: { searchPhrase: '{nope}' } })), /\{nope\} is not an input of x_posts/);
-  assert.throws(() => rp.applyRepair(r.id, tmpFile({ input: { wrongName: '{query}' } })), /missing searchPhrase; not a field of the service: wrongName/);
+  assert.throws(() => rp.applyRepair(r.id, tmpFile({ input: { wrongName: '{query}' } })), /missing searchPhrase/);
   const res = rp.applyRepair(r.id, tmpFile({ input: { searchPhrase: '{query}[ since:{since}]', limit: 20 } }));
   assert.match(res.reread, /next round/);
   const g = fake({ answers: [spec, runAnswer(NEW_HOST, X.result)] });
@@ -247,4 +247,13 @@ test('the reader: paths, the generic reader and the template builder', () => {
   const vars = reader.loopInputs('x_posts', { query: 'a b', since: new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10) });
   assert.deepEqual(reader.buildInput({ q: '{query}[ since:{since}]', age: { byAge: ['d', 'w', 'm', 'y'] }, skip: '{missing}', kept: { if: { query: 'a b' }, then: 1, else: 2 } }, vars), { q: `a b since:${vars.since}`, age: 'w', kept: 1 });
   assert.deepEqual(reader.buildInput({ q: '{query}[ since:{since}]' }, { query: 'a b' }), { q: 'a b' });
+});
+
+test('the input fields are read from the "Inputs:" text of today\'s spec answer, and a field the text does not list is never a break', () => {
+  const text = 'Orthogonal (a lead database): Find people.\nPrice: $0.01 per call.\nRequest: POST https://svc.example.com/find\nInputs:\n- query (object {currentJobTitle, currentCompanyWebsite, locatio...}, required); One or more filters, each {"include": [...]}.\n- pagination (object {size, token})\n- note (string, required); free text\nExample input: {}\nReturns: JSON.';
+  const spec = reader.specInput({ status: 'spec', __text: text });
+  assert.deepEqual(spec.fields.map((f) => [f.name, f.type, f.required]), [['query', 'object', true], ['pagination', 'object', false], ['note', 'string', true]]);
+  assert.equal(reader.specInput({ status: 'spec', __text: 'Supplier x. Inputs: query.' }), null);
+  assert.deepEqual(reader.fitsSpec({ query: {}, note: 'a', sort: 'latest' }, spec), { ok: true, missing: [], unknown: [] });
+  assert.deepEqual(reader.fitsSpec({ query: {} }, spec).missing, ['note']);
 });

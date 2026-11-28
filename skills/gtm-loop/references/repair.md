@@ -6,7 +6,7 @@ The router passes a service's own input fields and its own answer straight throu
 
 - Each need reads and sends through a mapping: where each field sits in the answer, and how the loop's inputs fill the service's input fields. Today's services ship as default mappings in `scripts/lib/suppliers/defaults.json`. A repaired mapping is stored in `mappings.json` in the state folder and wins over the default.
 - With no mapping for a service, code fills the service's input fields by their usual names, and reads the answer by the usual names (`reads.json`: the shallowest list of items that carry a link and a text, or the shallow fields of one object). If that passes the check, nothing else happens.
-- Before it pays, code checks that the input it built has every required field of the service and no field the service does not list. If the router or the service refuses the input (`needs_input`), that is the same break. Nothing is paid.
+- Before it pays, code checks that the input it built has every required field the spec lists. Today the spec answer lists them as text (an `Inputs:` block), which one function (`specInput`) reads; an answer with no such block is not checked. A field the text does not list is never a break. If the router answers the run with `needs_input`, that is the same break. Nothing is paid.
 - After a paid answer, code checks the PARSED result: a list was found, and most items (80%, or half for company and people lists) have the fields the loop needs. A single read needs its required field. The paid answer is saved (never for a service whose terms allow immediate use only: then only its key names and types are kept).
 - A break holds that one need, writes ONE repair request for that need, service and side, and starts the `repair_due` item. A second round does not pay or write again while the request waits (`repair_pending`). Every other need still runs.
 
@@ -26,6 +26,7 @@ The next round reads that service with the mapping, in code. A later change that
 
 ## Limits
 
+- Works today, on the released CLI and the router as it answers now. What waits for the router's coming operation calls: the service's input fields as data (today they are read from text), and calling an operation by name. The seams are `specInput` in `reader.mjs` and the `input` part of a mapping.
 - A result that parses and passes the check but means something else is not detected.
 - A generic read that finds the required fields but not the optional ones (no date, no author, no company) passes: those fields stay empty.
 - A service whose terms allow immediate use only is paid once and lost on its first break: the next round reads with the repaired mapping, checked against nothing but its own shape.

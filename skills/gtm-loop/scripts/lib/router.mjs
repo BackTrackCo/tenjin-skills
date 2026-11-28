@@ -138,11 +138,12 @@ export class RouterError extends Error {
 // What `{id, input}` answers when the service refused the input before any payment.
 const INPUT_REFUSAL = /\b(invalid|missing|unknown|rejected|unrecognized)\b[^.]{0,40}\b(input|field|parameter)s?\b|\b(input|field|parameter)s?\b[^.]{0,40}\b(invalid|missing|required|unknown|rejected|not allowed)\b/i;
 const HOST_RE = /\b(?:[a-z0-9-]+\.)+[a-z]{2,10}\b/gi;
+// The service's host: today's spec text says "Request: GET https://<host>/...". Failing that, the first host the spec names.
 function sellerOf(spec, text) {
-  const s = spec.spec && typeof spec.spec === 'object' ? spec.spec : spec;
-  try { if (s.request && typeof s.request.url === 'string') return new URL(s.request.url.replace(/\{[^}]*\}/g, 'x')).hostname.toLowerCase(); } catch {}
+  const req = /Request:\s*[A-Z]+\s+https?:\/\/([^/\s{]+)/.exec(String(spec.__text || ''));
+  if (req) return req[1].toLowerCase();
   const m = (text.match(HOST_RE) || []).find((h) => !/^(www\.)?(example|tenjin)\./i.test(h));
-  return m ? m.toLowerCase() : typeof s.provider === 'string' && s.provider ? s.provider.toLowerCase() : 'unknown';
+  return m ? m.toLowerCase() : 'unknown';
 }
 
 // Runs one need. Returns {ok, status, ingest, cost, reason}. Never sends the same request twice; never retries.
