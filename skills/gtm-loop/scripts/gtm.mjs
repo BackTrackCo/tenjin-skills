@@ -136,22 +136,28 @@ register('offers', ({ sub, flags }) => {
   return { profile: setProfile({ offers: list, offer: null, phrases: null, buyer: null, subreddits: null }) };
 });
 
-// What is still missing, in the order to ask it. A profile from an older run still loads; the new fields are proposed once.
+// What still needs setup. A profile from an older run still loads; the new fields are proposed once.
 export function startStatus(profile, state) {
   const missing = [];
   const offers = offersOf(profile);
-  const s = profile.sender || {};
-  if (!s.name) missing.push('your name (the sender name), asked in the same message as what you sell and your handles: G profile set --json \'{"sender": {"name", "company", "handles": {...}}}\'');
-  if (!offers.length) missing.push('what you sell: one or more offers, each with an id, name, what it does, who it helps, link (G offers set)');
+  let needsOffer = !offers.length;
+  if (!offers.length) missing.push('what you sell: an offer name and what it does (G offers set)');
   if (isLegacy(profile)) missing.push('the new shape: show the person once that the old single offer, phrases and subreddits are replaced by offers (each with its own phrases, subreddits and buyer), propose them from the old ones, and save the confirmed list with G offers set');
   for (const o of offers) {
+    if (!o.name.trim() || !o.what.trim()) {
+      needsOffer = true;
+      missing.push(`offer details for "${o.name || o.id}": fill in the name and what it does (G offers set)`);
+    }
     if (!o.phrases.length) missing.push(`phrases for "${o.name || o.id}": short, first person, as a buyer writes a post (G phrases set --offer ${o.id})`);
     if ((!profile.sources || profile.sources.includes('reddit')) && !o.subreddits.length) missing.push(`subreddits for "${o.name || o.id}": propose five to eight where its buyer asks, the person edits them`);
     if (o.phrases.length && !Object.keys(o.queries).length && !o.queriesAsked) missing.push(`queries for "${o.name || o.id}": the model writes one per source (X, Reddit, LinkedIn, web, Hacker News) in the same step as the phrases, tests each with G query test, shows them with their cost for the person's yes (G queries set); or G queries decline --offer ${o.id} to use the loose queries code builds`);
     if (o.who && !o.buyer && !o.buyerAsked) missing.push(`a buyer for "${o.name || o.id}": propose a role, company type and place from "${o.who}" and ask once (buyer, or buyerAsked: true if declined)`);
   }
   if (!state.start) missing.push('the start question (G ask start, then G start record)');
-  return { done: missing.length === 0, missing, legacy: isLegacy(profile), next: missing.length ? 'Ask in one message: the person\'s name, company, handles and what they sell (offers, in their own words), who each helps and its link. Save what they give at once, even if partial. Then propose, per offer, short first-person phrases, subreddits and, if none was given, a buyer; let them edit; save; then the start question. See references/setup.md.' : null };
+  const next = needsOffer
+    ? 'Inspect the selected repository before asking about the offer. Propose what it sells, who it helps, its link if known and a few buyer signals. Ask only the questions that still matter. See references/setup.md.'
+    : 'Continue with the outstanding offer and search setup in references/setup.md.';
+  return { done: missing.length === 0, missing, legacy: isLegacy(profile), next: missing.length ? next : null };
 }
 register('start', ({ sub, flags }) => {
   const profile = readProfile();

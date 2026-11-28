@@ -11,21 +11,20 @@ const storeMod = await import('../../skills/gtm-loop/scripts/lib/store.mjs');
 const tmp = (name, obj) => { const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'gtmflow-')), name); fs.writeFileSync(f, JSON.stringify(obj)); return f; };
 const G = (...args) => runGtm(home, args);
 
-test('start: handles are saved on their own, the model is told what is missing, the start question is valid, the answers are recorded', () => {
+test('start reads the repo first and completes without a sender name, company, or handles', () => {
   const s = G('start', 'status');
   assert.equal(s.json.done, false);
-  assert.ok(s.json.missing[0].startsWith('your name'), 'the sender name is asked in the same first message');
-  assert.equal(G('profile', 'set', '--json', JSON.stringify({ sender: { handles: { x: 'sam_thing', linkedin: 'SamThing' } } })).code, 0, 'a partial answer with no sender name is saved');
-  assert.deepEqual(G('profile').json.profile.sender.handles, { x: 'sam_thing', linkedin: 'SamThing' });
+  assert.match(s.json.next, /^Inspect the selected repository before asking/);
+  assert.ok(s.json.missing[0].startsWith('what you sell'));
+  assert.equal(G('offers', 'set', '--json', JSON.stringify([{ id: 'main', name: 'Thing' }])).code, 0);
+  assert.ok(G('start', 'status').json.missing.some((x) => x.startsWith('offer details for "Thing"')));
   const offers = [{ id: 'main', name: 'Thing', what: 'lets an agent pay for APIs', who: 'founders and builders', link: 'https://example.org/thing', phrases: ['agent pay for APIs', 'pay per call for Claude'], subreddits: ['ClaudeAI', 'r/LocalLLaMA'] }];
   const asked = [{ ...offers[0], buyerAsked: true, queriesAsked: true }];
   assert.equal(G('offers', 'set', '--json', JSON.stringify(offers)).code, 0);
   const m = G('start', 'status').json.missing;
-  assert.ok(m.some((x) => x.startsWith('your name')));
   assert.ok(m.some((x) => x.startsWith('a buyer for "Thing"')), 'a buyer is proposed when only who it helps is given');
   assert.ok(m.some((x) => x.startsWith('queries for "Thing"')), 'the model is told to write and test queries once');
-  assert.equal(G('profile', 'set', '--json', JSON.stringify({ sender: { name: 'Sam', company: 'Co', handles: { x: 'sam_thing' } }, offers: asked })).code, 0);
-  assert.equal(G('profile').json.profile.sender.handles.linkedin, 'SamThing', 'handles merge, nothing is lost');
+  assert.equal(G('offers', 'set', '--json', JSON.stringify(asked)).code, 0);
   const ask = G('ask', 'start');
   assert.equal(ask.code, 0);
   assert.equal(ask.json.questions.length, 4);
@@ -37,6 +36,13 @@ test('start: handles are saved on their own, the model is told what is missing, 
   assert.equal(G('start', 'status').json.done, true);
   assert.match(G('start', 'record', '--sources', 'everything').json.error, /sources is all, social or free/);
   assert.match(G('phrases', 'set', 'a very long phrase that goes on and on and on like an article title for a reader').json.error, /words at most/);
+});
+
+test('known handles can be added after setup and merged without a sender name', () => {
+  assert.equal(G('profile', 'set', '--json', JSON.stringify({ sender: { handles: { linkedin: 'SamThing' } } })).code, 0);
+  assert.equal(G('profile', 'set', '--json', JSON.stringify({ sender: { handles: { x: 'sam_thing' } } })).code, 0);
+  assert.deepEqual(G('profile').json.profile.sender.handles, { linkedin: 'SamThing', x: 'sam_thing' });
+  assert.equal(G('start', 'status').json.done, true);
 });
 
 test('the free path: ingest a post file, refuse a bad one with its problems, review through the file, and read the report', () => {

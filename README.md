@@ -84,7 +84,7 @@ A release tag installs the same way, for example `BackTrackCo/tenjin-skills#gtm-
 
 ### What it does
 
-1. You say what you sell, in your own words, and who buys it. It proposes the phrases a buyer would write, and you edit them.
+1. GTM Loop reads the selected repo first and proposes what you sell, who buys it, and phrases a buyer would write. You confirm or correct the proposal. You can also describe the offer or share a product link. Social handles are optional.
 2. Code finds leads, with a set of queries per source that the model writes with you, tests once, and keeps growing: it adds variants where nothing was kept and code retires the ones that find nothing for two rounds. Posts that ask for what you sell come from X, Reddit, LinkedIn, Hacker News and the web. People who fit your buyer come from company and people search, when you describe your buyer. With Tenjin, the searches run in code at the router's price; without it, one web-search step runs and Hacker News is free.
 3. Code removes duplicates and drops anyone you already contacted or who opted out. A review scores fit, intent and timing, with one line that quotes the post.
 4. One writer call drafts a first message per lead, from the signal, your offer and your writing rules.
