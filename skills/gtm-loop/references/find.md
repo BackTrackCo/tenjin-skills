@@ -8,7 +8,9 @@ A lead is a post that asks for what the person sells, or a person who fits their
 - Every paid answer is saved immediately. The router picks the seller and enforces the person's limits. An unservable need is held with its reason (`G report --all`); a need whose service changed input or output is held with a repair request (`references/repair.md`) while all other needs still run.
 - Run a round manually with `G search route` (or `G search route --need "<key>"` for one held search). A paid post search that answers 404 is empty for that day and is not retried until the next round.
 
-## Without Tenjin (one Haiku step)
+## Without Tenjin (one Haiku step, fallback only)
+
+**Ask first:** free web search is only for people without a funded Tenjin (`missing`, `outdated`, `unfunded`) or if they explicitly ask for free-only. Never offer or default to a free manual round when `G tenjin` is `ready`. In an attended turn without a funded Tenjin, `G search plan` returns `{ask: "tenjin", moment, status, hint, question}` (same offer as `G ask tenjin`, naming benefits and estimated costs) before handing out free queries. Ask with AskUserQuestion, then record `G tenjin ask-done yes|no`. On yes, follow `tenjin.sh` (or `tenjin fund` if unfunded) and hold as `tenjin_setup` for this period; on `"Not now"`, run the free fallback and do not ask again this session. Unattended turns run the free fallback and put the hint in the report.
 
 Hacker News runs in code. For other sources the watcher emits `search_due`. Run one Agent call with `model: "haiku"` using the queries from `G search plan`, keep only people asking for the offer, and write one JSON file per phrase:
 

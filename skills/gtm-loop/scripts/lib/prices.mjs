@@ -21,6 +21,13 @@ export const centsOf = (cost) => {
   return m ? Math.round(parseFloat(m[1]) * 10000) / 100 : null;
 };
 
+export function paceText(frequency = 'daily', profile = {}) {
+  const round = roundCents(profile);
+  if (frequency === 'twice_daily') return `At two search rounds a day, that is about ${fmt(round * 2)} a day`;
+  if (frequency === 'weekly') return `At one search round a week, that is about ${fmt(round)} a week`;
+  return `At one search round a day, that is about ${fmt(round)} a day`;
+}
+
 export function hintLines(profile = {}) {
   return {
     search: `With Tenjin, each search round also covers posts on X, Reddit and LinkedIn and the web, in the background, with none of your Claude usage: about ${fmt(roundCents(profile))} a round.`,
@@ -29,3 +36,31 @@ export function hintLines(profile = {}) {
   };
 }
 export const outdatedLine = (version) => `Your Tenjin${version ? ` (${version})` : ''} is out of date. Update it to turn these on again.`;
+
+export function offerItems(profile = {}) {
+  return {
+    posts: `Live post searches on X, Reddit, LinkedIn and the web, plus profile reads for kept leads: about ${fmt(roundCents(profile))} a search round`,
+    tests: 'Live query tests during setup so you see real result counts and sample posts before the loop runs',
+    fit: `Buyer-fit search: a company list (about ${fmt(price('company_list'))}), then people at each company (about ${fmt(price('people_search'))} a company)`,
+    email: `Work-email lookup and deliverability check only when you pick Email for a lead: about ${fmt(price('person_enrichment'))}, then about ${fmt(price('email_check'))}`,
+    background: 'These searches run in the background in code, so they use none of your Claude usage',
+  };
+}
+
+export function tenjinHint(state = {}, moment = 'search', profile = {}) {
+  const t = (state && state.tenjin) || {};
+  if (!t.status || t.status === 'ready') return null;
+  const line = t.status === 'outdated' ? outdatedLine(t.version) : hintLines(profile)[moment];
+  return line ? { moment, status: t.status, line } : null;
+}
+
+export function tenjinOffer(moment = 'search', state = {}, frequency = 'daily', profile = {}) {
+  const t = (state && state.tenjin) || {};
+  const first = t.status === 'outdated' ? outdatedLine(t.version) : hintLines(profile)[moment] || null;
+  const o = offerItems(profile);
+  const list = [`- ${o.posts}`, `- ${o.tests}`, `- ${o.fit}`, `- ${o.email}`, `- ${o.background}`].join('\n');
+  const action = t.status === 'unfunded' ? 'Add funds to Tenjin?' : t.status === 'outdated' ? 'Update Tenjin?' : 'Set up Tenjin?';
+  const head = `${action} It adds these to GTM Loop. You pay per use from a funded wallet, within your spending limits:`;
+  const tail = `${paceText(frequency, profile)}, plus any buyer-fit searches and email lookups. Prices are estimates, checked on ${pricesCheckedAt()}.`;
+  return `${first ? `${first}\n\n` : ''}${head}\n${list}\n${tail}`;
+}

@@ -9,7 +9,8 @@ import { readProfile, setProfile, validateProfile } from './lib/profile.mjs';
 import { hintState } from './lib/tenjin.mjs';
 import { isBatchDenied, batchMode, cleanupStale, isActive, touchBatch } from './lib/batch.mjs';
 import { runWatcher } from './lib/watcher.mjs';
-import { workList, leave } from './lib/work.mjs';
+import { workList, leave, askFirst } from './lib/work.mjs';
+import { frequencyOf, periodStart } from './lib/schedule.mjs';
 import { logRun } from './lib/runlog.mjs';
 import './lib/steps.mjs';
 import { checkPostFile, ingestPostFile, reviewHandout, checkReview, applyReview, summarizeReview, batchesOf } from './lib/ingest.mjs';
@@ -17,9 +18,9 @@ import { searchPlan, searchDone } from './lib/search.mjs';
 import { runHn } from './lib/hn.mjs';
 import { runPostRound, runIdentityReads } from './lib/routed.mjs';
 import { report } from './lib/report.mjs';
-import { startQuestions, validateAsk, EMAIL_MODE_OF, SOURCES_OF } from './lib/questions.mjs';
+import { startQuestions, tenjinAsk, validateAsk, EMAIL_MODE_OF, SOURCES_OF } from './lib/questions.mjs';
 import { pushSettings } from './lib/pushsettings.mjs';
-import { hintLines, outdatedLine } from './lib/prices.mjs';
+import { hintLines, outdatedLine, tenjinOffer } from './lib/prices.mjs';
 import { offersOf, isLegacy } from './lib/offers.mjs';
 import { buildRoundRequest, parseRoundResult, applyWriteResult } from './lib/writing.mjs';
 import { pickQuestions, pickLead, openPlan, markSentSocial } from './lib/outreach.mjs';
@@ -84,10 +85,34 @@ register('gates', ({ flags }) => {
   }
   return { gatesHash: h };
 });
-register('tenjin', () => {
+register('tenjin', ({ sub, args }) => {
+  if (sub === 'ask-done') {
+    const answer = args[1];
+    if (!['yes', 'no'].includes(answer)) return fail('tenjin ask-done yes|no');
+    return updateState((s) => {
+      const nowIso = new Date().toISOString();
+      s.tenjin = { ...(s.tenjin || {}), askedAt: nowIso, ...(answer === 'no' ? { declinedAt: nowIso } : {}) };
+      if (answer === 'yes') {
+        s.tenjinSetup = { at: nowIso, period: periodStart(Date.now(), frequencyOf(readProfile())) };
+        if (!s.held.some((h) => h.reason === 'tenjin_setup')) s.held.push({ reason: 'tenjin_setup', detail: 'waiting for Tenjin to be ready' });
+      }
+      return { asked: true, answer };
+    });
+  }
   const h = hintState();
-  updateState((s) => { s.tenjin = { ...s.tenjin, status: h.status, version: h.version || null, checkedAt: new Date().toISOString() }; });
-  return h;
+  updateState((s) => {
+    if (h.status === 'ready') {
+      s.tenjinSetup = null;
+      s.held = (s.held || []).filter((x) => x.reason !== 'tenjin_setup');
+    }
+    s.tenjin = { ...s.tenjin, status: h.status, version: h.version || null, checkedAt: new Date().toISOString() };
+  });
+  return {
+    ...h,
+    next: h.status === 'ready'
+      ? 'Tenjin is funded and ready. Use live G query test and routed searches (G hn, G search route, G fit route); do not offer a free-only search round first.'
+      : 'Tenjin is not ready. Before any step that uses Tenjin or any free fallback, ask the person to set up, update or fund Tenjin via G ask tenjin (naming its benefits and estimated costs) and record G tenjin ask-done yes|no.',
+  };
 });
 register('profile', ({ sub, args, flags }) => {
   if (!sub) return { profile: readProfile() };
@@ -162,10 +187,21 @@ export function startStatus(profile, state) {
     if (o.who && !o.buyer && !o.buyerAsked) missing.push(`a buyer for "${o.name || o.id}": propose a role, company type and place from "${o.who}" and ask once (buyer, or buyerAsked: true if declined)`);
   }
   if (!state.start) missing.push('the start question (G ask start, then G start record)');
+  const tenjinStatus = (state.tenjin && state.tenjin.status) || 'unknown';
   const next = needsOffer
     ? 'Use the product or source the person already gave. If you need a source, briefly explain that you find leads and draft a first message for review. Offer the current workspace, a repo path or link, or a product link. Then use the chosen source to propose the offer and buyer signals. See references/setup.md.'
-    : 'Continue with the outstanding offer and search setup in references/setup.md.';
-  return { done: missing.length === 0, missing, legacy: isLegacy(profile), next: missing.length ? next : null };
+    : missing.length
+      ? tenjinStatus === 'ready'
+        ? 'Continue with the outstanding offer and search setup in references/setup.md. Tenjin is funded and ready: run live G query test and routed searches (G hn, G search route, G fit route); do not offer a free-only search round first.'
+        : ['missing', 'outdated', 'unfunded'].includes(tenjinStatus)
+          ? 'Continue with setup in references/setup.md. Tenjin is not ready: before any query test, routed search or free fallback, ask the person to set up, update or fund Tenjin via G ask tenjin (naming its benefits and estimated costs) and record G tenjin ask-done yes|no.'
+          : 'Continue with the outstanding offer and search setup in references/setup.md.'
+      : tenjinStatus === 'ready'
+        ? 'Setup is complete and Tenjin is funded and ready. Run the routed round (G hn, G search route, G fit route if buyer is set), then G review next and G report; do not offer a free-only search round first.'
+        : ['missing', 'outdated', 'unfunded'].includes(tenjinStatus)
+          ? 'Setup is complete and Tenjin is not ready. Before falling back to free search, ask the person to set up, update or fund Tenjin via G ask tenjin (naming its benefits and estimated costs) and record G tenjin ask-done yes|no.'
+          : null;
+  return { done: missing.length === 0, missing, legacy: isLegacy(profile), tenjin: tenjinStatus, next };
 }
 register('start', ({ sub, flags }) => {
   const profile = readProfile();
@@ -191,13 +227,26 @@ register('start', ({ sub, flags }) => {
   updateState((s) => syncDrafts(s, profile));
   return { ...startStatus(profile, loadState()), ...(stale ? { note: staleHoldsLine(stale) } : {}) };
 });
-register('ask', ({ sub, args }) => {
+register('ask', ({ sub, args, flags }) => {
   if (sub === 'start') {
     const st = loadState();
     const ask = startQuestions({ rc: st.rc, pushSent: st.pushSent, settings: pushSettings(), searchOptions: searchOptions(readProfile(), st) });
     const bad = validateAsk(ask);
     if (bad.length) return fail(bad.join('; '));
     return ask;
+  }
+  if (sub === 'tenjin') {
+    const st = loadState();
+    if (isActive(Date.now(), st) && batchMode(st) === 'unattended') return fail('no questions in an unattended turn');
+    const profile = readProfile();
+    const moment = typeof flags.moment === 'string' ? flags.moment : 'search';
+    const status = typeof flags.status === 'string' ? flags.status : (st.tenjin && st.tenjin.status) || 'missing';
+    if (status === 'ready') return { ready: true, note: 'Tenjin is already funded and ready; no setup ask is needed.' };
+    const line = typeof flags.line === 'string' ? flags.line : tenjinOffer(moment, { ...st, tenjin: { ...(st.tenjin || {}), status } }, frequencyOf(profile), profile);
+    const ask = tenjinAsk({ line, status });
+    const bad = validateAsk(ask);
+    if (bad.length) return fail(bad.join('; '));
+    return { ...ask, status, moment, next: 'Ask with AskUserQuestion (or present these choices), then record G tenjin ask-done yes|no. On yes, follow tenjin.sh (or tenjin fund if unfunded) and re-run G tenjin; only fall back to free search if the person chooses Not now.' };
   }
   if (sub === 'email') {
     const st = loadState();
@@ -264,10 +313,20 @@ register('sent', ({ args }) => {
 
 register('search', async ({ sub, flags }) => {
   const profile = readProfile();
-  if (sub === 'plan') return searchPlan(profile, loadOverlay());
+  if (sub === 'plan') {
+    const st = loadState();
+    const unattended = flags.unattended === true || (isActive(Date.now(), st) && batchMode(st) === 'unattended');
+    const ask = askFirst(st, 'search', { unattended, profile });
+    if (ask) return ask;
+    const plan = searchPlan(profile, loadOverlay());
+    if ((st.tenjin || {}).status === 'ready') {
+      return { ...plan, tenjinReady: true, note: 'Tenjin is funded and ready. Prefer live G query test and routed searches (G hn, G search route, G fit route) instead of the free manual web search unless the person explicitly asked for a free-only round.' };
+    }
+    return plan;
+  }
   if (sub === 'done') return searchDone();
   if (sub === 'route') {
-    if (loadState().tenjin.status !== 'ready') return fail('Tenjin is not ready: run G tenjin first');
+    if (loadState().tenjin.status !== 'ready') return fail('Tenjin is not ready: run G tenjin first; if missing, outdated or unfunded, ask via G ask tenjin and record G tenjin ask-done yes|no');
     const r = await runPostRound({ profile, overlay: loadOverlay(), only: typeof flags.need === 'string' ? flags.need : null });
     if (typeof flags.need === 'string') return r; // one search only: no profile reads, the schedule untouched
     const reads = flags['no-reads'] ? null : await runIdentityReads({});
@@ -277,7 +336,7 @@ register('search', async ({ sub, flags }) => {
 });
 register('fit', async ({ sub }) => {
   if (sub !== 'route') return fail('fit route');
-  if (loadState().tenjin.status !== 'ready') return fail('Tenjin is not ready: run G tenjin first');
+  if (loadState().tenjin.status !== 'ready') return fail('Tenjin is not ready: run G tenjin first; if missing, outdated or unfunded, ask via G ask tenjin and record G tenjin ask-done yes|no');
   return runFitRound({ profile: readProfile(), overlay: loadOverlay() });
 });
 register('companies', ({ sub, args, flags }) => {
@@ -300,7 +359,7 @@ register('email', async ({ sub, args, flags }) => {
     const lead = loadState().leads[args[1]];
     if (!lead) return fail(`unknown lead: ${args[1]}`);
     if (lead.status !== 'picked' || !lead.pick || lead.pick.channel !== 'email') return fail('pick Email for this lead first (G pick <key> email)');
-    if (loadState().tenjin.status !== 'ready' && !lead.emailFromPost) return fail('the address needs a lookup and Tenjin is not ready: say the send is the person\'s, with the lead\'s own contact');
+    if (loadState().tenjin.status !== 'ready' && !lead.emailFromPost) return fail('the address needs a lookup and Tenjin is not ready: ask via G ask tenjin --moment email (G tenjin ask-done yes|no), or say the send is the person\'s, with the lead\'s own contact');
     const r = lead.emailFromPost ? { lookups: 0 } : await resolveAddress({ leadKey: args[1] });
     const st = loadState();
     let cand;
@@ -454,7 +513,7 @@ register('query', async ({ sub, args, flags }) => {
   if (sub !== 'test') return fail('query test <offer id> <source> [--query "<draft text>"]');
   const [offerId, source] = [args[1], args[2]];
   if (!offerId || !QUERY_SOURCES.includes(source)) return fail(`query test <offer id> <${QUERY_SOURCES.join('|')}>`);
-  if (source !== 'hn' && loadState().tenjin.status !== 'ready') return fail('Tenjin is not ready: run G tenjin first');
+  if (source !== 'hn' && loadState().tenjin.status !== 'ready') return fail('Tenjin is not ready: run G tenjin first; if missing, outdated or unfunded, ask via G ask tenjin and record G tenjin ask-done yes|no');
   return testQuery({ profile: readProfile(), overlay: loadOverlay(), offerId, source, query: typeof flags.query === 'string' ? flags.query : null, fetch: globalThis.fetch });
 });
 register('hn', async () => runHn({ fetch: globalThis.fetch, profile: readProfile(), overlay: loadOverlay() }));

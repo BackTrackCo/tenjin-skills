@@ -9,6 +9,8 @@ import { RouterClient } from './router.mjs';
 import { runFitRound, hasBuyer } from './fit.mjs';
 import { phrasePairs, allPhrases } from './offers.mjs';
 import { kw } from './queries.mjs';
+import { tenjinHint } from './prices.mjs';
+import { setupActive, tenjinAskDue } from './work.mjs';
 
 // When a search is due, what runs in code, and what is left to the one free model step. HN is free and always in code. With Tenjin
 // ready, every post source runs in code too; without it the model's one Haiku web-search step runs the queries `G search plan`
@@ -37,14 +39,19 @@ export function searchPlan(profile, overlay) {
 const stamp = (n) => n;
 export function searchItems({ state, profile, now }) {
   const items = [];
+  if (setupActive(state, profile, now)) return items;
   const s = state.search || {};
-  if (s.modelDue) items.push({ key: 'search', reason: 'search_due', v: stamp(s.round || 1), detail: 'the free web-search step' });
+  if (s.modelDue) {
+    const hint = tenjinHint(state, 'search', profile);
+    items.push({ key: 'search', reason: 'search_due', v: stamp(s.round || 1), detail: 'the free web-search step', ...(hint ? { hint } : {}), askTenjin: tenjinAskDue(state) });
+  }
   return items;
 }
 
 // The watcher's search step. Marks the round, runs HN, then the routed round when Tenjin is ready; otherwise leaves the free step.
 export async function searchStep({ profile, overlay, fetchImpl, now, routerClient, save, sleep }) {
   const state = loadState();
+  if (setupActive(state, profile, now)) return { ran: false };
   if (!searchDue(state, profile, now) || (state.search || {}).modelDue) return { ran: false };
   const out = { ran: true };
   if (fetchImpl && (!profile.sources || profile.sources.includes('hn'))) out.hn = await runHn({ fetch: fetchImpl, profile, overlay, now, sleep });

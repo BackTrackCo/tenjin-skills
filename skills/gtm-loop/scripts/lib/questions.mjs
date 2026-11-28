@@ -34,9 +34,17 @@ export const rcAtPush = (reason, settings = {}) => (reason === 'off' ? configSen
 
 export function tenjinAsk({ line, status }) {
   const funded = status === 'unfunded';
-  return { questions: [q('Tenjin', funded ? `${line} Add funds to Tenjin?` : line, [
-    { label: `${funded ? 'Add funds' : 'Set up Tenjin'} (Recommended)`, description: funded ? 'Runs Tenjin\'s own funding step; you pick the amount there.' : 'Follows the install flow at tenjin.sh, which asks its own spending questions and funding step.' },
-    { label: 'Not now', description: 'Everything free keeps working. I will mention it again but ask at most once per session.' },
+  const outdated = status === 'outdated';
+  const label = funded ? 'Add funds (Recommended)' : outdated ? 'Update Tenjin (Recommended)' : 'Set up Tenjin (Recommended)';
+  const description = funded
+    ? "Runs Tenjin's own funding step; you pick the amount there."
+    : outdated
+      ? 'Updates Tenjin to the tested version so live tests, routed searches and lookups run again.'
+      : 'Follows the install flow at tenjin.sh, which asks its own spending questions and funding step.';
+  const question = funded && !/Add funds to Tenjin\?/.test(line) ? `${line} Add funds to Tenjin?` : line;
+  return { questions: [q('Tenjin', question, [
+    { label, description },
+    { label: 'Not now', description: 'Use the free fallback only (Hacker News and web search). I will mention Tenjin again but ask at most once per session.' },
   ])] };
 }
 

@@ -30,9 +30,11 @@ In **one message**, propose everything below together and ask only about gaps th
 
 ## Turn 3: Live query test, start choices and first run
 
-1. **Test queries live:** in this attended turn, run `G query test <offer id> <source>` once per source (shows result count, filter funnel, three short sample lines and cost; Hacker News is free). Rewrite and retest any query returning 0 or only noise; there is no cap on tests. Show the final set with the cost of each test and get their yes.
+1. **Check Tenjin before testing or searching:**
+   - **When `G tenjin` is `ready`:** run live `G query test <offer id> <source>` once per source (shows result count, filter funnel, three short sample lines and cost; Hacker News is free). Rewrite and retest any query returning 0 or only noise; there is no cap on tests. Show the final set with the cost of each test and save confirmed queries with `G queries set`. Never offer or default to a free manual search round when Tenjin is funded and ready.
+   - **When `G tenjin` is `missing`, `outdated` or `unfunded`:** before any step that uses Tenjin or any free fallback, ask via `G ask tenjin` (which names Tenjin's benefits and estimated costs from `graph.json`) and record `G tenjin ask-done yes|no`. On yes, follow `tenjin.sh` (or `tenjin fund` if unfunded), re-run `G tenjin` until `ready`, then run live query tests and routed searches. Only if they choose `"Not now"` (or explicitly ask for free-only), test Hacker News (`G query test <offer id> hn` is free) and proceed with the free fallback (`G hn` + one Haiku `G search plan` step).
 2. **Start choices:** run `G ask start` (one question-tool call covering email mode, frequency, sources and searches per round with costs) and save with `G start record --email-mode ask|drafts|show --frequency daily|twice_daily|weekly --sources all|social|free --searches-per-round all|10|5`.
-3. **First run:** run the first search and report in the same session. After setup, queries grow and prune automatically per `references/find.md` (`G queries remove|pin|unpin <id>`).
+3. **First run:** run the first search (`G hn`, `G search route`, and `G fit route` if buyer set when Tenjin is ready; free fallback only without a funded Tenjin after `"Not now"`) and `G report` in the same session. After setup, queries grow and prune automatically per `references/find.md` (`G queries remove|pin|unpin <id>`).
 
 ## Older profile migration
 
@@ -40,7 +42,7 @@ An older profile with top-level `offer`, `phrases` and `buyer` still loads. When
 
 ## Tenjin, rules and recovery
 
-- **Tenjin:** when ready, the watcher runs X, Reddit, LinkedIn, web searches and kept-lead profile reads in code (HN is always free). Without it, HN runs in code and one Haiku web-search step covers the rest (`references/find.md`). Say the line from `G hints` once if missing/outdated. Never change Tenjin settings.
+- **Tenjin:** when `ready`, live query tests, X/Reddit/LinkedIn/web searches, kept-lead profile reads, buyer-fit search and work-email lookups run through Tenjin (HN is always free). Never offer a free manual round first when Tenjin is funded and ready. Without a funded Tenjin (`missing`, `outdated` or `unfunded`), ask once via `G ask tenjin` -> `G tenjin ask-done yes|no` (naming benefits and estimated costs) before falling back to HN + one Haiku web-search step (`references/find.md`). Never change Tenjin settings.
 - **Rules (`G rules add --effect <e> --value <v> --words "<their words>"`, person's own words only):**
   - Filters/behavior: `min_score`, `follow_up` (one attended follow-up after N days), `exclude_term`, `exclude_domain`, `exclude_person`, `notify_off`, `note`.
   - Optional caps (no default caps): `leads_per_round`, `emails_per_day`, `searches_per_day`, `searches_per_round`, `companies_per_search`, `phrases_per_round`, `rounds_per_day`.

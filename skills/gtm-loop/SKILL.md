@@ -31,6 +31,7 @@ G means `node ${CLAUDE_SKILL_DIR}/scripts/gtm.mjs`. Always write it out in full,
 
 - **Every start, after compaction or `/resume`:** `G tenjin`, `G start status`, `G work --commit`, then `G watch` last (Bash tool, `run_in_background`; exits when work is due; refuses while due work is unclaimed; restart after each round and on `watcher: stopped`; lease elsewhere: work attended).
 - **First run:** use the product or source the person already gave; otherwise offer the current workspace, a repo path or a product link and read it before asking about the offer (handles are optional). Follow `references/setup.md`, then `G ask start`.
+- **Tenjin vs. free fallback:** check `G tenjin` first. When `ready`, use live `G query test` and routed searches (`G hn`, `G search route`, `G fit route`); never offer or default to a free manual search round first unless the person asks for free-only. When `missing`, `outdated` or `unfunded`, before any step that uses Tenjin or any free fallback, ask via `G ask tenjin` (or the `ask: "tenjin"` payload from `G search plan`) naming Tenjin's benefits and costs, then record `G tenjin ask-done yes|no`. Free search (`G search plan`) is only for people without a funded Tenjin who choose "Not now" (or unattended turns).
 - **Questions:** one AskUserQuestion call per `G ask <kind>`, never your own list, never in an unattended turn (hold and notify).
 
 ## The round
@@ -39,11 +40,11 @@ On watcher wake or user request, run `G work --commit` (add `--unattended` on wa
 
 | Item / trigger | Action | Reference |
 | --- | --- | --- |
-| The person asks to search now | Run `G hn`, then `G search route` (`G fit route` for buyer fit), then `G review next` and `G report`. Never answer "no work is due" to a request to search. | `references/find.md` |
+| The person asks to search now | With Tenjin ready: run `G hn`, then `G search route` (`G fit route` for buyer fit), then `G review next` and `G report`. Without a funded Tenjin: ask via `G ask tenjin` (`G tenjin ask-done yes\|no`) first; only on "Not now", run `G hn` and the free `G search plan` step. Never answer "no work is due" to a request to search. | `references/find.md` |
 | Retry one held search | Run `G search route --need "<key>"` (that search only). | `references/find.md` |
 | `Held:` lines | Repair requests go through `repair_due`. Refused-input holds are a skill defect to report; do not ask them for a field, a subreddit or a phrase because of it. | `references/repair.md` |
 | `queries_due` (also in a woken turn, with no yes) | Write variants from `G queries table` only (never a post, sample or `G query test`); add via `G queries add --offer <id> --source <source> --text "<query>"`. | `references/find.md` |
-| `search_due` | With Tenjin, watcher searches in code; without it, one Agent `model: "haiku"` step runs `G search plan` and ingests each file. | `references/find.md` |
+| `search_due` | With Tenjin ready, watcher searches in code; without a funded Tenjin, run `G search plan` (if it returns `ask: "tenjin"`, ask first and record `G tenjin ask-done yes\|no`; only on "Not now" or unattended, run one Agent `model: "haiku"` step and ingest each file). | `references/find.md` |
 | `review_due` | `G review next` (batches of 25). Start every batch in one message as parallel Agent calls with `model: "haiku"`, judge each lead against its own offer, then `G review ingest --file`. Main model does not re-check reviews post by post: report printed counts/reasons only. | `references/review.md` |
 | `write_due` | One Agent `model: "opus"` call per round: `G write-prompt`, then `G write-result --file`. Park drafts in dated Markdown file, say "N drafts in <full path>", and restart `G watch`. | `references/write.md`, `references/send.md` |
 | `open_due` | `G work` runs `G drafts sync` on start/wake (and when user says they reviewed drafts). Attended only, when asked: `G open --approved` -> person sends -> `G sent <key>`. Woken turns open nothing. | `references/send.md` |

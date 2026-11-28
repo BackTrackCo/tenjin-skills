@@ -2,6 +2,9 @@ import { graph } from './graph.mjs';
 import { loadState, updateState } from './store.mjs';
 import { loadOverlay } from './overlay.mjs';
 import { readProfile } from './profile.mjs';
+import { frequencyOf, periodStart } from './schedule.mjs';
+import { tenjinHint, tenjinOffer } from './prices.mjs';
+import { tenjinAsk as tenjinAskQuestion } from './questions.mjs';
 
 // The work list: what is due now, as items `{key, reason, v, waitsForPerson}`. An item's version `v` changes only on real news,
 // so the watcher wakes for a new item or a new version, never on a clock. `commit` claims the actionable items (hands them to
@@ -78,3 +81,34 @@ export function leave(key, reason, now = Date.now()) {
     return { left: key, reason };
   });
 }
+
+// Tenjin ask gating: when Tenjin is missing, outdated or unfunded in an attended turn and the session's ask has not been answered,
+// ask to install, update or fund Tenjin (naming its benefits and estimated costs) before handing out a free fallback.
+export function tenjinAskDue(state, { unattended = false } = {}) {
+  const t = (state && state.tenjin) || {};
+  if (!t.status || t.status === 'ready' || unattended) return false;
+  if (t.declinedAt) return false;
+  return !(t.askedAt && Date.now() - Date.parse(t.askedAt) < 12 * 3600000);
+}
+
+export function askFirst(state, moment = 'search', { unattended = false, profile = null } = {}) {
+  if (!tenjinAskDue(state, { unattended })) return null;
+  const p = profile || readProfile();
+  const hint = tenjinHint(state, moment, p);
+  if (!hint) return null;
+  const line = tenjinOffer(moment, state, frequencyOf(p), p);
+  return {
+    ask: 'tenjin',
+    moment,
+    status: state.tenjin.status,
+    hint,
+    question: tenjinAskQuestion({ line, status: state.tenjin.status }),
+    next: 'Ask with AskUserQuestion (or present these choices), then record G tenjin ask-done yes|no. Only fall back to free search if the person chooses Not now.',
+  };
+}
+
+// On a yes, hold free search for this period as tenjin_setup until G tenjin returns ready.
+export const setupActive = (state, profile, now = Date.now()) => {
+  const r = state && state.tenjinSetup;
+  return Boolean(r && (state.tenjin || {}).status !== 'ready' && r.period === periodStart(now, frequencyOf(profile)));
+};
